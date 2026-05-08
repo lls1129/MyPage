@@ -1,26 +1,86 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Palette + radius + shadow tokens — design brief locks these */
+@theme {
+  /* Pink */
+  --color-pink-50: #FBEAF0;
+  --color-pink-100: #F4C0D1;
+  --color-pink-200: #ED93B1;
+  --color-pink-400: #D4537E;
+  --color-pink-600: #993556;
+  --color-pink-800: #72243E;
+
+  /* Lavender */
+  --color-lavender-50: #EEEDFE;
+  --color-lavender-100: #CECBF6;
+  --color-lavender-200: #AFA9EC;
+  --color-lavender-400: #7F77DD;
+  --color-lavender-600: #534AB7;
+  --color-lavender-800: #3C3489;
+
+  /* Amber */
+  --color-amber-100: #FAC775;
+  --color-amber-400: #EF9F27;
+  --color-amber-600: #BA7517;
+  --color-amber-800: #854F0B;
+
+  /* Sky-navy — only dark surface in the design */
+  --color-skynavy-900: #0F0D2E;
+  --color-skynavy-700: #1A1740;
+  --color-skynavy-500: #26215C;
+
+  /* Cream + ink */
+  --color-cream: #FFFAF3;
+  --color-ink: #4B1528;
+
+  /* Radius scale per brief */
+  --radius-sm: 12px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  /* Soft shadow */
+  --shadow-soft: 0 8px 24px rgba(232, 90, 134, 0.12);
 }
 
+/* Fonts — inline so utility classes substitute the next/font CSS vars literally */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-quicksand), ui-sans-serif, system-ui, sans-serif;
+  --font-script: var(--font-caveat), ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  background-color: var(--color-pink-50);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* Decorative script utility */
+.font-script {
+  font-family: var(--font-script);
+  font-weight: 500;
+}
+
+/* Tiny uppercase label per brief — 10–11px, 0.08em letter-spacing */
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* Hover lift used on tiles & cards */
+.lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
 }
