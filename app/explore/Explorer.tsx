@@ -13,6 +13,8 @@ import {
   deletePin,
   clearPinsForBody,
 } from "./admin-actions";
+import { getPinFeed, type PinFeed } from "./feed-actions";
+import { FeedCard } from "./FeedCard";
 
 const TYPE_COLORS: Record<PinType, string> = {
   travel: "#D4537E",
@@ -131,12 +133,33 @@ export function Explorer({
   const [pins, setPins] = useState<Pin[]>(initialPins);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [feed, setFeed] = useState<PinFeed | null>(null);
+  const [feedLoading, setFeedLoading] = useState(false);
 
   // Sync state when server data changes (e.g. router.refresh() lands).
   useEffect(() => setPins(initialPins), [initialPins]);
 
   const currentPins = pins.filter((p) => p.body === body);
   const selected = currentPins.find((p) => p.id === selectedId) ?? null;
+
+  // Fetch the feed when selection or its type changes; keyed on id+type so
+  // changing the chip refreshes the feed.
+  useEffect(() => {
+    if (!selected) {
+      setFeed(null);
+      return;
+    }
+    let cancelled = false;
+    setFeedLoading(true);
+    getPinFeed(selected).then((f) => {
+      if (cancelled) return;
+      setFeed(f);
+      setFeedLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.type, selected?.body]);
   const counts = {
     earth: pins.filter((p) => p.body === "earth").length,
     moon: pins.filter((p) => p.body === "moon").length,
@@ -331,6 +354,16 @@ export function Explorer({
         onSaveNote={handleNoteSave}
         onDelete={handleDeleteSelected}
       />
+
+      {selected ? (
+        feedLoading ? (
+          <div className="rounded-md px-4 py-3 bg-pink-50/60 border border-pink-100 text-xs text-lavender-600 font-semibold text-center">
+            ✦ loading feed…
+          </div>
+        ) : (
+          <FeedCard feed={feed} />
+        )
+      ) : null}
 
       {error ? (
         <p className="text-xs text-pink-600 font-semibold text-center">
