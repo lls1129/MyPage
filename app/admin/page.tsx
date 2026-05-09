@@ -9,8 +9,14 @@ const TOOLS = [
   {
     href: "/admin/photos/upload",
     label: "upload photo",
-    desc: "drop a new photo into the album. EXIF date is read automatically.",
+    desc: "drop a new photo into /photos. EXIF date is read automatically.",
     glyph: "✿",
+  },
+  {
+    href: "/admin/astrophotos/upload",
+    label: "upload astrophoto",
+    desc: "for the slow album under /astronomy — with telescope/exposure metadata.",
+    glyph: "✦",
   },
 ];
 

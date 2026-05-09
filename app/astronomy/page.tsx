@@ -9,9 +9,11 @@ import {
 } from "@/lib/astronomy/sky";
 import { fetchTonightWeather, fetchHourlyForecast } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
+import { listAstrophotos } from "@/lib/supabase/astrophotos";
 import { LocationPicker } from "./LocationPicker";
 import { TimeSlider } from "./components/TimeSlider";
 import { WeatherGrid } from "./components/WeatherGrid";
+import { AstrophotoGrid } from "./components/AstrophotoGrid";
 
 export const metadata: Metadata = {
   title: "astronomy · my world",
@@ -57,6 +59,9 @@ export default async function AstronomyPage(
     snapshotStart.toISOString(),
     snapshotEnd.toISOString()
   );
+  const astrophotosResult = await listAstrophotos();
+  const astrophotos =
+    astrophotosResult.kind === "ok" ? astrophotosResult.astrophotos : [];
   const rec = pickRecommendation(sky, weather);
 
   const cloudLabel =
@@ -130,6 +135,21 @@ export default async function AstronomyPage(
           {rec.headline}
         </p>
         <p className="text-sm text-ink/85 mt-2 leading-relaxed">{rec.body}</p>
+      </section>
+
+      {/* Astrophoto album */}
+      <section className="mt-2">
+        <header className="mb-5">
+          <p className="label text-lavender-600 mb-2">astrophotos ✦</p>
+          <h2 className="font-script text-pink-600 text-[32px] md:text-[40px] leading-none">
+            slow album
+          </h2>
+          <p className="text-ink/80 text-sm mt-3 max-w-prose">
+            things i pointed a telescope at. click any image for the full
+            equipment story.
+          </p>
+        </header>
+        <AstrophotoGrid astrophotos={astrophotos} />
       </section>
     </PageShell>
   );
