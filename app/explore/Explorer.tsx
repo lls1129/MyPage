@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, useTransition } from "r
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stars, useTexture } from "@react-three/drei";
+import { Html, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import type { Pin, PinBody, PinType } from "@/lib/supabase/pins";
 import type { Photo } from "@/lib/supabase/photos";
@@ -16,7 +16,9 @@ import {
   clearPinsForBody,
   linkPinPhotos,
   listPhotosForPicker,
+  setExplorePinMode,
 } from "./admin-actions";
+import type { ExplorePinMode } from "@/lib/supabase/settings";
 import { getPinFeed, type PinFeed } from "./feed-actions";
 import { FeedCard } from "./FeedCard";
 import { PhotoPicker } from "./PhotoPicker";
@@ -137,9 +139,11 @@ function PinMesh({
 export function Explorer({
   initialPins,
   isAdmin,
+  initialPinMode,
 }: {
   initialPins: Pin[];
   isAdmin: boolean;
+  initialPinMode: ExplorePinMode;
 }) {
   const router = useRouter();
   const [body, setBody] = useState<PinBody>("earth");
@@ -151,6 +155,24 @@ export function Explorer({
   const [feed, setFeed] = useState<PinFeed | null>(null);
   const [feedLoading, setFeedLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pinMode, setPinMode] = useState<ExplorePinMode>(initialPinMode);
+
+  // Sync mode if server-side value changes (e.g. another admin toggled it).
+  useEffect(() => setPinMode(initialPinMode), [initialPinMode]);
+
+  function handleTogglePinMode() {
+    const next: ExplorePinMode = pinMode === "popup" ? "inline" : "popup";
+    setPinMode(next);
+    startTransition(async () => {
+      const r = await setExplorePinMode(next);
+      if (!r.ok) {
+        setError(r.error ?? "Could not save pin mode.");
+        setPinMode(pinMode); // revert
+      } else {
+        router.refresh();
+      }
+    });
+  }
 
   // Sync server-side state.
   useEffect(() => setPins(initialPins), [initialPins]);
@@ -409,15 +431,34 @@ export function Explorer({
           🌙 moon
         </BodyButton>
         <span className="flex-1" />
-        {isAdmin && counts[body] > 0 ? (
-          <button
-            type="button"
-            onClick={handleClearAll}
-            disabled={pending}
-            className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
-          >
-            ✕ clear pins on {body}
-          </button>
+        {isAdmin ? (
+          <>
+            <button
+              type="button"
+              onClick={handleTogglePinMode}
+              disabled={pending}
+              aria-pressed={pinMode === "popup"}
+              title="switch between panel-below and popup-at-pin display"
+              className={
+                "lift inline-flex items-center rounded-pill px-3 py-1.5 text-xs font-semibold border " +
+                (pinMode === "popup"
+                  ? "bg-lavender-100 text-lavender-800 border-lavender-200"
+                  : "bg-white text-lavender-600 border-pink-100 hover:border-pink-200")
+              }
+            >
+              {pinMode === "popup" ? "✓ popups on" : "use popups"}
+            </button>
+            {counts[body] > 0 ? (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                disabled={pending}
+                className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+              >
+                ✕ clear pins on {body}
+              </button>
+            ) : null}
+          </>
         ) : null}
       </div>
 
@@ -478,6 +519,24 @@ export function Explorer({
               onClick={() => handleSelectPin(pin.id)}
             />
           ))}
+          {pinMode === "popup" && selected ? (
+            <PinPopupAnchor pin={selected}>
+              <PinPanel
+                pin={selected}
+                body={body}
+                isAdmin={isAdmin}
+                isDraft={selectedIsDraft}
+                pending={pending}
+                linkedPhotos={linkedPhotos}
+                onSetType={handleSetType}
+                onSaveNote={handleNoteSave}
+                onSaveDraft={handleSaveDraft}
+                onDelete={handleDeleteSelected}
+                onOpenPicker={() => setPickerOpen(true)}
+                compact
+              />
+            </PinPopupAnchor>
+          ) : null}
           <OrbitControls
             enablePan={false}
             minDistance={1.3}
@@ -497,21 +556,27 @@ export function Explorer({
           : "tap any pin to see its note"}
       </p>
 
-      <PinPanel
-        pin={selected}
-        body={body}
-        isAdmin={isAdmin}
-        isDraft={selectedIsDraft}
-        pending={pending}
-        linkedPhotos={linkedPhotos}
-        onSetType={handleSetType}
-        onSaveNote={handleNoteSave}
-        onSaveDraft={handleSaveDraft}
-        onDelete={handleDeleteSelected}
-        onOpenPicker={() => setPickerOpen(true)}
-      />
+      {pinMode === "inline" ? (
+        <PinPanel
+          pin={selected}
+          body={body}
+          isAdmin={isAdmin}
+          isDraft={selectedIsDraft}
+          pending={pending}
+          linkedPhotos={linkedPhotos}
+          onSetType={handleSetType}
+          onSaveNote={handleNoteSave}
+          onSaveDraft={handleSaveDraft}
+          onDelete={handleDeleteSelected}
+          onOpenPicker={() => setPickerOpen(true)}
+        />
+      ) : !selected && isAdmin ? (
+        <p className="rounded-lg bg-white border border-pink-100 shadow-soft p-4 text-center text-xs text-lavender-600">
+          ✿ popup mode · tap the surface to drop a draft pin
+        </p>
+      ) : null}
 
-      {selected && !selectedIsDraft ? (
+      {pinMode === "inline" && selected && !selectedIsDraft ? (
         feedLoading ? (
           <div className="rounded-md px-4 py-3 bg-pink-50/60 border border-pink-100 text-xs text-lavender-600 font-semibold text-center">
             ✦ loading feed…
@@ -574,6 +639,34 @@ function BodyButton({
   );
 }
 
+function PinPopupAnchor({
+  pin,
+  children,
+}: {
+  pin: Pin;
+  children: React.ReactNode;
+}) {
+  // Anchor point is the pin position lifted slightly off the sphere so the
+  // popup floats above the marker.
+  const pos = new THREE.Vector3(pin.position_x, pin.position_y, pin.position_z)
+    .normalize()
+    .multiplyScalar(1.05)
+    .toArray() as [number, number, number];
+  return (
+    <Html
+      position={pos}
+      center
+      distanceFactor={3}
+      zIndexRange={[100, 0]}
+      // pointer-events on the wrapper so children can take clicks; the
+      // outer canvas still receives drag events that don't hit the popup.
+      style={{ pointerEvents: "auto" }}
+    >
+      <div className="w-[320px] max-w-[80vw]">{children}</div>
+    </Html>
+  );
+}
+
 function PinPanel({
   pin,
   body,
@@ -581,6 +674,7 @@ function PinPanel({
   isDraft,
   pending,
   linkedPhotos,
+  compact = false,
   onSetType,
   onSaveNote,
   onSaveDraft,
@@ -593,6 +687,7 @@ function PinPanel({
   isDraft: boolean;
   pending: boolean;
   linkedPhotos: Photo[];
+  compact?: boolean;
   onSetType: (t: PinType) => void;
   onSaveNote: (note: string) => void;
   onSaveDraft: () => void;
@@ -606,6 +701,7 @@ function PinPanel({
   }, [pin?.id, pin?.note]);
 
   if (!pin) {
+    if (compact) return null;
     return (
       <div className="rounded-lg bg-white border border-pink-100 shadow-soft p-6 text-center text-sm text-lavender-600">
         ✿ no pin selected ·{" "}
@@ -623,9 +719,10 @@ function PinPanel({
   return (
     <div
       className={
-        "rounded-lg shadow-soft p-5 flex flex-col gap-4 border " +
+        "rounded-lg shadow-soft flex flex-col gap-3 border " +
+        (compact ? "p-3 text-xs " : "p-5 gap-4 ") +
         (isDraft
-          ? "bg-pink-50/70 border-pink-200 border-dashed"
+          ? "bg-pink-50/95 border-pink-200 border-dashed"
           : "bg-white border-pink-100")
       }
     >

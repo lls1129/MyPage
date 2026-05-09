@@ -101,6 +101,20 @@ export async function listPhotosForPicker(): Promise<
   return { ok: false, error: result.message };
 }
 
+export async function setExplorePinMode(mode: "inline" | "popup") {
+  await requireAdmin();
+  if (mode !== "inline" && mode !== "popup") {
+    return { ok: false, error: "Invalid mode." };
+  }
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({ key: "explore_pin_mode", value: mode, updated_at: new Date().toISOString() });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/explore");
+  return { ok: true };
+}
+
 export async function clearPinsForBody(body: PinBody) {
   await requireAdmin();
   if (body !== "earth" && body !== "moon") {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
 import { listPins } from "@/lib/supabase/pins";
 import { getCurrentAdmin } from "@/lib/supabase/server";
+import { getExplorePinMode } from "@/lib/supabase/settings";
 import { Explorer } from "./Explorer";
 
 export const metadata: Metadata = {
@@ -12,8 +13,11 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function ExplorePage() {
-  const result = await listPins();
-  const admin = await getCurrentAdmin();
+  const [result, admin, pinMode] = await Promise.all([
+    listPins(),
+    getCurrentAdmin(),
+    getExplorePinMode(),
+  ]);
   const pins = result.kind === "ok" ? result.pins : [];
 
   return (
@@ -63,7 +67,11 @@ export default async function ExplorePage() {
         </div>
       ) : null}
 
-      <Explorer initialPins={pins} isAdmin={Boolean(admin)} />
+      <Explorer
+        initialPins={pins}
+        isAdmin={Boolean(admin)}
+        initialPinMode={pinMode}
+      />
     </PageShell>
   );
 }
