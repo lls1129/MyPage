@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
-import { DEFAULT_LOCATION } from "@/lib/astronomy/location";
+import { locationFromSearchParams } from "@/lib/astronomy/location";
 import { tonightSky, formatTime, type SkyObject } from "@/lib/astronomy/sky";
 import { fetchTonightWeather } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
 import { SkyChart } from "./components/SkyChart";
+import { LocationPicker } from "./LocationPicker";
 
 export const metadata: Metadata = {
   title: "astronomy · my world",
@@ -13,8 +14,18 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function AstronomyPage() {
-  const location = DEFAULT_LOCATION;
+export default async function AstronomyPage(
+  props: PageProps<"/astronomy">
+) {
+  const sp = await props.searchParams;
+  const pickFirst = (v: string | string[] | undefined) =>
+    Array.isArray(v) ? v[0] : v;
+  const location = locationFromSearchParams({
+    lat: pickFirst(sp?.lat),
+    lon: pickFirst(sp?.lon),
+    tz: pickFirst(sp?.tz),
+    name: pickFirst(sp?.name),
+  });
   const now = new Date();
   const sky = tonightSky(now, location);
   const weather = await fetchTonightWeather(location);
@@ -44,18 +55,21 @@ export default async function AstronomyPage() {
           tonight&apos;s sky
         </h1>
         <p className="text-ink/80 text-sm mt-3 max-w-prose">
-          live data for {location.name}. sun/moon via SunCalc, planet positions
-          via astronomy-engine, cloud cover via Open-Meteo.
+          live snapshot. sun/moon via SunCalc, planet positions via
+          astronomy-engine, cloud cover via Open-Meteo. hit refresh for newer
+          data.
         </p>
       </header>
+
+      <LocationPicker current={location} />
 
       {/* Dark navy panel */}
       <section className="rounded-lg bg-skynavy-700 border border-skynavy-500 shadow-soft text-cream p-6 md:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <p className="label text-pink-200">{location.name}</p>
+            <p className="label text-pink-200 capitalize">{location.name}</p>
             <p className="font-script text-cream text-3xl leading-none mt-1">
-              {formatTime(now, location.timezone)} · pacific
+              {formatTime(now, location.timezone)}
             </p>
           </div>
           <p className="text-xs text-cream/60 font-semibold">

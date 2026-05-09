@@ -36,7 +36,7 @@ export function SkyChart({ objects }: { objects: SkyObject[] }) {
   return (
     <svg
       viewBox={`0 0 ${SIZE} ${SIZE}`}
-      className="w-full max-w-[440px] mx-auto block"
+      className="w-full max-w-[600px] mx-auto block"
       role="img"
       aria-label="sky chart"
     >
