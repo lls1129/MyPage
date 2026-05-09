@@ -4,7 +4,7 @@ export function FeaturedExplorerTile() {
   return (
     <Link
       href="/explore"
-      className="lift relative col-span-3 row-span-2 md:col-span-2 md:row-span-2 rounded-lg overflow-hidden border-2 border-white shadow-soft bg-skynavy-700 text-cream block"
+      className="lift relative col-span-1 row-span-2 md:col-span-2 md:row-span-2 aspect-[4/3] md:aspect-auto rounded-lg overflow-hidden border-2 border-white shadow-soft bg-skynavy-700 text-cream block"
       style={{
         backgroundImage:
           "radial-gradient(ellipse at 30% 20%, #26215C 0%, #1A1740 55%, #0F0D2E 100%)",

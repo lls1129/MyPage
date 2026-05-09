@@ -7,7 +7,7 @@ import { BlogTile } from "./BlogTile";
 export function HomeGrid() {
   return (
     <section
-      className="grid grid-cols-3 gap-4"
+      className="grid grid-cols-1 md:grid-cols-3 gap-4"
       style={{ gridAutoRows: "minmax(140px, auto)" }}
     >
       <FeaturedExplorerTile />

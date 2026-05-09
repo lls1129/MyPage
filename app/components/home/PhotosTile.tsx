@@ -11,7 +11,7 @@ export function PhotosTile() {
   return (
     <Link
       href="/photos"
-      className="lift col-span-3 row-span-1 md:col-span-1 md:row-span-2 rounded-lg bg-white border border-pink-100 shadow-soft p-6 flex flex-col gap-4 hover:border-pink-200"
+      className="lift col-span-1 row-span-1 md:row-span-2 rounded-lg bg-white border border-pink-100 shadow-soft p-6 flex flex-col gap-4 hover:border-pink-200"
     >
       <div className="flex items-baseline justify-between">
         <span className="label text-pink-600">photos</span>
