@@ -1,20 +1,25 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, useTransition } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stars, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import type { Pin, PinBody, PinType } from "@/lib/supabase/pins";
+import type { Photo } from "@/lib/supabase/photos";
 import {
   createPin,
   updatePinNote,
   updatePinType,
   deletePin,
   clearPinsForBody,
+  linkPinPhotos,
+  listPhotosForPicker,
 } from "./admin-actions";
 import { getPinFeed, type PinFeed } from "./feed-actions";
 import { FeedCard } from "./FeedCard";
+import { PhotoPicker } from "./PhotoPicker";
 
 const TYPE_COLORS: Record<PinType, string> = {
   travel: "#D4537E",
@@ -30,8 +35,8 @@ const TYPE_LABELS: Record<PinType, string> = {
 
 const TYPES: PinType[] = ["travel", "diary", "astronomy"];
 
-// Decorative starfield using a Stars component from drei (the bigger one,
-// not the one already in the prototype's old shader).
+const DRAFT_PREFIX = "draft-";
+const isDraftId = (id: string) => id.startsWith(DRAFT_PREFIX);
 
 function pointToLatLon(p: [number, number, number]): { lat: number; lon: number } {
   const v = new THREE.Vector3(...p).normalize();
@@ -75,7 +80,6 @@ function BodySphere({
   onSurfaceClick: (point: [number, number, number]) => void;
 }) {
   const texture = useTexture(textureUrl);
-  // Improve sharpness at oblique angles — matches the prototype.
   texture.anisotropy = 8;
   return (
     <mesh
@@ -95,10 +99,12 @@ function BodySphere({
 function PinMesh({
   pin,
   selected,
+  isDraft,
   onClick,
 }: {
   pin: Pin;
   selected: boolean;
+  isDraft: boolean;
   onClick: () => void;
 }) {
   const pos = new THREE.Vector3(pin.position_x, pin.position_y, pin.position_z)
@@ -115,7 +121,11 @@ function PinMesh({
       }}
     >
       <sphereGeometry args={[0.025, 16, 16]} />
-      <meshBasicMaterial color={TYPE_COLORS[pin.type]} />
+      <meshBasicMaterial
+        color={TYPE_COLORS[pin.type]}
+        transparent={isDraft}
+        opacity={isDraft ? 0.45 : 1}
+      />
     </mesh>
   );
 }
@@ -131,21 +141,57 @@ export function Explorer({
   const [body, setBody] = useState<PinBody>("earth");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pins, setPins] = useState<Pin[]>(initialPins);
+  const [draft, setDraft] = useState<Pin | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [feed, setFeed] = useState<PinFeed | null>(null);
   const [feedLoading, setFeedLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Sync state when server data changes (e.g. router.refresh() lands).
+  // Sync server-side state.
   useEffect(() => setPins(initialPins), [initialPins]);
 
-  const currentPins = pins.filter((p) => p.body === body);
-  const selected = currentPins.find((p) => p.id === selectedId) ?? null;
+  // Combined list (server pins + local draft) filtered by body.
+  const allForBody = useMemo(() => {
+    const base = pins.filter((p) => p.body === body);
+    if (draft && draft.body === body) return [draft, ...base];
+    return base;
+  }, [pins, draft, body]);
 
-  // Fetch the feed when selection or its type changes; keyed on id+type so
-  // changing the chip refreshes the feed.
+  const selected = allForBody.find((p) => p.id === selectedId) ?? null;
+  const selectedIsDraft = Boolean(selected && isDraftId(selected.id));
+
+  const counts = {
+    earth: pins.filter((p) => p.body === "earth").length,
+    moon: pins.filter((p) => p.body === "moon").length,
+  };
+
+  // Resolve linked photo objects for the panel — only for committed pins.
+  // Stored as a small list so we don't ship the full library in props.
+  const [linkedPhotos, setLinkedPhotos] = useState<Photo[]>([]);
   useEffect(() => {
-    if (!selected) {
+    if (!selected || selectedIsDraft || selected.photo_ids.length === 0) {
+      setLinkedPhotos([]);
+      return;
+    }
+    let cancelled = false;
+    listPhotosForPicker().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setLinkedPhotos([]);
+        return;
+      }
+      const wanted = new Set(selected.photo_ids);
+      setLinkedPhotos(result.photos.filter((p) => wanted.has(p.id)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.photo_ids?.join(","), selectedIsDraft]);
+
+  // Fetch the feed only for committed pins.
+  useEffect(() => {
+    if (!selected || selectedIsDraft) {
       setFeed(null);
       return;
     }
@@ -159,82 +205,148 @@ export function Explorer({
     return () => {
       cancelled = true;
     };
-  }, [selected?.id, selected?.type, selected?.body]);
-  const counts = {
-    earth: pins.filter((p) => p.body === "earth").length,
-    moon: pins.filter((p) => p.body === "moon").length,
-  };
+  }, [selected?.id, selected?.type, selected?.body, selectedIsDraft]);
 
-  function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
-    startTransition(async () => {
-      setError(null);
-      const result = await fn();
-      if (!result.ok) {
-        setError(result.error ?? "Action failed.");
-        return;
-      }
-      router.refresh();
-    });
+  function discardDraftIfAny() {
+    if (draft) setDraft(null);
   }
 
   function handleBodyClick(point: [number, number, number]) {
     if (!isAdmin) return;
-    startTransition(async () => {
-      setError(null);
-      const result = await createPin({ body, type: "travel", position: point });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      // Optimistically add so the new pin is selectable immediately.
-      const newPin: Pin = {
-        id: result.id,
-        body,
-        type: "travel",
-        position_x: point[0],
-        position_y: point[1],
-        position_z: point[2],
-        note: "",
-        created_at: new Date().toISOString(),
-      };
-      setPins((prev) => [newPin, ...prev]);
-      setSelectedId(result.id);
-      router.refresh();
-    });
+    discardDraftIfAny();
+    const id = `${DRAFT_PREFIX}${crypto.randomUUID()}`;
+    const newDraft: Pin = {
+      id,
+      body,
+      type: "travel",
+      position_x: point[0],
+      position_y: point[1],
+      position_z: point[2],
+      note: "",
+      photo_ids: [],
+      created_at: new Date().toISOString(),
+    };
+    setDraft(newDraft);
+    setSelectedId(id);
+    setError(null);
   }
 
   function handleSelectPin(id: string) {
+    if (id !== draft?.id) discardDraftIfAny();
     setSelectedId(selectedId === id ? null : id);
   }
 
   function handleSwitchBody(next: PinBody) {
     setBody(next);
     setSelectedId(null);
+    discardDraftIfAny();
+  }
+
+  // Commit the draft to the server. Optionally apply pending updates
+  // (type / note / photo_ids) before the server rounds-trip so the new
+  // committed row already has them.
+  async function commitDraft(updates: {
+    type?: PinType;
+    note?: string;
+    photoIds?: string[];
+  } = {}): Promise<string | null> {
+    if (!draft) return null;
+    const result = await createPin({
+      body: draft.body,
+      type: updates.type ?? draft.type,
+      position: [draft.position_x, draft.position_y, draft.position_z],
+    });
+    if (!result.ok) {
+      setError(result.error);
+      return null;
+    }
+    const newId = result.id;
+    // Apply note + photo_ids in parallel — both are no-ops if empty.
+    const tasks: Promise<unknown>[] = [];
+    if (updates.note && updates.note.length > 0)
+      tasks.push(updatePinNote(newId, updates.note));
+    if (updates.photoIds && updates.photoIds.length > 0)
+      tasks.push(linkPinPhotos(newId, updates.photoIds));
+    await Promise.all(tasks);
+
+    // Optimistically place the committed pin in local state.
+    setPins((prev) => [
+      {
+        id: newId,
+        body: draft.body,
+        type: updates.type ?? draft.type,
+        position_x: draft.position_x,
+        position_y: draft.position_y,
+        position_z: draft.position_z,
+        note: updates.note ?? "",
+        photo_ids: updates.photoIds ?? [],
+        created_at: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+    setDraft(null);
+    setSelectedId(newId);
+    router.refresh();
+    return newId;
   }
 
   function handleSetType(type: PinType) {
     if (!selected) return;
-    setPins((prev) =>
-      prev.map((p) => (p.id === selected.id ? { ...p, type } : p))
-    );
-    run(() => updatePinType(selected.id, type));
+    if (selectedIsDraft) {
+      startTransition(async () => {
+        await commitDraft({ type });
+      });
+    } else {
+      setPins((prev) =>
+        prev.map((p) => (p.id === selected.id ? { ...p, type } : p))
+      );
+      startTransition(async () => {
+        const r = await updatePinType(selected.id, type);
+        if (!r.ok) setError(r.error ?? "Update failed.");
+        else router.refresh();
+      });
+    }
   }
 
   function handleNoteSave(note: string) {
     if (!selected) return;
-    setPins((prev) =>
-      prev.map((p) => (p.id === selected.id ? { ...p, note } : p))
-    );
-    run(() => updatePinNote(selected.id, note));
+    const trimmed = note.trim();
+    if (selectedIsDraft) {
+      // Empty note doesn't commit a draft — stay as-is so an idle click
+      // can still be discarded.
+      if (trimmed.length === 0) return;
+      startTransition(async () => {
+        await commitDraft({ note });
+      });
+    } else {
+      setPins((prev) =>
+        prev.map((p) => (p.id === selected.id ? { ...p, note } : p))
+      );
+      startTransition(async () => {
+        const r = await updatePinNote(selected.id, note);
+        if (!r.ok) setError(r.error ?? "Update failed.");
+        else router.refresh();
+      });
+    }
   }
 
   function handleDeleteSelected() {
     if (!selected) return;
+    if (selectedIsDraft) {
+      // Drafts aren't on the server — just discard locally.
+      setDraft(null);
+      setSelectedId(null);
+      return;
+    }
     if (!confirm("Delete this pin?")) return;
     const id = selected.id;
     setPins((prev) => prev.filter((p) => p.id !== id));
     setSelectedId(null);
-    run(() => deletePin(id));
+    startTransition(async () => {
+      const r = await deletePin(id);
+      if (!r.ok) setError(r.error ?? "Delete failed.");
+      else router.refresh();
+    });
   }
 
   function handleClearAll() {
@@ -242,7 +354,28 @@ export function Explorer({
       return;
     setPins((prev) => prev.filter((p) => p.body !== body));
     setSelectedId(null);
-    run(() => clearPinsForBody(body));
+    discardDraftIfAny();
+    startTransition(async () => {
+      const r = await clearPinsForBody(body);
+      if (!r.ok) setError(r.error ?? "Clear failed.");
+      else router.refresh();
+    });
+  }
+
+  async function handleSavePhotoLinks(photoIds: string[]) {
+    if (!selected) return { ok: false, error: "No pin selected." };
+    if (selectedIsDraft) {
+      // Commit draft first with the linked photos.
+      const newId = await commitDraft({ photoIds });
+      return newId ? { ok: true } : { ok: false, error: "Could not save pin." };
+    }
+    // Update existing pin.
+    setPins((prev) =>
+      prev.map((p) => (p.id === selected.id ? { ...p, photo_ids: photoIds } : p))
+    );
+    const r = await linkPinPhotos(selected.id, photoIds);
+    if (r.ok) router.refresh();
+    return r;
   }
 
   return (
@@ -318,11 +451,12 @@ export function Explorer({
               onSurfaceClick={handleBodyClick}
             />
           </Suspense>
-          {currentPins.map((pin) => (
+          {allForBody.map((pin) => (
             <PinMesh
               key={pin.id}
               pin={pin}
               selected={pin.id === selectedId}
+              isDraft={isDraftId(pin.id)}
               onClick={() => handleSelectPin(pin.id)}
             />
           ))}
@@ -341,7 +475,7 @@ export function Explorer({
       <p className="text-center text-xs text-lavender-600 font-semibold">
         drag to rotate · scroll to zoom ·{" "}
         {isAdmin
-          ? "tap the surface to drop a pin · tap a pin to select"
+          ? "tap the surface to drop a draft pin · type a note or pick a photo to keep it"
           : "tap any pin to see its note"}
       </p>
 
@@ -349,19 +483,22 @@ export function Explorer({
         pin={selected}
         body={body}
         isAdmin={isAdmin}
+        isDraft={selectedIsDraft}
         pending={pending}
+        linkedPhotos={linkedPhotos}
         onSetType={handleSetType}
         onSaveNote={handleNoteSave}
         onDelete={handleDeleteSelected}
+        onOpenPicker={() => setPickerOpen(true)}
       />
 
-      {selected ? (
+      {selected && !selectedIsDraft ? (
         feedLoading ? (
           <div className="rounded-md px-4 py-3 bg-pink-50/60 border border-pink-100 text-xs text-lavender-600 font-semibold text-center">
             ✦ loading feed…
           </div>
         ) : (
-          <FeedCard feed={feed} />
+          <FeedCard feed={feed} linkedPhotos={linkedPhotos} />
         )
       ) : null}
 
@@ -369,6 +506,14 @@ export function Explorer({
         <p className="text-xs text-pink-600 font-semibold text-center">
           {error}
         </p>
+      ) : null}
+
+      {pickerOpen && selected ? (
+        <PhotoPicker
+          initialSelected={selected.photo_ids}
+          onClose={() => setPickerOpen(false)}
+          onSave={handleSavePhotoLinks}
+        />
       ) : null}
     </div>
   );
@@ -414,22 +559,27 @@ function PinPanel({
   pin,
   body,
   isAdmin,
+  isDraft,
   pending,
+  linkedPhotos,
   onSetType,
   onSaveNote,
   onDelete,
+  onOpenPicker,
 }: {
   pin: Pin | null;
   body: PinBody;
   isAdmin: boolean;
+  isDraft: boolean;
   pending: boolean;
+  linkedPhotos: Photo[];
   onSetType: (t: PinType) => void;
   onSaveNote: (note: string) => void;
   onDelete: () => void;
+  onOpenPicker: () => void;
 }) {
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Reset textarea when selection changes.
   useEffect(() => {
     if (noteRef.current) noteRef.current.value = pin?.note ?? "";
   }, [pin?.id, pin?.note]);
@@ -439,7 +589,7 @@ function PinPanel({
       <div className="rounded-lg bg-white border border-pink-100 shadow-soft p-6 text-center text-sm text-lavender-600">
         ✿ no pin selected ·{" "}
         {isAdmin
-          ? "tap anywhere on the surface to drop one"
+          ? "tap anywhere on the surface to drop a draft"
           : "tap any pin on the globe"}
       </div>
     );
@@ -450,7 +600,20 @@ function PinPanel({
   const coords = formatCoords(lat, lon);
 
   return (
-    <div className="rounded-lg bg-white border border-pink-100 shadow-soft p-5 flex flex-col gap-4">
+    <div
+      className={
+        "rounded-lg shadow-soft p-5 flex flex-col gap-4 border " +
+        (isDraft
+          ? "bg-pink-50/70 border-pink-200 border-dashed"
+          : "bg-white border-pink-100")
+      }
+    >
+      {isDraft ? (
+        <p className="text-xs text-pink-800 font-semibold">
+          ✿ draft pin · change type, add a note, or link a photo to save · clicking elsewhere will discard it
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {TYPES.map((t) => (
           <button
@@ -482,7 +645,8 @@ function PinPanel({
             type="button"
             onClick={onDelete}
             disabled={pending}
-            aria-label="delete pin"
+            aria-label={isDraft ? "discard draft" : "delete pin"}
+            title={isDraft ? "discard draft" : "delete pin"}
             className="w-9 h-9 rounded-full text-sm font-semibold bg-pink-100 text-pink-600 hover:bg-pink-200 transition-colors disabled:opacity-50"
           >
             ✕
@@ -510,6 +674,56 @@ function PinPanel({
           (no note yet)
         </p>
       )}
+
+      {/* Linked photos */}
+      {linkedPhotos.length > 0 || isAdmin ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="label text-pink-600">linked photos</p>
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={onOpenPicker}
+                disabled={pending}
+                className="text-xs font-semibold text-pink-600 hover:text-pink-800 disabled:opacity-50"
+              >
+                {linkedPhotos.length === 0 ? "+ link photos" : "edit links"}
+              </button>
+            ) : null}
+          </div>
+          {linkedPhotos.length === 0 ? (
+            isAdmin ? (
+              <p className="text-xs text-lavender-600 font-semibold italic">
+                none yet
+              </p>
+            ) : null
+          ) : (
+            <ul className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+              {linkedPhotos.map((p) => (
+                <li key={p.id}>
+                  <Link
+                    href="/photos"
+                    className="block aspect-square rounded-sm overflow-hidden border border-pink-100 hover:border-pink-200"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.image_url}
+                      alt={p.caption || ""}
+                      loading="lazy"
+                      style={
+                        p.rotation
+                          ? { transform: `rotate(${p.rotation}deg)` }
+                          : undefined
+                      }
+                      className="w-full h-full object-cover"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

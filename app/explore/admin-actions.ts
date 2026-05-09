@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PinBody, PinType } from "@/lib/supabase/pins";
+import { listAllPhotosAsAdmin, type Photo } from "@/lib/supabase/photos";
 
 export async function createPin(input: {
   body: PinBody;
@@ -71,6 +72,33 @@ export async function deletePin(id: string) {
   if (error) return { ok: false, error: error.message };
   revalidatePath("/explore");
   return { ok: true };
+}
+
+export async function linkPinPhotos(id: string, photoIds: string[]) {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "Missing id." };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("pins")
+    .update({ photo_ids: photoIds })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/explore");
+  return { ok: true };
+}
+
+// For the photo picker modal — pulls all photos (incl. hidden) so the admin
+// can attach any of them to a pin.
+export async function listPhotosForPicker(): Promise<
+  { ok: true; photos: Photo[] } | { ok: false; error: string }
+> {
+  await requireAdmin();
+  const result = await listAllPhotosAsAdmin();
+  if (result.kind === "ok") return { ok: true, photos: result.photos };
+  if (result.kind === "unconfigured" || result.kind === "schema-missing") {
+    return { ok: false, error: "Photos aren't configured yet." };
+  }
+  return { ok: false, error: result.message };
 }
 
 export async function clearPinsForBody(body: PinBody) {

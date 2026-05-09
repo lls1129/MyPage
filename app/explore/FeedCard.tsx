@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import type { Photo } from "@/lib/supabase/photos";
 import type { PinFeed } from "./feed-actions";
 
-export function FeedCard({ feed }: { feed: PinFeed | null }) {
+export function FeedCard({
+  feed,
+  linkedPhotos = [],
+}: {
+  feed: PinFeed | null;
+  linkedPhotos?: Photo[];
+}) {
   if (!feed || feed.kind === "empty") return null;
 
   if (feed.kind === "error") {
@@ -72,17 +79,49 @@ export function FeedCard({ feed }: { feed: PinFeed | null }) {
         <strong className="block text-lavender-600 text-[11px] uppercase tracking-wider mb-1">
           ✿ my memories
         </strong>
-        <p className="text-sm text-ink/85">
-          {feed.photoCount === 0
-            ? "no photos in your album yet."
-            : `your album has ${feed.photoCount} photo${feed.photoCount === 1 ? "" : "s"} so far.`}{" "}
-          <Link
-            href="/photos"
-            className="text-lavender-600 underline decoration-lavender-200 underline-offset-2 hover:decoration-lavender-400 font-semibold"
-          >
-            browse the album →
-          </Link>
-        </p>
+        {linkedPhotos.length > 0 ? (
+          <>
+            <p className="text-sm text-ink/85">
+              {linkedPhotos.length} photo{linkedPhotos.length === 1 ? "" : "s"}{" "}
+              from this place.
+            </p>
+            <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+              {linkedPhotos.slice(0, 8).map((p) => (
+                <li key={p.id}>
+                  <Link
+                    href="/photos"
+                    className="block aspect-square rounded-sm overflow-hidden border border-lavender-200 hover:border-lavender-400"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.image_url}
+                      alt={p.caption || ""}
+                      loading="lazy"
+                      style={
+                        p.rotation
+                          ? { transform: `rotate(${p.rotation}deg)` }
+                          : undefined
+                      }
+                      className="w-full h-full object-cover"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="text-sm text-ink/85">
+            {feed.photoCount === 0
+              ? "no photos in your album yet."
+              : `your album has ${feed.photoCount} photo${feed.photoCount === 1 ? "" : "s"} so far.`}{" "}
+            <Link
+              href="/photos"
+              className="text-lavender-600 underline decoration-lavender-200 underline-offset-2 hover:decoration-lavender-400 font-semibold"
+            >
+              browse the album →
+            </Link>
+          </p>
+        )}
       </CardShell>
     );
   }

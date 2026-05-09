@@ -12,6 +12,7 @@ export type Pin = {
   position_y: number;
   position_z: number;
   note: string;
+  photo_ids: string[];
   created_at: string;
 };
 
