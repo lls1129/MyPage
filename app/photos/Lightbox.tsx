@@ -1,20 +1,36 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Photo } from "@/lib/supabase/photos";
 
 export function Lightbox({
   photos,
   index,
+  isAdmin,
   onClose,
   onChange,
+  onEdit,
+  onToggleHidden,
+  onDelete,
+  busy,
 }: {
   photos: Photo[];
   index: number;
+  isAdmin?: boolean;
   onClose: () => void;
   onChange: (i: number) => void;
+  onEdit?: (photo: Photo) => void;
+  onToggleHidden?: (photo: Photo) => void;
+  onDelete?: (photo: Photo) => void;
+  busy?: boolean;
 }) {
   const photo = photos[index];
+
+  // Render into document.body so the fixed-position backdrop can't get
+  // trapped by an ancestor's containing block (transform / contain / etc).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const goPrev = useCallback(() => {
     onChange((index - 1 + photos.length) % photos.length);
@@ -39,7 +55,7 @@ export function Lightbox({
     };
   }, [onClose, goPrev, goNext]);
 
-  if (!photo) return null;
+  if (!photo || !mounted) return null;
 
   const date = photo.taken_at ?? photo.created_at;
   const dateLabel = date
@@ -50,17 +66,19 @@ export function Lightbox({
       })
     : null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={photo.caption || "photo"}
-      className="fixed inset-0 z-50 bg-skynavy-900/95 backdrop-blur-sm flex flex-col"
+      className="fixed inset-0 z-[100] bg-skynavy-900/95 backdrop-blur-sm flex flex-col"
       onClick={onClose}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between p-4 text-cream/80">
-        <span className="font-script text-cream/70 text-xl select-none">✿</span>
+        <span className="font-script text-cream/70 text-xl select-none">
+          {photo.hidden ? "○ hidden" : "✿"}
+        </span>
         <button
           type="button"
           onClick={onClose}
@@ -126,11 +144,68 @@ export function Lightbox({
               ))}
             </div>
           ) : null}
+
+          {isAdmin && (onEdit || onToggleHidden || onDelete) ? (
+            <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-cream/10">
+              {onEdit ? (
+                <ActionBtn onClick={() => onEdit(photo)} disabled={busy}>
+                  ✎ edit
+                </ActionBtn>
+              ) : null}
+              {onToggleHidden ? (
+                <ActionBtn
+                  onClick={() => onToggleHidden(photo)}
+                  disabled={busy}
+                >
+                  {photo.hidden ? "○ show" : "◐ hide"}
+                </ActionBtn>
+              ) : null}
+              {onDelete ? (
+                <ActionBtn
+                  onClick={() => onDelete(photo)}
+                  disabled={busy}
+                  danger
+                >
+                  ✕ delete
+                </ActionBtn>
+              ) : null}
+            </div>
+          ) : null}
+
           <p className="text-[11px] text-cream/50 mt-3">
             {index + 1} of {photos.length} · arrow keys to browse · esc to close
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
+  );
+}
+
+function ActionBtn({
+  children,
+  onClick,
+  disabled,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "rounded-pill px-3 py-1.5 text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-wait " +
+        (danger
+          ? "bg-cream/5 text-pink-200 border-pink-400/40 hover:bg-pink-400/15"
+          : "bg-cream/10 text-cream border-cream/20 hover:bg-cream/20")
+      }
+    >
+      {children}
+    </button>
   );
 }

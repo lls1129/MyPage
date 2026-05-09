@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
-import { listPhotos } from "@/lib/supabase/photos";
+import { listPhotos, listAllPhotosAsAdmin } from "@/lib/supabase/photos";
+import { getCurrentAdmin } from "@/lib/supabase/server";
 import { PhotoGrid } from "./PhotoGrid";
 
 export const metadata: Metadata = {
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function PhotosPage() {
-  const result = await listPhotos();
+  const admin = await getCurrentAdmin();
+  const result = admin ? await listAllPhotosAsAdmin() : await listPhotos();
 
   return (
     <PageShell>
@@ -27,7 +29,7 @@ export default async function PhotosPage() {
       </header>
 
       {result.kind === "ok" && result.photos.length > 0 ? (
-        <PhotoGrid photos={result.photos} />
+        <PhotoGrid photos={result.photos} isAdmin={Boolean(admin)} />
       ) : null}
 
       {result.kind === "ok" && result.photos.length === 0 ? (

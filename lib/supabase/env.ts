@@ -11,3 +11,9 @@ export function readSupabaseEnv() {
 export function getAdminEmail() {
   return process.env.ADMIN_EMAIL?.trim().toLowerCase();
 }
+
+// Service-role key (server-only). Bypasses RLS for admin writes.
+// Supabase rebranded this to "Secret API key" — either env name works.
+export function getServiceRoleKey() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+}
