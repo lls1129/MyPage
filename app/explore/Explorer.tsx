@@ -368,6 +368,13 @@ export function Explorer({
     });
   }
 
+  function handleSaveDraft() {
+    if (!selected || !selectedIsDraft) return;
+    startTransition(async () => {
+      await commitDraft();
+    });
+  }
+
   async function handleSavePhotoLinks(photoIds: string[]) {
     if (!selected) return { ok: false, error: "No pin selected." };
     if (selectedIsDraft) {
@@ -499,6 +506,7 @@ export function Explorer({
         linkedPhotos={linkedPhotos}
         onSetType={handleSetType}
         onSaveNote={handleNoteSave}
+        onSaveDraft={handleSaveDraft}
         onDelete={handleDeleteSelected}
         onOpenPicker={() => setPickerOpen(true)}
       />
@@ -575,6 +583,7 @@ function PinPanel({
   linkedPhotos,
   onSetType,
   onSaveNote,
+  onSaveDraft,
   onDelete,
   onOpenPicker,
 }: {
@@ -586,6 +595,7 @@ function PinPanel({
   linkedPhotos: Photo[];
   onSetType: (t: PinType) => void;
   onSaveNote: (note: string) => void;
+  onSaveDraft: () => void;
   onDelete: () => void;
   onOpenPicker: () => void;
 }) {
@@ -652,16 +662,29 @@ function PinPanel({
           <span className="text-xs text-lavender-600 font-semibold">{region}</span>
         </div>
         {isAdmin ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={pending}
-            aria-label={isDraft ? "discard draft" : "delete pin"}
-            title={isDraft ? "discard draft" : "delete pin"}
-            className="w-9 h-9 rounded-full text-sm font-semibold bg-pink-100 text-pink-600 hover:bg-pink-200 transition-colors disabled:opacity-50"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {isDraft ? (
+              <button
+                type="button"
+                onClick={onSaveDraft}
+                disabled={pending}
+                title="save pin as-is"
+                className="lift inline-flex items-center rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-3 py-1.5 text-xs font-semibold disabled:opacity-60 disabled:cursor-wait"
+              >
+                ✓ save
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={pending}
+              aria-label={isDraft ? "discard draft" : "delete pin"}
+              title={isDraft ? "discard draft" : "delete pin"}
+              className="w-9 h-9 rounded-full text-sm font-semibold bg-pink-100 text-pink-600 hover:bg-pink-200 transition-colors disabled:opacity-50"
+            >
+              ✕
+            </button>
+          </div>
         ) : null}
       </div>
 
