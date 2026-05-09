@@ -12,6 +12,8 @@ export function Lightbox({
   onChange,
   onEdit,
   onToggleHidden,
+  onRotateLeft,
+  onRotateRight,
   onDelete,
   busy,
 }: {
@@ -22,6 +24,8 @@ export function Lightbox({
   onChange: (i: number) => void;
   onEdit?: (photo: Photo) => void;
   onToggleHidden?: (photo: Photo) => void;
+  onRotateLeft?: (photo: Photo) => void;
+  onRotateRight?: (photo: Photo) => void;
   onDelete?: (photo: Photo) => void;
   busy?: boolean;
 }) {
@@ -108,7 +112,12 @@ export function Lightbox({
           <img
             src={photo.image_url}
             alt={photo.caption || ""}
-            className="max-h-full max-w-full object-contain rounded-md shadow-soft"
+            style={
+              photo.rotation
+                ? { transform: `rotate(${photo.rotation}deg)` }
+                : undefined
+            }
+            className="max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform"
           />
 
           <button
@@ -145,8 +154,18 @@ export function Lightbox({
             </div>
           ) : null}
 
-          {isAdmin && (onEdit || onToggleHidden || onDelete) ? (
+          {isAdmin && (onEdit || onToggleHidden || onRotateLeft || onRotateRight || onDelete) ? (
             <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-cream/10">
+              {onRotateLeft ? (
+                <ActionBtn onClick={() => onRotateLeft(photo)} disabled={busy}>
+                  ↶ rotate
+                </ActionBtn>
+              ) : null}
+              {onRotateRight ? (
+                <ActionBtn onClick={() => onRotateRight(photo)} disabled={busy}>
+                  ↷ rotate
+                </ActionBtn>
+              ) : null}
               {onEdit ? (
                 <ActionBtn onClick={() => onEdit(photo)} disabled={busy}>
                   ✎ edit

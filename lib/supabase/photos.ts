@@ -8,6 +8,7 @@ export type Photo = {
   caption: string;
   tags: string[];
   hidden: boolean;
+  rotation: number;
   width: number | null;
   height: number | null;
   taken_at: string | null;

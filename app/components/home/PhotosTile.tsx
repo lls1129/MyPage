@@ -38,6 +38,11 @@ export async function PhotosTile() {
                 src={photo.image_url}
                 alt={photo.caption || ""}
                 loading="lazy"
+                style={
+                  photo.rotation
+                    ? { transform: `rotate(${photo.rotation}deg)` }
+                    : undefined
+                }
                 className="aspect-square w-full object-cover rounded-sm border border-white/60"
               />
             );

@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import { Lightbox } from "./Lightbox";
 import { PhotoEditModal } from "./PhotoEditModal";
-import { togglePhotoHidden, deletePhoto } from "./admin-actions";
+import { togglePhotoHidden, rotatePhoto, deletePhoto } from "./admin-actions";
+
+function rotationStyle(rotation: number | null | undefined) {
+  if (!rotation) return undefined;
+  return { transform: `rotate(${rotation}deg)` };
+}
 
 export function PhotoGrid({
   photos,
@@ -63,6 +68,14 @@ export function PhotoGrid({
 
   function onToggleHidden(photo: Photo) {
     runAction(() => togglePhotoHidden(photo.id, !photo.hidden));
+  }
+
+  function onRotateLeft(photo: Photo) {
+    runAction(() => rotatePhoto(photo.id, "left"));
+  }
+
+  function onRotateRight(photo: Photo) {
+    runAction(() => rotatePhoto(photo.id, "right"));
   }
 
   function onDelete(photo: Photo) {
@@ -146,6 +159,8 @@ export function PhotoGrid({
               onOpen={() => setOpenIdx(i)}
               onEdit={() => onEdit(photo)}
               onToggleHidden={() => onToggleHidden(photo)}
+              onRotateLeft={() => onRotateLeft(photo)}
+              onRotateRight={() => onRotateRight(photo)}
               onDelete={() => onDelete(photo)}
               busy={pending}
             />
@@ -162,6 +177,8 @@ export function PhotoGrid({
           onChange={setOpenIdx}
           onEdit={onEdit}
           onToggleHidden={onToggleHidden}
+          onRotateLeft={onRotateLeft}
+          onRotateRight={onRotateRight}
           onDelete={onDelete}
           busy={pending}
         />
@@ -180,6 +197,8 @@ function PhotoTile({
   onOpen,
   onEdit,
   onToggleHidden,
+  onRotateLeft,
+  onRotateRight,
   onDelete,
   busy,
 }: {
@@ -188,6 +207,8 @@ function PhotoTile({
   onOpen: () => void;
   onEdit: () => void;
   onToggleHidden: () => void;
+  onRotateLeft: () => void;
+  onRotateRight: () => void;
   onDelete: () => void;
   busy: boolean;
 }) {
@@ -213,8 +234,10 @@ function PhotoTile({
           width={photo.width ?? undefined}
           height={photo.height ?? undefined}
           loading="lazy"
+          style={rotationStyle(photo.rotation)}
           className={
-            "block w-full h-auto " + (photo.hidden ? "opacity-60" : "")
+            "block w-full h-auto transition-transform " +
+            (photo.hidden ? "opacity-60" : "")
           }
         />
       </button>
@@ -232,7 +255,13 @@ function PhotoTile({
       ) : null}
 
       {isAdmin ? (
-        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="absolute top-2 right-2 flex flex-wrap items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <IconBtn label="rotate left" onClick={onRotateLeft} disabled={busy}>
+            ↶
+          </IconBtn>
+          <IconBtn label="rotate right" onClick={onRotateRight} disabled={busy}>
+            ↷
+          </IconBtn>
           <IconBtn label="edit" onClick={onEdit} disabled={busy}>
             ✎
           </IconBtn>

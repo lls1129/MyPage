@@ -9,7 +9,8 @@ import {
 } from "@/lib/astronomy/sky";
 import { fetchTonightWeather, fetchHourlyForecast } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
-import { listAstrophotos } from "@/lib/supabase/astrophotos";
+import { listAstrophotos, listAllAstrophotosAsAdmin } from "@/lib/supabase/astrophotos";
+import { getCurrentAdmin } from "@/lib/supabase/server";
 import { LocationPicker } from "./LocationPicker";
 import { TimeSlider } from "./components/TimeSlider";
 import { WeatherGrid } from "./components/WeatherGrid";
@@ -59,7 +60,10 @@ export default async function AstronomyPage(
     snapshotStart.toISOString(),
     snapshotEnd.toISOString()
   );
-  const astrophotosResult = await listAstrophotos();
+  const admin = await getCurrentAdmin();
+  const astrophotosResult = admin
+    ? await listAllAstrophotosAsAdmin()
+    : await listAstrophotos();
   const astrophotos =
     astrophotosResult.kind === "ok" ? astrophotosResult.astrophotos : [];
   const rec = pickRecommendation(sky, weather);
@@ -149,7 +153,7 @@ export default async function AstronomyPage(
             equipment story.
           </p>
         </header>
-        <AstrophotoGrid astrophotos={astrophotos} />
+        <AstrophotoGrid astrophotos={astrophotos} isAdmin={Boolean(admin)} />
       </section>
     </PageShell>
   );

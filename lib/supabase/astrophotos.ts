@@ -9,6 +9,7 @@ export type Astrophoto = {
   caption: string;
   taken_at: string | null;
   hidden: boolean;
+  rotation: number;
   width: number | null;
   height: number | null;
   telescope: string | null;

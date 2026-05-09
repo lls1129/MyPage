@@ -47,6 +47,31 @@ export async function togglePhotoHidden(id: string, nextHidden: boolean) {
   return { ok: true };
 }
 
+export async function rotatePhoto(id: string, direction: "left" | "right") {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "Missing id." };
+
+  const admin = createAdminClient();
+  const { data: row, error: fetchErr } = await admin
+    .from("photos")
+    .select("rotation")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchErr) return { ok: false, error: fetchErr.message };
+
+  const current = ((row?.rotation ?? 0) + 360) % 360;
+  const next = direction === "right" ? (current + 90) % 360 : (current + 270) % 360;
+
+  const { error } = await admin
+    .from("photos")
+    .update({ rotation: next })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/photos");
+  return { ok: true };
+}
+
 export async function deletePhoto(id: string) {
   await requireAdmin();
   if (!id) return { ok: false, error: "Missing id." };

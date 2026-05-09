@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageShell } from "../../../components/PageShell";
 import { getAstrophoto, type Astrophoto } from "@/lib/supabase/astrophotos";
+import { getCurrentAdmin } from "@/lib/supabase/server";
+import { AdminBar } from "./AdminBar";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +70,7 @@ export default async function AstrophotoDetailPage(
   const photo = result.astrophoto;
   const date = formatDate(photo.taken_at) ?? formatDate(photo.created_at);
   const techRows = TECH_FIELDS.filter((f) => Boolean(photo[f.key]));
+  const admin = await getCurrentAdmin();
 
   return (
     <PageShell>
@@ -79,12 +82,23 @@ export default async function AstrophotoDetailPage(
           ← back to astronomy
         </Link>
 
+        {admin ? (
+          <div className="mt-3">
+            <AdminBar photo={photo} />
+          </div>
+        ) : null}
+
         <div className="rounded-lg overflow-hidden border border-skynavy-500 shadow-soft mt-3 bg-skynavy-900">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={photo.image_url}
             alt={photo.object_name || photo.caption || "astrophoto"}
-            className="w-full h-auto block"
+            style={
+              photo.rotation
+                ? { transform: `rotate(${photo.rotation}deg)` }
+                : undefined
+            }
+            className="w-full h-auto block transition-transform"
           />
         </div>
 
