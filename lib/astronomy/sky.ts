@@ -191,3 +191,58 @@ export function formatTime(date: Date | null, timezone: string): string {
     hour12: true,
   });
 }
+
+export type SkySnapshot = {
+  iso: string;
+  /** Localized "8:30 PM" */
+  label: string;
+  /** Minutes from "now" (the original reference time) — negative for past. */
+  minutesFromNow: number;
+  objects: SkyObject[];
+};
+
+/**
+ * Precompute a list of sky snapshots from `start` to `end` at `stepMinutes`
+ * intervals. Used to drive the time-slider on the client without re-running
+ * SunCalc / astronomy-engine in the browser.
+ */
+export function tonightSnapshots(
+  start: Date,
+  end: Date,
+  stepMinutes: number,
+  location: Location,
+  reference: Date = new Date()
+): SkySnapshot[] {
+  const out: SkySnapshot[] = [];
+  const step = stepMinutes * 60_000;
+  for (let t = start.getTime(); t <= end.getTime(); t += step) {
+    const date = new Date(t);
+    const sky = tonightSky(date, location);
+    out.push({
+      iso: date.toISOString(),
+      label: formatTime(date, location.timezone),
+      minutesFromNow: Math.round((t - reference.getTime()) / 60_000),
+      objects: sky.objects,
+    });
+  }
+  return out;
+}
+
+/** Pick the snapshot whose time is closest to `target`. */
+export function nearestSnapshotIndex(
+  snapshots: SkySnapshot[],
+  target: Date
+): number {
+  if (snapshots.length === 0) return 0;
+  let bestIdx = 0;
+  let bestDiff = Number.POSITIVE_INFINITY;
+  const t = target.getTime();
+  for (let i = 0; i < snapshots.length; i++) {
+    const diff = Math.abs(new Date(snapshots[i].iso).getTime() - t);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
