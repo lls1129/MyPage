@@ -36,9 +36,11 @@ export type PinFeed =
 
 function pointToLatLon(p: { x: number; y: number; z: number }) {
   const v = new THREE.Vector3(p.x, p.y, p.z).normalize();
+  // See client-side note in Explorer.tsx: SphereGeometry UV mapping requires
+  // a negative Z when computing east-west longitude.
   return {
     lat: (Math.asin(v.y) * 180) / Math.PI,
-    lon: (Math.atan2(v.z, v.x) * 180) / Math.PI,
+    lon: (Math.atan2(-v.z, v.x) * 180) / Math.PI,
   };
 }
 

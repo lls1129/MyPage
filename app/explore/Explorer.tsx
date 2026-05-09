@@ -40,9 +40,13 @@ const isDraftId = (id: string) => id.startsWith(DRAFT_PREFIX);
 
 function pointToLatLon(p: [number, number, number]): { lat: number; lon: number } {
   const v = new THREE.Vector3(...p).normalize();
+  // Three.js SphereGeometry's default UV mapping puts +X at lon 0° (centered
+  // on Greenwich for an equirectangular Earth texture), +Z at lon -90° (the
+  // Americas), and -Z at lon +90° (Asia). The atan2 sign for Z is therefore
+  // negated relative to the naive math convention.
   return {
     lat: (Math.asin(v.y) * 180) / Math.PI,
-    lon: (Math.atan2(v.z, v.x) * 180) / Math.PI,
+    lon: (Math.atan2(-v.z, v.x) * 180) / Math.PI,
   };
 }
 
@@ -169,8 +173,9 @@ export function Explorer({
   // Resolve linked photo objects for the panel — only for committed pins.
   // Stored as a small list so we don't ship the full library in props.
   const [linkedPhotos, setLinkedPhotos] = useState<Photo[]>([]);
+  const selectedPhotoIds = selected?.photo_ids ?? [];
   useEffect(() => {
-    if (!selected || selectedIsDraft || selected.photo_ids.length === 0) {
+    if (!selected || selectedIsDraft || selectedPhotoIds.length === 0) {
       setLinkedPhotos([]);
       return;
     }
@@ -181,13 +186,14 @@ export function Explorer({
         setLinkedPhotos([]);
         return;
       }
-      const wanted = new Set(selected.photo_ids);
+      const wanted = new Set(selectedPhotoIds);
       setLinkedPhotos(result.photos.filter((p) => wanted.has(p.id)));
     });
     return () => {
       cancelled = true;
     };
-  }, [selected?.id, selected?.photo_ids?.join(","), selectedIsDraft]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, selectedPhotoIds.join(","), selectedIsDraft]);
 
   // Fetch the feed only for committed pins.
   useEffect(() => {
@@ -515,7 +521,7 @@ export function Explorer({
 
       {pickerOpen && selected ? (
         <PhotoPicker
-          initialSelected={selected.photo_ids}
+          initialSelected={selectedPhotoIds}
           onClose={() => setPickerOpen(false)}
           onSave={handleSavePhotoLinks}
         />

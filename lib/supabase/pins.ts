@@ -43,7 +43,14 @@ export async function listPins(): Promise<PinsResult> {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) return classify(error);
-    return { kind: "ok", pins: (data ?? []) as Pin[] };
+    // photo_ids was added in migration 0005 — default it to [] for rows
+    // returned before the migration was run so client useEffects don't crash
+    // on `.length` of undefined.
+    const pins = (data ?? []).map((row) => ({
+      ...row,
+      photo_ids: Array.isArray(row.photo_ids) ? row.photo_ids : [],
+    })) as Pin[];
+    return { kind: "ok", pins };
   } catch (e) {
     return { kind: "error", message: e instanceof Error ? e.message : String(e) };
   }
