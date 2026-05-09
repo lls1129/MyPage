@@ -424,12 +424,17 @@ export function Explorer({
         </span>
 
         <Canvas
+          flat
           camera={{ position: [0, 0, 2.8], fov: 45 }}
           dpr={[1, 2]}
           gl={{ antialias: true, alpha: true }}
         >
-          <ambientLight intensity={0.4} />
-          <directionalLight position={[5, 2, 5]} intensity={1.0} />
+          {/* `flat` disables R3F's ACES Filmic tone mapping which crushes
+              brightness for our LDR textures. Light intensities here are tuned
+              for Three's modern physically-correct defaults — they look about
+              4x dimmer than they did in the r128 prototype. */}
+          <ambientLight intensity={1.0} />
+          <directionalLight position={[5, 2, 5]} intensity={3.0} />
           <Stars
             radius={50}
             depth={20}
