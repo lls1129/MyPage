@@ -14,6 +14,7 @@ export function Lightbox({
   onToggleHidden,
   onRotateLeft,
   onRotateRight,
+  onConvertToAstro,
   onDelete,
   busy,
 }: {
@@ -26,6 +27,7 @@ export function Lightbox({
   onToggleHidden?: (photo: Photo) => void;
   onRotateLeft?: (photo: Photo) => void;
   onRotateRight?: (photo: Photo) => void;
+  onConvertToAstro?: (photo: Photo) => void;
   onDelete?: (photo: Photo) => void;
   busy?: boolean;
 }) {
@@ -154,7 +156,7 @@ export function Lightbox({
             </div>
           ) : null}
 
-          {isAdmin && (onEdit || onToggleHidden || onRotateLeft || onRotateRight || onDelete) ? (
+          {isAdmin && (onEdit || onToggleHidden || onRotateLeft || onRotateRight || onConvertToAstro || onDelete) ? (
             <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-cream/10">
               {onRotateLeft ? (
                 <ActionBtn onClick={() => onRotateLeft(photo)} disabled={busy}>
@@ -177,6 +179,14 @@ export function Lightbox({
                   disabled={busy}
                 >
                   {photo.hidden ? "○ show" : "◐ hide"}
+                </ActionBtn>
+              ) : null}
+              {onConvertToAstro ? (
+                <ActionBtn
+                  onClick={() => onConvertToAstro(photo)}
+                  disabled={busy}
+                >
+                  ✦ to astrophotos
                 </ActionBtn>
               ) : null}
               {onDelete ? (

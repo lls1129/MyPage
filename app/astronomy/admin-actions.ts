@@ -3,9 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { storageKeyFromAstrophotoUrl } from "@/lib/supabase/astrophotos";
-
-const BUCKET = "astrophotos";
+import { storageRefFromUrl } from "@/lib/supabase/storage-utils";
 
 function trimOrNull(v: FormDataEntryValue | null): string | null {
   if (typeof v !== "string") return null;
@@ -104,13 +102,64 @@ export async function deleteAstrophoto(id: string) {
   if (fetchErr) return { ok: false, error: fetchErr.message };
 
   if (row?.image_url) {
-    const key = storageKeyFromAstrophotoUrl(row.image_url);
-    if (key) await admin.storage.from(BUCKET).remove([key]);
+    const ref = storageRefFromUrl(row.image_url);
+    if (ref) {
+      // Read bucket from URL — converted rows may live in a different one.
+      await admin.storage.from(ref.bucket).remove([ref.key]);
+    }
   }
 
   const { error } = await admin.from("astrophotos").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
+  revalidatePath("/astronomy");
+  return { ok: true };
+}
+
+// Move an astrophoto row from `astrophotos` into `photos`. The file in
+// Storage stays where it is — only the DB row migrates. Caption preserves
+// content; if empty, it falls back to object_name so the entry stays
+// recognizable in /photos.
+export async function convertAstrophotoToPhoto(id: string) {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "Missing id." };
+
+  const admin = createAdminClient();
+  const { data: row, error: fetchErr } = await admin
+    .from("astrophotos")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchErr) return { ok: false, error: fetchErr.message };
+  if (!row) return { ok: false, error: "Astrophoto not found." };
+
+  const caption: string =
+    (row.caption as string)?.trim() || (row.object_name as string) || "";
+
+  const { error: insertErr } = await admin.from("photos").insert({
+    image_url: row.image_url,
+    caption,
+    tags: [] as string[],
+    hidden: row.hidden,
+    rotation: row.rotation ?? 0,
+    width: row.width,
+    height: row.height,
+    taken_at: row.taken_at,
+  });
+  if (insertErr) return { ok: false, error: insertErr.message };
+
+  const { error: deleteErr } = await admin
+    .from("astrophotos")
+    .delete()
+    .eq("id", id);
+  if (deleteErr) {
+    return {
+      ok: false,
+      error: `Inserted into photos but couldn't delete original: ${deleteErr.message}`,
+    };
+  }
+
+  revalidatePath("/photos");
   revalidatePath("/astronomy");
   return { ok: true };
 }

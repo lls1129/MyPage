@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { storageKeyFromPublicUrl } from "@/lib/supabase/photos";
+import { storageRefFromUrl } from "@/lib/supabase/storage-utils";
 
 const BUCKET = "photos";
 
@@ -87,11 +87,11 @@ export async function deletePhoto(id: string) {
   if (fetchError) return { ok: false, error: fetchError.message };
 
   if (row?.image_url) {
-    const key = storageKeyFromPublicUrl(row.image_url, BUCKET);
-    if (key) {
-      // Best-effort — orphaned objects are recoverable, but a missing DB row
-      // is what visitors actually see, so prioritize the DB delete below.
-      await admin.storage.from(BUCKET).remove([key]);
+    const ref = storageRefFromUrl(row.image_url);
+    if (ref) {
+      // Read bucket from URL so converted rows (where the file may live in
+      // a different bucket) still get cleaned up correctly.
+      await admin.storage.from(ref.bucket).remove([ref.key]);
     }
   }
 
@@ -102,5 +102,49 @@ export async function deletePhoto(id: string) {
   if (deleteError) return { ok: false, error: deleteError.message };
 
   revalidatePath("/photos");
+  return { ok: true };
+}
+
+// Move a photo row from `photos` into `astrophotos`. The file in Storage
+// stays where it is — only the DB row migrates. The destination album's
+// object_name defaults to the source caption (admin can edit afterward).
+export async function convertPhotoToAstrophoto(id: string) {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "Missing id." };
+
+  const admin = createAdminClient();
+  const { data: row, error: fetchErr } = await admin
+    .from("photos")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchErr) return { ok: false, error: fetchErr.message };
+  if (!row) return { ok: false, error: "Photo not found." };
+
+  const caption: string = row.caption ?? "";
+  const objectName = caption.trim().slice(0, 80) || "untitled";
+
+  const { error: insertErr } = await admin.from("astrophotos").insert({
+    image_url: row.image_url,
+    object_name: objectName,
+    caption,
+    taken_at: row.taken_at,
+    hidden: row.hidden,
+    rotation: row.rotation ?? 0,
+    width: row.width,
+    height: row.height,
+  });
+  if (insertErr) return { ok: false, error: insertErr.message };
+
+  const { error: deleteErr } = await admin.from("photos").delete().eq("id", id);
+  if (deleteErr) {
+    return {
+      ok: false,
+      error: `Inserted into astrophotos but couldn't delete original: ${deleteErr.message}`,
+    };
+  }
+
+  revalidatePath("/photos");
+  revalidatePath("/astronomy");
   return { ok: true };
 }

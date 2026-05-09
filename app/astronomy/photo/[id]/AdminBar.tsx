@@ -7,6 +7,7 @@ import {
   rotateAstrophoto,
   toggleAstrophotoHidden,
   deleteAstrophoto,
+  convertAstrophotoToPhoto,
 } from "../../admin-actions";
 import { AstrophotoEditModal } from "../../components/AstrophotoEditModal";
 
@@ -40,6 +41,24 @@ export function AdminBar({ photo }: { photo: Astrophoto }) {
     });
   }
 
+  function onConvertToPhoto() {
+    if (
+      !confirm(
+        `Move "${photo.object_name || "untitled"}" into the personal photos album? Equipment metadata will be dropped.`
+      )
+    )
+      return;
+    start(async () => {
+      setError(null);
+      const result = await convertAstrophotoToPhoto(photo.id);
+      if (!result.ok) {
+        setError(result.error ?? "Convert failed.");
+        return;
+      }
+      router.push("/photos");
+    });
+  }
+
   return (
     <>
       <div className="rounded-lg bg-white border border-pink-100 shadow-soft p-4 flex flex-wrap items-center gap-2">
@@ -58,6 +77,9 @@ export function AdminBar({ photo }: { photo: Astrophoto }) {
           disabled={pending}
         >
           {photo.hidden ? "○ show" : "◐ hide"}
+        </Btn>
+        <Btn onClick={onConvertToPhoto} disabled={pending}>
+          ✿ to photos
         </Btn>
         <Btn onClick={onDelete} disabled={pending} danger>
           ✕ delete

@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import { Lightbox } from "./Lightbox";
 import { PhotoEditModal } from "./PhotoEditModal";
-import { togglePhotoHidden, rotatePhoto, deletePhoto } from "./admin-actions";
+import {
+  togglePhotoHidden,
+  rotatePhoto,
+  deletePhoto,
+  convertPhotoToAstrophoto,
+} from "./admin-actions";
 
 function rotationStyle(rotation: number | null | undefined) {
   if (!rotation) return undefined;
@@ -82,6 +87,24 @@ export function PhotoGrid({
     if (!confirm(`Delete this photo? "${photo.caption || "untitled"}"`)) return;
     runAction(() => deletePhoto(photo.id));
     if (openIdx !== null) setOpenIdx(null);
+  }
+
+  function onConvertToAstro(photo: Photo) {
+    if (
+      !confirm(
+        `Move this photo into the astrophotos album? You'll be able to edit the object name + technical metadata afterward.`
+      )
+    )
+      return;
+    startTransition(async () => {
+      setActionError(null);
+      const result = await convertPhotoToAstrophoto(photo.id);
+      if (!result.ok) {
+        setActionError(result.error ?? "Convert failed.");
+        return;
+      }
+      router.push("/astronomy");
+    });
   }
 
   function onEdit(photo: Photo) {
@@ -179,6 +202,7 @@ export function PhotoGrid({
           onToggleHidden={onToggleHidden}
           onRotateLeft={onRotateLeft}
           onRotateRight={onRotateRight}
+          onConvertToAstro={onConvertToAstro}
           onDelete={onDelete}
           busy={pending}
         />
