@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import type { Pin, PinBody, PinType } from "@/lib/supabase/pins";
@@ -297,6 +297,16 @@ export function Explorer({
   function handleBodyClick(point: [number, number, number]) {
     if (dragJustEndedRef.current) return;
     if (!isAdmin) return;
+
+    // In popup mode, an open popup gets dismissed by the first off-pin tap
+    // — same idiom as a modal. The next tap then drops a new draft.
+    if (pinMode === "popup" && (selected || draft)) {
+      discardDraftIfAny();
+      setSelectedId(null);
+      setError(null);
+      return;
+    }
+
     discardDraftIfAny();
     const id = `${DRAFT_PREFIX}${crypto.randomUUID()}`;
     const newDraft: Pin = {
@@ -751,25 +761,44 @@ function PinCard({
   photoThumbUrl: string | null;
   onClick: () => void;
 }) {
-  const pos = new THREE.Vector3(pin.position_x, pin.position_y, pin.position_z)
-    .normalize()
-    .multiplyScalar(1.02)
-    .toArray() as [number, number, number];
+  // Lift the card well clear of the sphere so it's not visually swallowed
+  // by the surface or hidden behind it through the texture.
+  const dir = useMemo(
+    () =>
+      new THREE.Vector3(
+        pin.position_x,
+        pin.position_y,
+        pin.position_z
+      ).normalize(),
+    [pin.position_x, pin.position_y, pin.position_z]
+  );
+  const pos = useMemo(
+    () => dir.clone().multiplyScalar(1.18).toArray() as [number, number, number],
+    [dir]
+  );
   const borderColor = TYPE_COLORS[pin.type];
   const ring = selected ? `0 0 0 2px ${borderColor}55` : "none";
 
+  // Front/back fade based on whether the pin shares a hemisphere with the
+  // camera. We do this by hand so the card is always rendered (preventing
+  // the "totally hidden" failure mode of drei's blending occlusion) but
+  // tells you visually that it's behind.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useFrame(({ camera }) => {
+    if (!buttonRef.current) return;
+    const camDir = camera.position.clone().normalize();
+    const dot = dir.dot(camDir);
+    const front = dot > 0.1;
+    buttonRef.current.style.opacity = front ? "1" : "0.3";
+    buttonRef.current.style.filter = front
+      ? "saturate(1)"
+      : "saturate(0.5) blur(0.3px)";
+  });
+
   return (
-    <Html
-      position={pos}
-      center
-      distanceFactor={3.5}
-      zIndexRange={[20, 0]}
-      // Fade the card out when the pin is on the far side of the sphere so
-      // it visually "goes behind." drei reads scene depth and applies a CSS
-      // blend.
-      occlude="blending"
-    >
+    <Html position={pos} center distanceFactor={3.5} zIndexRange={[20, 0]}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={onClick}
         title={pin.note || `${pin.type} pin`}
