@@ -185,7 +185,7 @@ export function Explorer({
   initialPinMode: ExplorePinMode;
   initialPinDisplay: PinDisplayMode;
   initialCardPhoto: CardPhotoMode;
-  linkedPhotoLookup: Record<string, { image_url: string; rotation: number }>;
+  linkedPhotoLookup: Record<string, Photo>;
 }) {
   const router = useRouter();
   const [body, setBody] = useState<PinBody>("earth");
@@ -296,30 +296,16 @@ export function Explorer({
     moon: pins.filter((p) => p.body === "moon").length,
   };
 
-  // Resolve linked photo objects for the panel — only for committed pins.
-  // Stored as a small list so we don't ship the full library in props.
-  const [linkedPhotos, setLinkedPhotos] = useState<Photo[]>([]);
+  // Resolve linked photo objects for the panel from the page-level lookup —
+  // public-readable, no server roundtrip per selection. Drafts have no
+  // committed photos so they get an empty list.
   const selectedPhotoIds = selected?.photo_ids ?? [];
-  useEffect(() => {
-    if (!selected || selectedIsDraft || selectedPhotoIds.length === 0) {
-      setLinkedPhotos([]);
-      return;
-    }
-    let cancelled = false;
-    listPhotosForPicker().then((result) => {
-      if (cancelled) return;
-      if (!result.ok) {
-        setLinkedPhotos([]);
-        return;
-      }
-      const wanted = new Set(selectedPhotoIds);
-      setLinkedPhotos(result.photos.filter((p) => wanted.has(p.id)));
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, selectedPhotoIds.join(","), selectedIsDraft]);
+  const linkedPhotos = useMemo<Photo[]>(() => {
+    if (!selected || selectedIsDraft) return [];
+    return selectedPhotoIds
+      .map((id) => linkedPhotoLookup[id])
+      .filter((p): p is Photo => Boolean(p));
+  }, [selected, selectedIsDraft, selectedPhotoIds, linkedPhotoLookup]);
 
   // Fetch the feed only for committed pins.
   useEffect(() => {

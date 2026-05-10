@@ -82,14 +82,14 @@ export function storageKeyFromPublicUrl(
   return tail.split("?")[0] || null;
 }
 
-// Lookup helper used by the explorer to render thumbnails on pins. Returns a
-// map from photo id → { image_url, rotation } so cards can render the
-// stored photo with its baked-in rotation. Anonymous reads honor RLS so
-// hidden photos are excluded automatically.
+// Lookup helper used by the explorer for both card thumbnails and pin-panel
+// linked-photo display. Returns full Photo objects so the lightbox can render
+// caption / date / tags too. Public read (anon-RLS so hidden photos are
+// excluded) — no admin requirement.
 export async function fetchPhotosByIds(
   ids: string[]
-): Promise<Map<string, { image_url: string; rotation: number }>> {
-  const map = new Map<string, { image_url: string; rotation: number }>();
+): Promise<Map<string, Photo>> {
+  const map = new Map<string, Photo>();
   if (ids.length === 0) return map;
   const { configured } = readSupabaseEnv();
   if (!configured) return map;
@@ -97,14 +97,15 @@ export async function fetchPhotosByIds(
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("photos")
-      .select("id, image_url, rotation")
+      .select("*")
       .in("id", ids);
     if (error || !data) return map;
     for (const row of data) {
       map.set(row.id, {
-        image_url: row.image_url,
+        ...row,
+        photo_ids: row.photo_ids ?? [],
         rotation: row.rotation ?? 0,
-      });
+      } as Photo);
     }
     return map;
   } catch {

@@ -27,12 +27,12 @@ export default async function ExplorePage() {
   ]);
   const pins = result.kind === "ok" ? result.pins : [];
 
-  // Pre-fetch all linked photo URLs so PinCards can render thumbnails before
-  // a pin is selected. Hidden photos are excluded by RLS.
+  // Pre-fetch all linked photo objects so PinCards can render thumbnails AND
+  // the pin panel + lightbox can show captions/dates without an admin-only
+  // round trip. Hidden photos are excluded by RLS.
   const allLinkedIds = Array.from(new Set(pins.flatMap((p) => p.photo_ids)));
   const photoMap = await fetchPhotosByIds(allLinkedIds);
-  const linkedPhotoLookup: Record<string, { image_url: string; rotation: number }> =
-    Object.fromEntries(photoMap.entries());
+  const linkedPhotoLookup = Object.fromEntries(photoMap.entries());
 
   return (
     <PageShell>
