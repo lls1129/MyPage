@@ -23,6 +23,7 @@ import type { ExplorePinMode, PinDisplayMode } from "@/lib/supabase/settings";
 import { getPinFeed, type PinFeed } from "./feed-actions";
 import { FeedCard } from "./FeedCard";
 import { PhotoPicker } from "./PhotoPicker";
+import { Lightbox } from "../photos/Lightbox";
 
 const TYPE_COLORS: Record<PinType, string> = {
   travel: "#D4537E",
@@ -164,6 +165,7 @@ export function Explorer({
   const [feed, setFeed] = useState<PinFeed | null>(null);
   const [feedLoading, setFeedLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [pinMode, setPinMode] = useState<ExplorePinMode>(initialPinMode);
   const [pinDisplay, setPinDisplay] = useState<PinDisplayMode>(initialPinDisplay);
 
@@ -464,6 +466,12 @@ export function Explorer({
     });
   }
 
+  function handleClosePin() {
+    if (selectedIsDraft) discardDraftIfAny();
+    setSelectedId(null);
+    setError(null);
+  }
+
   async function handleSavePhotoLinks(photoIds: string[]) {
     if (!selected) return { ok: false, error: "No pin selected." };
     if (selectedIsDraft) {
@@ -610,6 +618,8 @@ export function Explorer({
                 onSaveDraft={handleSaveDraft}
                 onDelete={handleDeleteSelected}
                 onOpenPicker={() => setPickerOpen(true)}
+                onClose={handleClosePin}
+                onOpenLightbox={(i) => setLightboxIndex(i)}
                 compact
               />
             </PinPopupAnchor>
@@ -646,6 +656,8 @@ export function Explorer({
           onSaveDraft={handleSaveDraft}
           onDelete={handleDeleteSelected}
           onOpenPicker={() => setPickerOpen(true)}
+          onClose={handleClosePin}
+          onOpenLightbox={(i) => setLightboxIndex(i)}
         />
       ) : !selected && isAdmin ? (
         <p className="rounded-lg bg-white border border-pink-100 shadow-soft p-4 text-center text-xs text-lavender-600">
@@ -674,6 +686,17 @@ export function Explorer({
           initialSelected={selectedPhotoIds}
           onClose={() => setPickerOpen(false)}
           onSave={handleSavePhotoLinks}
+        />
+      ) : null}
+
+      {lightboxIndex !== null && linkedPhotos.length > 0 ? (
+        <Lightbox
+          photos={linkedPhotos}
+          index={Math.min(lightboxIndex, linkedPhotos.length - 1)}
+          isAdmin={false}
+          onClose={() => setLightboxIndex(null)}
+          onChange={setLightboxIndex}
+          albumLink={{ href: "/photos", label: "view in album" }}
         />
       ) : null}
     </div>
@@ -874,6 +897,8 @@ function PinPanel({
   onSaveDraft,
   onDelete,
   onOpenPicker,
+  onClose,
+  onOpenLightbox,
 }: {
   pin: Pin | null;
   body: PinBody;
@@ -887,6 +912,8 @@ function PinPanel({
   onSaveDraft: () => void;
   onDelete: () => void;
   onOpenPicker: () => void;
+  onClose: () => void;
+  onOpenLightbox: (index: number) => void;
 }) {
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -921,15 +948,29 @@ function PinPanel({
   return (
     <div
       className={
-        "rounded-lg shadow-soft flex flex-col border " +
+        "relative rounded-lg shadow-soft flex flex-col border " +
         (compact ? "p-3 gap-2 " : "p-5 gap-4 ") +
         (isDraft
           ? "bg-pink-50/95 border-pink-200 border-dashed"
           : "bg-white border-pink-100")
       }
     >
-      {/* Top row: type chips + action buttons */}
-      <div className="flex items-center justify-between gap-2">
+      {/* Floating close button — for everyone, top-right corner */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="close"
+        title="close"
+        className={
+          "absolute -top-2 -right-2 rounded-full bg-white text-lavender-600 hover:text-pink-600 border border-pink-100 shadow-soft flex items-center justify-center transition-colors " +
+          (compact ? "w-6 h-6 text-xs" : "w-7 h-7 text-sm")
+        }
+      >
+        ✕
+      </button>
+
+      {/* Top row: type chips + admin action buttons */}
+      <div className="flex items-center justify-between gap-2 pr-4">
         <div className="flex items-center gap-1">
           {TYPES.map((t) => (
             <button
@@ -976,7 +1017,7 @@ function PinPanel({
                 (compact ? "w-7 h-7 text-xs" : "w-9 h-9")
               }
             >
-              ✕
+              {isDraft ? "✕" : "🗑"}
             </button>
           </div>
         ) : null}
@@ -1060,11 +1101,13 @@ function PinPanel({
               (compact ? "grid-cols-5" : "grid-cols-4 sm:grid-cols-6 gap-2")
             }
           >
-            {linkedPhotos.slice(0, compact ? 5 : 18).map((p) => (
+            {linkedPhotos.slice(0, compact ? 5 : 18).map((p, i) => (
               <li key={p.id}>
-                <Link
-                  href="/photos"
-                  className="block aspect-square rounded-sm overflow-hidden border border-pink-100 hover:border-pink-200"
+                <button
+                  type="button"
+                  onClick={() => onOpenLightbox(i)}
+                  aria-label={`open ${p.caption || "photo"}`}
+                  className="block w-full aspect-square rounded-sm overflow-hidden border border-pink-100 hover:border-pink-200 cursor-pointer"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -1078,7 +1121,7 @@ function PinPanel({
                     }
                     className="w-full h-full object-cover"
                   />
-                </Link>
+                </button>
               </li>
             ))}
           </ul>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Photo } from "@/lib/supabase/photos";
@@ -17,6 +18,7 @@ export function Lightbox({
   onConvertToAstro,
   onDelete,
   busy,
+  albumLink,
 }: {
   photos: Photo[];
   index: number;
@@ -30,6 +32,7 @@ export function Lightbox({
   onConvertToAstro?: (photo: Photo) => void;
   onDelete?: (photo: Photo) => void;
   busy?: boolean;
+  albumLink?: { href: string; label: string };
 }) {
   const photo = photos[index];
 
@@ -81,18 +84,28 @@ export function Lightbox({
       onClick={onClose}
     >
       {/* Top bar */}
-      <div className="flex items-center justify-between p-4 text-cream/80">
+      <div className="flex items-center justify-between p-4 text-cream/80 gap-2">
         <span className="font-script text-cream/70 text-xl select-none">
           {photo.hidden ? "○ hidden" : "✿"}
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="close"
-          className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20"
-        >
-          ✕ close
-        </button>
+        <div className="flex items-center gap-2">
+          {albumLink ? (
+            <Link
+              href={albumLink.href}
+              className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20"
+            >
+              {albumLink.label} →
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="close"
+            className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20"
+          >
+            ✕ close
+          </button>
+        </div>
       </div>
 
       {/* Photo + meta — stop click bubbling so clicks inside don't dismiss */}
