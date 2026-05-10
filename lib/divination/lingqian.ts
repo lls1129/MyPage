@@ -14,23 +14,41 @@ export type Lingqian = {
   meaning: string;
 };
 
-const ZH_DIGITS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+// Formal / "financial" Chinese numerals (大寫數字) — the same characters
+// carved on temple fortune sticks, currency, and legal documents.
+// Traditional forms to match the Noto Serif TC font used on the panel.
+const ZH_FORMAL_DIGITS = [
+  "",
+  "壹",
+  "貳",
+  "參",
+  "肆",
+  "伍",
+  "陸",
+  "柒",
+  "捌",
+  "玖",
+];
+const ZH_FORMAL_TEN = "拾";
 
-// Convert 1..99 into the Chinese numeral that would be carved on a temple
-// fortune stick (e.g. 99 → 九十九). Falls back to the base-10 digits for
-// anything outside that range, but the stick set itself is bounded 1..99.
+// Convert 1..99 into the formal Chinese numeral (e.g. 99 → 玖拾玖).
+// The stick set is bounded 1..99; anything outside falls back to digits.
 export function toChineseNumeral(n: number): string {
-  if (n <= 0) return "〇";
-  if (n < 10) return ZH_DIGITS[n];
-  if (n === 10) return "十";
+  if (n <= 0) return "零";
+  if (n < 10) return ZH_FORMAL_DIGITS[n];
+  if (n === 10) return ZH_FORMAL_TEN;
   if (n < 20) {
     const ones = n - 10;
-    return "十" + (ones > 0 ? ZH_DIGITS[ones] : "");
+    return ZH_FORMAL_TEN + (ones > 0 ? ZH_FORMAL_DIGITS[ones] : "");
   }
   if (n < 100) {
     const tens = Math.floor(n / 10);
     const ones = n % 10;
-    return ZH_DIGITS[tens] + "十" + (ones > 0 ? ZH_DIGITS[ones] : "");
+    return (
+      ZH_FORMAL_DIGITS[tens] +
+      ZH_FORMAL_TEN +
+      (ones > 0 ? ZH_FORMAL_DIGITS[ones] : "")
+    );
   }
   return String(n);
 }
