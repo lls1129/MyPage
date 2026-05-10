@@ -17,8 +17,9 @@ import {
   linkPinPhotos,
   listPhotosForPicker,
   setExplorePinMode,
+  setPinDisplayMode,
 } from "./admin-actions";
-import type { ExplorePinMode } from "@/lib/supabase/settings";
+import type { ExplorePinMode, PinDisplayMode } from "@/lib/supabase/settings";
 import { getPinFeed, type PinFeed } from "./feed-actions";
 import { FeedCard } from "./FeedCard";
 import { PhotoPicker } from "./PhotoPicker";
@@ -33,6 +34,12 @@ const TYPE_LABELS: Record<PinType, string> = {
   travel: "✈ travel",
   diary: "✿ diary",
   astronomy: "✦ astronomy",
+};
+
+const TYPE_GLYPHS: Record<PinType, string> = {
+  travel: "✈",
+  diary: "✿",
+  astronomy: "✦",
 };
 
 const TYPES: PinType[] = ["travel", "diary", "astronomy"];
@@ -140,10 +147,12 @@ export function Explorer({
   initialPins,
   isAdmin,
   initialPinMode,
+  initialPinDisplay,
 }: {
   initialPins: Pin[];
   isAdmin: boolean;
   initialPinMode: ExplorePinMode;
+  initialPinDisplay: PinDisplayMode;
 }) {
   const router = useRouter();
   const [body, setBody] = useState<PinBody>("earth");
@@ -156,9 +165,11 @@ export function Explorer({
   const [feedLoading, setFeedLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pinMode, setPinMode] = useState<ExplorePinMode>(initialPinMode);
+  const [pinDisplay, setPinDisplay] = useState<PinDisplayMode>(initialPinDisplay);
 
   // Sync mode if server-side value changes (e.g. another admin toggled it).
   useEffect(() => setPinMode(initialPinMode), [initialPinMode]);
+  useEffect(() => setPinDisplay(initialPinDisplay), [initialPinDisplay]);
 
   function handleTogglePinMode() {
     const next: ExplorePinMode = pinMode === "popup" ? "inline" : "popup";
@@ -167,7 +178,21 @@ export function Explorer({
       const r = await setExplorePinMode(next);
       if (!r.ok) {
         setError(r.error ?? "Could not save pin mode.");
-        setPinMode(pinMode); // revert
+        setPinMode(pinMode);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  function handleTogglePinDisplay() {
+    const next: PinDisplayMode = pinDisplay === "card" ? "dot" : "card";
+    setPinDisplay(next);
+    startTransition(async () => {
+      const r = await setPinDisplayMode(next);
+      if (!r.ok) {
+        setError(r.error ?? "Could not save display mode.");
+        setPinDisplay(pinDisplay);
       } else {
         router.refresh();
       }
@@ -433,21 +458,12 @@ export function Explorer({
         <span className="flex-1" />
         {isAdmin ? (
           <>
-            <button
-              type="button"
-              onClick={handleTogglePinMode}
-              disabled={pending}
-              aria-pressed={pinMode === "popup"}
-              title="switch between panel-below and popup-at-pin display"
-              className={
-                "lift inline-flex items-center rounded-pill px-3 py-1.5 text-xs font-semibold border " +
-                (pinMode === "popup"
-                  ? "bg-lavender-100 text-lavender-800 border-lavender-200"
-                  : "bg-white text-lavender-600 border-pink-100 hover:border-pink-200")
-              }
-            >
-              {pinMode === "popup" ? "✓ popups on" : "use popups"}
-            </button>
+            <ToggleBtn active={pinMode === "popup"} disabled={pending} onClick={handleTogglePinMode} title="panel below ↔ popup at pin">
+              {pinMode === "popup" ? "✓ popups" : "popups"}
+            </ToggleBtn>
+            <ToggleBtn active={pinDisplay === "card"} disabled={pending} onClick={handleTogglePinDisplay} title="dots ↔ thumbnail cards on the globe">
+              {pinDisplay === "card" ? "✓ cards" : "cards"}
+            </ToggleBtn>
             {counts[body] > 0 ? (
               <button
                 type="button"
@@ -510,15 +526,30 @@ export function Explorer({
               onSurfaceClick={handleBodyClick}
             />
           </Suspense>
-          {allForBody.map((pin) => (
-            <PinMesh
-              key={pin.id}
-              pin={pin}
-              selected={pin.id === selectedId}
-              isDraft={isDraftId(pin.id)}
-              onClick={() => handleSelectPin(pin.id)}
-            />
-          ))}
+          {allForBody.map((pin) =>
+            pinDisplay === "card" ? (
+              <PinCard
+                key={pin.id}
+                pin={pin}
+                selected={pin.id === selectedId}
+                isDraft={isDraftId(pin.id)}
+                photoThumbUrl={
+                  pin.photo_ids.length > 0 && pin.id === selected?.id
+                    ? linkedPhotos[0]?.image_url ?? null
+                    : null
+                }
+                onClick={() => handleSelectPin(pin.id)}
+              />
+            ) : (
+              <PinMesh
+                key={pin.id}
+                pin={pin}
+                selected={pin.id === selectedId}
+                isDraft={isDraftId(pin.id)}
+                onClick={() => handleSelectPin(pin.id)}
+              />
+            )
+          )}
           {pinMode === "popup" && selected ? (
             <PinPopupAnchor pin={selected}>
               <PinPanel
@@ -639,6 +670,95 @@ function BodyButton({
   );
 }
 
+function ToggleBtn({
+  active,
+  disabled,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      title={title}
+      className={
+        "lift inline-flex items-center rounded-pill px-3 py-1.5 text-xs font-semibold border transition-colors disabled:opacity-50 " +
+        (active
+          ? "bg-lavender-100 text-lavender-800 border-lavender-200"
+          : "bg-white text-lavender-600 border-pink-100 hover:border-pink-200")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function PinCard({
+  pin,
+  selected,
+  isDraft,
+  photoThumbUrl,
+  onClick,
+}: {
+  pin: Pin;
+  selected: boolean;
+  isDraft: boolean;
+  photoThumbUrl: string | null;
+  onClick: () => void;
+}) {
+  const pos = new THREE.Vector3(pin.position_x, pin.position_y, pin.position_z)
+    .normalize()
+    .multiplyScalar(1.02)
+    .toArray() as [number, number, number];
+  const borderColor = TYPE_COLORS[pin.type];
+  const ring = selected ? `0 0 0 2px ${borderColor}55` : "none";
+
+  return (
+    <Html position={pos} center distanceFactor={3.5} zIndexRange={[20, 0]}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={pin.note || `${pin.type} pin`}
+        style={{
+          borderColor,
+          boxShadow: ring,
+          opacity: isDraft ? 0.65 : 1,
+        }}
+        className="block w-12 h-12 rounded-md border-2 overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
+      >
+        {photoThumbUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photoThumbUrl}
+            alt=""
+            className="w-full h-full object-cover"
+          />
+        ) : pin.note ? (
+          <div className="w-full h-full flex items-center justify-center p-1 text-[8px] leading-tight font-semibold text-ink overflow-hidden text-center break-words">
+            {pin.note.slice(0, 28)}
+          </div>
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center text-base font-bold"
+            style={{ color: borderColor }}
+          >
+            {TYPE_GLYPHS[pin.type]}
+          </div>
+        )}
+      </button>
+    </Html>
+  );
+}
+
 function PinPopupAnchor({
   pin,
   children,
@@ -716,57 +836,57 @@ function PinPanel({
   const region = approxRegion(lat, lon, body);
   const coords = formatCoords(lat, lon);
 
+  // The compact layout is roughly half the height of the inline one — chip
+  // row collapses to glyph-only buttons, coords + region merge into a single
+  // small line, the textarea starts at one row, and the linked-photos row
+  // is hidden entirely when there are none (admin gets a tiny "+ photos"
+  // link instead of a full empty section).
+  const photosLabel =
+    linkedPhotos.length === 0 ? "+ photos" : `edit (${linkedPhotos.length})`;
+
   return (
     <div
       className={
-        "rounded-lg shadow-soft flex flex-col gap-3 border " +
-        (compact ? "p-3 text-xs " : "p-5 gap-4 ") +
+        "rounded-lg shadow-soft flex flex-col border " +
+        (compact ? "p-3 gap-2 " : "p-5 gap-4 ") +
         (isDraft
           ? "bg-pink-50/95 border-pink-200 border-dashed"
           : "bg-white border-pink-100")
       }
     >
-      {isDraft ? (
-        <p className="text-xs text-pink-800 font-semibold">
-          ✿ draft pin · change type, add a note, or link a photo to save · clicking elsewhere will discard it
-        </p>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        {TYPES.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => isAdmin && onSetType(t)}
-            disabled={!isAdmin || pending}
-            className={
-              "rounded-pill px-3 py-1.5 text-xs font-semibold border transition-colors " +
-              (pin.type === t
-                ? typeChipClasses(t, true)
-                : typeChipClasses(t, false))
-            }
-          >
-            {TYPE_LABELS[t]}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex flex-col gap-1">
-          <span className="inline-block px-3 py-1 rounded-pill bg-pink-100 text-pink-800 text-xs font-mono font-semibold w-fit">
-            {coords}
-          </span>
-          <span className="text-xs text-lavender-600 font-semibold">{region}</span>
+      {/* Top row: type chips + action buttons */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          {TYPES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => isAdmin && onSetType(t)}
+              disabled={!isAdmin || pending}
+              title={TYPE_LABELS[t]}
+              aria-label={TYPE_LABELS[t]}
+              className={
+                "rounded-pill border transition-colors " +
+                (compact ? "w-7 h-7 text-sm " : "px-3 py-1.5 text-xs font-semibold ") +
+                "flex items-center justify-center " +
+                (pin.type === t
+                  ? typeChipClasses(t, true)
+                  : typeChipClasses(t, false))
+              }
+            >
+              {compact ? TYPE_GLYPHS[t] : TYPE_LABELS[t]}
+            </button>
+          ))}
         </div>
         {isAdmin ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {isDraft ? (
               <button
                 type="button"
                 onClick={onSaveDraft}
                 disabled={pending}
                 title="save pin as-is"
-                className="lift inline-flex items-center rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-3 py-1.5 text-xs font-semibold disabled:opacity-60 disabled:cursor-wait"
+                className="lift inline-flex items-center rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
               >
                 ✓ save
               </button>
@@ -777,7 +897,10 @@ function PinPanel({
               disabled={pending}
               aria-label={isDraft ? "discard draft" : "delete pin"}
               title={isDraft ? "discard draft" : "delete pin"}
-              className="w-9 h-9 rounded-full text-sm font-semibold bg-pink-100 text-pink-600 hover:bg-pink-200 transition-colors disabled:opacity-50"
+              className={
+                "rounded-full text-sm font-semibold bg-pink-100 text-pink-600 hover:bg-pink-200 transition-colors disabled:opacity-50 flex items-center justify-center " +
+                (compact ? "w-7 h-7 text-xs" : "w-9 h-9")
+              }
             >
               ✕
             </button>
@@ -785,6 +908,27 @@ function PinPanel({
         ) : null}
       </div>
 
+      {/* Coords + region row */}
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span
+          className={
+            "inline-block rounded-pill bg-pink-100 text-pink-800 font-mono font-semibold " +
+            (compact ? "px-2 py-0.5 text-[10px]" : "px-3 py-1 text-xs")
+          }
+        >
+          {coords}
+        </span>
+        <span
+          className={
+            "text-lavender-600 font-semibold " +
+            (compact ? "text-[10px]" : "text-xs")
+          }
+        >
+          {region}
+        </span>
+      </div>
+
+      {/* Note */}
       {isAdmin ? (
         <textarea
           ref={noteRef}
@@ -792,68 +936,91 @@ function PinPanel({
           onBlur={(e) => {
             if (e.target.value !== pin.note) onSaveNote(e.target.value);
           }}
-          rows={2}
-          placeholder="leave yourself a little memory…"
-          className="w-full bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink placeholder:text-pink-400 focus:outline-none focus:border-pink-200 resize-y"
+          rows={compact ? 1 : 2}
+          placeholder={compact ? "note…" : "leave yourself a little memory…"}
+          className={
+            "w-full bg-pink-50 border border-pink-100 rounded-sm text-ink placeholder:text-pink-400 focus:outline-none focus:border-pink-200 resize-y " +
+            (compact ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm")
+          }
         />
       ) : pin.note ? (
-        <p className="font-serif text-ink/85 text-[15px] leading-relaxed bg-pink-50 border border-pink-100 rounded-sm px-3 py-2">
+        <p
+          className={
+            "font-serif text-ink/85 leading-relaxed bg-pink-50 border border-pink-100 rounded-sm " +
+            (compact ? "text-xs px-2 py-1" : "text-[15px] px-3 py-2")
+          }
+        >
           {pin.note}
         </p>
-      ) : (
-        <p className="text-xs text-lavender-600 font-semibold italic">
-          (no note yet)
-        </p>
-      )}
+      ) : null}
 
       {/* Linked photos */}
-      {linkedPhotos.length > 0 || isAdmin ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="label text-pink-600">linked photos</p>
+      {linkedPhotos.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <p
+              className={
+                "uppercase tracking-wider font-semibold text-pink-600 " +
+                (compact ? "text-[9px]" : "text-[11px]")
+              }
+            >
+              photos
+            </p>
             {isAdmin ? (
               <button
                 type="button"
                 onClick={onOpenPicker}
                 disabled={pending}
-                className="text-xs font-semibold text-pink-600 hover:text-pink-800 disabled:opacity-50"
+                className={
+                  "font-semibold text-pink-600 hover:text-pink-800 disabled:opacity-50 " +
+                  (compact ? "text-[10px]" : "text-xs")
+                }
               >
-                {linkedPhotos.length === 0 ? "+ link photos" : "edit links"}
+                {photosLabel}
               </button>
             ) : null}
           </div>
-          {linkedPhotos.length === 0 ? (
-            isAdmin ? (
-              <p className="text-xs text-lavender-600 font-semibold italic">
-                none yet
-              </p>
-            ) : null
-          ) : (
-            <ul className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-              {linkedPhotos.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    href="/photos"
-                    className="block aspect-square rounded-sm overflow-hidden border border-pink-100 hover:border-pink-200"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.image_url}
-                      alt={p.caption || ""}
-                      loading="lazy"
-                      style={
-                        p.rotation
-                          ? { transform: `rotate(${p.rotation}deg)` }
-                          : undefined
-                      }
-                      className="w-full h-full object-cover"
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul
+            className={
+              "grid gap-1.5 " +
+              (compact ? "grid-cols-5" : "grid-cols-4 sm:grid-cols-6 gap-2")
+            }
+          >
+            {linkedPhotos.slice(0, compact ? 5 : 18).map((p) => (
+              <li key={p.id}>
+                <Link
+                  href="/photos"
+                  className="block aspect-square rounded-sm overflow-hidden border border-pink-100 hover:border-pink-200"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.image_url}
+                    alt={p.caption || ""}
+                    loading="lazy"
+                    style={
+                      p.rotation
+                        ? { transform: `rotate(${p.rotation}deg)` }
+                        : undefined
+                    }
+                    className="w-full h-full object-cover"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
+      ) : isAdmin ? (
+        <button
+          type="button"
+          onClick={onOpenPicker}
+          disabled={pending}
+          className={
+            "self-start font-semibold text-pink-600 hover:text-pink-800 disabled:opacity-50 " +
+            (compact ? "text-[10px]" : "text-xs")
+          }
+        >
+          + link photos
+        </button>
       ) : null}
     </div>
   );

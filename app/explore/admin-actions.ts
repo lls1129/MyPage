@@ -115,6 +115,20 @@ export async function setExplorePinMode(mode: "inline" | "popup") {
   return { ok: true };
 }
 
+export async function setPinDisplayMode(mode: "dot" | "card") {
+  await requireAdmin();
+  if (mode !== "dot" && mode !== "card") {
+    return { ok: false, error: "Invalid mode." };
+  }
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({ key: "explore_pin_display", value: mode, updated_at: new Date().toISOString() });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/explore");
+  return { ok: true };
+}
+
 export async function clearPinsForBody(body: PinBody) {
   await requireAdmin();
   if (body !== "earth" && body !== "moon") {

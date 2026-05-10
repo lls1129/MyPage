@@ -2,6 +2,7 @@ import { readSupabaseEnv } from "./env";
 import { createClient } from "./server";
 
 export type ExplorePinMode = "inline" | "popup";
+export type PinDisplayMode = "dot" | "card";
 
 export async function getSetting<T = unknown>(
   key: string
@@ -25,4 +26,9 @@ export async function getSetting<T = unknown>(
 export async function getExplorePinMode(): Promise<ExplorePinMode> {
   const value = await getSetting<ExplorePinMode>("explore_pin_mode");
   return value === "popup" ? "popup" : "inline";
+}
+
+export async function getPinDisplayMode(): Promise<PinDisplayMode> {
+  const value = await getSetting<PinDisplayMode>("explore_pin_display");
+  return value === "card" ? "card" : "dot";
 }
