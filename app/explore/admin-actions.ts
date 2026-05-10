@@ -129,6 +129,20 @@ export async function setPinDisplayMode(mode: "dot" | "card") {
   return { ok: true };
 }
 
+export async function setCardPhotoMode(mode: "on-select" | "always") {
+  await requireAdmin();
+  if (mode !== "on-select" && mode !== "always") {
+    return { ok: false, error: "Invalid mode." };
+  }
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({ key: "explore_card_photo", value: mode, updated_at: new Date().toISOString() });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/explore");
+  return { ok: true };
+}
+
 export async function clearPinsForBody(body: PinBody) {
   await requireAdmin();
   if (body !== "earth" && body !== "moon") {

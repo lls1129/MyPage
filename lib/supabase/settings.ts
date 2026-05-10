@@ -3,6 +3,7 @@ import { createClient } from "./server";
 
 export type ExplorePinMode = "inline" | "popup";
 export type PinDisplayMode = "dot" | "card";
+export type CardPhotoMode = "on-select" | "always";
 
 export async function getSetting<T = unknown>(
   key: string
@@ -31,4 +32,9 @@ export async function getExplorePinMode(): Promise<ExplorePinMode> {
 export async function getPinDisplayMode(): Promise<PinDisplayMode> {
   const value = await getSetting<PinDisplayMode>("explore_pin_display");
   return value === "card" ? "card" : "dot";
+}
+
+export async function getCardPhotoMode(): Promise<CardPhotoMode> {
+  const value = await getSetting<CardPhotoMode>("explore_card_photo");
+  return value === "always" ? "always" : "on-select";
 }

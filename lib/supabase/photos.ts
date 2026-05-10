@@ -81,3 +81,33 @@ export function storageKeyFromPublicUrl(
   const tail = url.slice(i + marker.length);
   return tail.split("?")[0] || null;
 }
+
+// Lookup helper used by the explorer to render thumbnails on pins. Returns a
+// map from photo id → { image_url, rotation } so cards can render the
+// stored photo with its baked-in rotation. Anonymous reads honor RLS so
+// hidden photos are excluded automatically.
+export async function fetchPhotosByIds(
+  ids: string[]
+): Promise<Map<string, { image_url: string; rotation: number }>> {
+  const map = new Map<string, { image_url: string; rotation: number }>();
+  if (ids.length === 0) return map;
+  const { configured } = readSupabaseEnv();
+  if (!configured) return map;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("photos")
+      .select("id, image_url, rotation")
+      .in("id", ids);
+    if (error || !data) return map;
+    for (const row of data) {
+      map.set(row.id, {
+        image_url: row.image_url,
+        rotation: row.rotation ?? 0,
+      });
+    }
+    return map;
+  } catch {
+    return map;
+  }
+}

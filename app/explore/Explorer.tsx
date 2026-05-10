@@ -18,8 +18,13 @@ import {
   listPhotosForPicker,
   setExplorePinMode,
   setPinDisplayMode,
+  setCardPhotoMode,
 } from "./admin-actions";
-import type { ExplorePinMode, PinDisplayMode } from "@/lib/supabase/settings";
+import type {
+  ExplorePinMode,
+  PinDisplayMode,
+  CardPhotoMode,
+} from "@/lib/supabase/settings";
 import { getPinFeed, type PinFeed } from "./feed-actions";
 import { FeedCard } from "./FeedCard";
 import { PhotoPicker } from "./PhotoPicker";
@@ -149,11 +154,15 @@ export function Explorer({
   isAdmin,
   initialPinMode,
   initialPinDisplay,
+  initialCardPhoto,
+  linkedPhotoLookup,
 }: {
   initialPins: Pin[];
   isAdmin: boolean;
   initialPinMode: ExplorePinMode;
   initialPinDisplay: PinDisplayMode;
+  initialCardPhoto: CardPhotoMode;
+  linkedPhotoLookup: Record<string, { image_url: string; rotation: number }>;
 }) {
   const router = useRouter();
   const [body, setBody] = useState<PinBody>("earth");
@@ -168,6 +177,11 @@ export function Explorer({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [pinMode, setPinMode] = useState<ExplorePinMode>(initialPinMode);
   const [pinDisplay, setPinDisplay] = useState<PinDisplayMode>(initialPinDisplay);
+  const [cardPhoto, setCardPhoto] = useState<CardPhotoMode>(initialCardPhoto);
+
+  useEffect(() => setPinMode(initialPinMode), [initialPinMode]);
+  useEffect(() => setPinDisplay(initialPinDisplay), [initialPinDisplay]);
+  useEffect(() => setCardPhoto(initialCardPhoto), [initialCardPhoto]);
 
   // Drag detection: distinguish "the user dragged the globe" from "the user
   // tapped a spot". OrbitControls' onStart fires on pointerdown (not on
@@ -199,10 +213,6 @@ export function Explorer({
     downPosRef.current = null;
   }
 
-  // Sync mode if server-side value changes (e.g. another admin toggled it).
-  useEffect(() => setPinMode(initialPinMode), [initialPinMode]);
-  useEffect(() => setPinDisplay(initialPinDisplay), [initialPinDisplay]);
-
   function handleTogglePinMode() {
     const next: ExplorePinMode = pinMode === "popup" ? "inline" : "popup";
     setPinMode(next);
@@ -225,6 +235,20 @@ export function Explorer({
       if (!r.ok) {
         setError(r.error ?? "Could not save display mode.");
         setPinDisplay(pinDisplay);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  function handleToggleCardPhoto() {
+    const next: CardPhotoMode = cardPhoto === "always" ? "on-select" : "always";
+    setCardPhoto(next);
+    startTransition(async () => {
+      const r = await setCardPhotoMode(next);
+      if (!r.ok) {
+        setError(r.error ?? "Could not save photo mode.");
+        setCardPhoto(cardPhoto);
       } else {
         router.refresh();
       }
@@ -514,6 +538,11 @@ export function Explorer({
             <ToggleBtn active={pinDisplay === "card"} disabled={pending} onClick={handleTogglePinDisplay} title="dots ↔ thumbnail cards on the globe">
               {pinDisplay === "card" ? "✓ cards" : "cards"}
             </ToggleBtn>
+            {pinDisplay === "card" ? (
+              <ToggleBtn active={cardPhoto === "always"} disabled={pending} onClick={handleToggleCardPhoto} title="show linked photos only when selected ↔ always">
+                {cardPhoto === "always" ? "✓ always-photo" : "always-photo"}
+              </ToggleBtn>
+            ) : null}
             {counts[body] > 0 ? (
               <button
                 type="button"
@@ -580,18 +609,27 @@ export function Explorer({
               onSurfaceClick={handleBodyClick}
             />
           </Suspense>
-          {allForBody.map((pin) =>
-            pinDisplay === "card" ? (
+          {allForBody.map((pin) => {
+            // Resolve a thumbnail URL for cards: in always-photo mode, every
+            // pin with a linked photo gets its first photo as the cover; in
+            // on-select mode, only the currently selected pin shows one
+            // (matching pre-existing behavior).
+            const showAlways = cardPhoto === "always";
+            let photoThumbUrl: string | null = null;
+            if (pinDisplay === "card" && pin.photo_ids.length > 0) {
+              if (showAlways) {
+                photoThumbUrl = linkedPhotoLookup[pin.photo_ids[0]]?.image_url ?? null;
+              } else if (pin.id === selected?.id) {
+                photoThumbUrl = linkedPhotos[0]?.image_url ?? null;
+              }
+            }
+            return pinDisplay === "card" ? (
               <PinCard
                 key={pin.id}
                 pin={pin}
                 selected={pin.id === selectedId}
                 isDraft={isDraftId(pin.id)}
-                photoThumbUrl={
-                  pin.photo_ids.length > 0 && pin.id === selected?.id
-                    ? linkedPhotos[0]?.image_url ?? null
-                    : null
-                }
+                photoThumbUrl={photoThumbUrl}
                 onClick={() => handleSelectPin(pin.id)}
               />
             ) : (
@@ -602,8 +640,8 @@ export function Explorer({
                 isDraft={isDraftId(pin.id)}
                 onClick={() => handleSelectPin(pin.id)}
               />
-            )
-          )}
+            );
+          })}
           {pinMode === "popup" && selected ? (
             <PinPopupAnchor pin={selected}>
               <PinPanel
@@ -830,7 +868,7 @@ function PinCard({
           boxShadow: ring,
           opacity: isDraft ? 0.65 : 1,
         }}
-        className="block w-8 h-8 rounded-md border-[1.5px] overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
+        className="block w-6 h-6 sm:w-8 sm:h-8 rounded-md border-[1.5px] overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
       >
         {photoThumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element

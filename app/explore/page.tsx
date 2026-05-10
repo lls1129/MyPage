@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
 import { listPins } from "@/lib/supabase/pins";
+import { fetchPhotosByIds } from "@/lib/supabase/photos";
 import { getCurrentAdmin } from "@/lib/supabase/server";
-import { getExplorePinMode, getPinDisplayMode } from "@/lib/supabase/settings";
+import {
+  getExplorePinMode,
+  getPinDisplayMode,
+  getCardPhotoMode,
+} from "@/lib/supabase/settings";
 import { Explorer } from "./Explorer";
 
 export const metadata: Metadata = {
@@ -13,13 +18,21 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function ExplorePage() {
-  const [result, admin, pinMode, pinDisplay] = await Promise.all([
+  const [result, admin, pinMode, pinDisplay, cardPhoto] = await Promise.all([
     listPins(),
     getCurrentAdmin(),
     getExplorePinMode(),
     getPinDisplayMode(),
+    getCardPhotoMode(),
   ]);
   const pins = result.kind === "ok" ? result.pins : [];
+
+  // Pre-fetch all linked photo URLs so PinCards can render thumbnails before
+  // a pin is selected. Hidden photos are excluded by RLS.
+  const allLinkedIds = Array.from(new Set(pins.flatMap((p) => p.photo_ids)));
+  const photoMap = await fetchPhotosByIds(allLinkedIds);
+  const linkedPhotoLookup: Record<string, { image_url: string; rotation: number }> =
+    Object.fromEntries(photoMap.entries());
 
   return (
     <PageShell>
@@ -73,6 +86,8 @@ export default async function ExplorePage() {
         isAdmin={Boolean(admin)}
         initialPinMode={pinMode}
         initialPinDisplay={pinDisplay}
+        initialCardPhoto={cardPhoto}
+        linkedPhotoLookup={linkedPhotoLookup}
       />
     </PageShell>
   );
