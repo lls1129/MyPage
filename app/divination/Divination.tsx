@@ -27,6 +27,15 @@ import {
   type Face,
   type JiaoBeiOutcome,
 } from "@/lib/divination/jiaobei";
+import {
+  ZODIAC,
+  sunSignFromDate,
+  ascendantFromBirth,
+  pairReading,
+  type ZodiacSign,
+  type AscendantResult,
+  type PairReading,
+} from "@/lib/divination/zodiac";
 
 function pickDifferentIndex(length: number, current: number | null): number {
   if (length <= 1) return 0;
@@ -58,6 +67,7 @@ export function Divination() {
       <BaguaPanel />
       <LingqianPanel />
       <JiaoBeiPanel />
+      <ConstellationPanel />
     </div>
   );
 }
@@ -882,6 +892,274 @@ function Crescent({ face, small = false }: { face: Face; small?: boolean }) {
         strokeWidth="1"
       />
     </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────── constellation ──────
+
+function ConstellationPanel() {
+  const [advanced, setAdvanced] = useState(false);
+  const [birthday, setBirthday] = useState<string>("");
+  const [birthTime, setBirthTime] = useState<string>("");
+  const [place, setPlace] = useState<string>("");
+  const [partnerBirthday, setPartnerBirthday] = useState<string>("");
+  const [rising, setRising] = useState<AscendantResult | null>(null);
+  const [risingError, setRisingError] = useState<string | null>(null);
+  const [risingPending, setRisingPending] = useState(false);
+
+  // Random fallback so the empty state has something to show.
+  const [randomIdx, setRandomIdx] = useState<number | null>(null);
+  useEffect(() => {
+    setRandomIdx(pickDifferentIndex(ZODIAC.length, null));
+  }, []);
+
+  // When advanced is toggled off, drop the rising/partner state so they
+  // don't linger invisibly.
+  useEffect(() => {
+    if (!advanced) {
+      setRising(null);
+      setRisingError(null);
+      setPartnerBirthday("");
+    }
+  }, [advanced]);
+
+  const sun = useMemo(() => sunSignFromDate(birthday), [birthday]);
+  const partnerSun = useMemo(() => sunSignFromDate(partnerBirthday), [partnerBirthday]);
+  const compat: PairReading | null = useMemo(
+    () => (sun && partnerSun ? pairReading(sun, partnerSun) : null),
+    [sun, partnerSun]
+  );
+
+  async function calculateRising() {
+    setRisingError(null);
+    if (!birthday || !birthTime || !place.trim()) {
+      setRisingError("birthday, time, and place are all needed.");
+      return;
+    }
+    const birthIso = `${birthday}T${birthTime}:00`;
+    const birthDate = new Date(birthIso);
+    if (Number.isNaN(birthDate.getTime())) {
+      setRisingError("couldn't parse that birthday + time.");
+      return;
+    }
+    setRisingPending(true);
+    try {
+      const url =
+        `https://geocoding-api.open-meteo.com/v1/search?name=` +
+        `${encodeURIComponent(place.trim())}&count=1&language=en&format=json`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const hit = Array.isArray(data?.results) ? data.results[0] : null;
+      if (!hit || typeof hit.latitude !== "number" || typeof hit.longitude !== "number") {
+        setRisingError(`couldn't find "${place.trim()}".`);
+        setRisingPending(false);
+        return;
+      }
+      const result = ascendantFromBirth(birthDate, hit.latitude, hit.longitude);
+      if (!result) {
+        setRisingError("calculation failed for those values.");
+      } else {
+        setRising(result);
+      }
+    } catch {
+      setRisingError("geocoding lookup failed.");
+    } finally {
+      setRisingPending(false);
+    }
+  }
+
+  function rollRandom() {
+    setRandomIdx((prev) => pickDifferentIndex(ZODIAC.length, prev));
+    setBirthday("");
+    setBirthTime("");
+    setPlace("");
+    setPartnerBirthday("");
+    setRising(null);
+    setRisingError(null);
+  }
+
+  const featured: ZodiacSign | null =
+    sun ?? (randomIdx === null ? null : ZODIAC[randomIdx]);
+  const showingRandom = !sun && featured;
+
+  return (
+    <ToolCard
+      tint="amber"
+      label="constellation"
+      title={advanced ? "your sky" : "zodiac"}
+      onAdvanced={advanced}
+      onToggleAdvanced={() => setAdvanced((v) => !v)}
+      onDraw={rollRandom}
+      drawLabel={sun ? "↻ random sign" : "↻ random sign"}
+    >
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-amber-600">
+            birthday
+          </span>
+          <input
+            type="date"
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)}
+            max="2030-12-31"
+            min="1900-01-01"
+            className="bg-white border border-amber-100 rounded-sm px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-amber-400"
+          />
+        </label>
+
+        {featured ? (
+          <SignCard sign={featured} note={showingRandom ? "(random — enter your birthday for yours)" : null} />
+        ) : null}
+
+        {advanced ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-amber-600">
+                  birth time
+                </span>
+                <input
+                  type="time"
+                  value={birthTime}
+                  onChange={(e) => setBirthTime(e.target.value)}
+                  className="bg-white border border-amber-100 rounded-sm px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-amber-400"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-amber-600">
+                  birth place
+                </span>
+                <input
+                  type="text"
+                  value={place}
+                  onChange={(e) => setPlace(e.target.value)}
+                  placeholder="city name"
+                  className="bg-white border border-amber-100 rounded-sm px-2.5 py-1.5 text-sm text-ink placeholder:text-amber-400 focus:outline-none focus:border-amber-400"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={calculateRising}
+              disabled={risingPending}
+              className="self-start lift rounded-pill bg-amber-100 text-amber-800 border border-amber-400/50 shadow-soft hover:border-amber-400 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              {risingPending ? "computing…" : "✦ compute rising sign"}
+            </button>
+
+            {risingError ? (
+              <p className="text-[11px] text-pink-600 font-semibold">{risingError}</p>
+            ) : null}
+
+            {rising ? (
+              <div className="rounded-md bg-white/70 border border-amber-200 p-2.5">
+                <p className="text-[10px] uppercase tracking-wider font-bold text-amber-600 mb-1">
+                  rising sign
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl text-amber-600 leading-none">
+                    {rising.sign.glyph}
+                  </span>
+                  <span className="font-script text-amber-800 text-xl">
+                    {rising.sign.name.toLowerCase()}
+                  </span>
+                  <span className="text-[10px] font-mono text-amber-700 ml-auto">
+                    {rising.degInSign.toFixed(1)}°
+                  </span>
+                </div>
+                <p className="text-[11px] text-ink/80 mt-1 leading-snug">
+                  the face you put on the world — how you arrive in a room.
+                </p>
+              </div>
+            ) : null}
+
+            <div className="border-t border-amber-200/60 pt-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-amber-600">
+                  compare with another birthday
+                </span>
+                <input
+                  type="date"
+                  value={partnerBirthday}
+                  onChange={(e) => setPartnerBirthday(e.target.value)}
+                  max="2030-12-31"
+                  min="1900-01-01"
+                  className="bg-white border border-amber-100 rounded-sm px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-amber-400"
+                />
+              </label>
+
+              {sun && partnerSun && compat ? (
+                <div className="mt-2 rounded-md bg-white/70 border border-amber-200 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-amber-600 mb-1">
+                    {sun.name.toLowerCase()} × {partnerSun.name.toLowerCase()}
+                  </p>
+                  <div className="flex items-baseline gap-1.5 mb-1.5 flex-wrap">
+                    <span className="font-script text-amber-800 text-lg">
+                      {compat.aspect}
+                    </span>
+                    <span className="text-[10px] font-mono text-amber-700">
+                      {compat.angularDistance}°
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-ink/80 leading-snug">
+                    {compat.summary}
+                  </p>
+                  <p className="text-[10px] text-amber-700 mt-1.5 italic">
+                    {compat.elementRelation}
+                  </p>
+                </div>
+              ) : partnerBirthday && !partnerSun ? (
+                <p className="text-[11px] text-pink-600 font-semibold mt-2">
+                  partner birthday couldn&apos;t be parsed.
+                </p>
+              ) : sun && !partnerSun && partnerBirthday ? null : !sun &&
+                partnerBirthday ? (
+                <p className="text-[11px] text-amber-700 mt-2">
+                  enter your birthday above too.
+                </p>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </ToolCard>
+  );
+}
+
+function SignCard({ sign, note }: { sign: ZodiacSign; note: string | null }) {
+  return (
+    <div className="rounded-md bg-white/70 border border-amber-200 p-3">
+      <div className="flex items-baseline gap-2">
+        <span className="text-3xl text-amber-600 leading-none">{sign.glyph}</span>
+        <div>
+          <p className="font-script text-amber-800 text-2xl leading-none">
+            {sign.name.toLowerCase()}
+          </p>
+          <p className="text-[10px] text-amber-700 font-mono mt-0.5">
+            {sign.dateRange}
+          </p>
+        </div>
+      </div>
+      <div className="text-[10px] text-amber-700/80 font-mono mt-2 flex flex-wrap gap-x-2">
+        <span>{sign.element}</span>
+        <span>·</span>
+        <span>{sign.modality}</span>
+        <span>·</span>
+        <span>ruler {sign.ruler.toLowerCase()}</span>
+      </div>
+      <p className="font-serif italic text-amber-800 text-sm mt-2 leading-snug">
+        {sign.vibe}
+      </p>
+      <p className="text-[11px] text-ink/80 mt-2 leading-snug">
+        <strong className="text-amber-800">strength:</strong> {sign.strength}
+      </p>
+      <p className="text-[11px] text-ink/80 leading-snug">
+        <strong className="text-amber-800">shadow:</strong> {sign.shadow}
+      </p>
+      {note ? (
+        <p className="text-[10px] italic text-amber-700/80 mt-2">{note}</p>
+      ) : null}
+    </div>
   );
 }
 
