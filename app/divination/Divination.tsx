@@ -20,6 +20,13 @@ import {
   elementCycle,
   type Trigram,
 } from "@/lib/divination/bagua";
+import { LINGQIAN, type Lingqian, type Tier } from "@/lib/divination/lingqian";
+import {
+  tossOneBlock,
+  readJiaoBei,
+  type Face,
+  type JiaoBeiOutcome,
+} from "@/lib/divination/jiaobei";
 
 function pickDifferentIndex(length: number, current: number | null): number {
   if (length <= 1) return 0;
@@ -49,6 +56,8 @@ export function Divination() {
       <TarotPanel />
       <IChingPanel />
       <BaguaPanel />
+      <LingqianPanel />
+      <JiaoBeiPanel />
     </div>
   );
 }
@@ -558,6 +567,321 @@ function CycleRow({
         )}
       </p>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────── lingqian ────────
+
+const TIER_LABEL: Record<Tier, string> = {
+  auspicious: "上 · auspicious",
+  neutral: "中 · neutral",
+  cautious: "下 · careful",
+};
+
+const TIER_COLOR: Record<Tier, string> = {
+  auspicious: "text-amber-600",
+  neutral: "text-lavender-600",
+  cautious: "text-pink-600",
+};
+
+function LingqianPanel() {
+  const [advanced, setAdvanced] = useState(false);
+  const [idx, setIdx] = useState<number | null>(null);
+  const [revealing, setRevealing] = useState(false);
+
+  useEffect(() => {
+    setIdx(pickDifferentIndex(LINGQIAN.length, null));
+  }, []);
+
+  function draw() {
+    setRevealing(true);
+    setTimeout(() => {
+      setIdx((prev) => pickDifferentIndex(LINGQIAN.length, prev));
+      setRevealing(false);
+    }, 250);
+  }
+
+  const stick: Lingqian | null = idx === null ? null : LINGQIAN[idx];
+
+  return (
+    <ToolCard
+      tint="lavender"
+      label="lingqian · 灵签"
+      title={advanced ? "draw the stick" : "fortune sticks"}
+      onAdvanced={advanced}
+      onToggleAdvanced={() => setAdvanced((v) => !v)}
+      onDraw={draw}
+      drawLabel={stick ? "↻ draw again" : "✦ shake the tube"}
+    >
+      <div
+        className={
+          "transition-all duration-200 " +
+          (revealing ? "opacity-0 scale-95" : "opacity-100 scale-100")
+        }
+      >
+        {stick ? (
+          <>
+            <div className="text-center pt-3 pb-2">
+              <div
+                className="font-script text-lavender-400 leading-none mx-auto"
+                style={{ fontSize: 56 }}
+                aria-hidden
+              >
+                ⌗ {stick.n}
+              </div>
+              <p
+                className={
+                  "text-[11px] uppercase tracking-wider font-bold mt-2 " +
+                  TIER_COLOR[stick.tier]
+                }
+              >
+                {TIER_LABEL[stick.tier]}
+              </p>
+              <p className="font-script text-lavender-800 text-2xl leading-tight mt-1">
+                {stick.title}
+              </p>
+            </div>
+            <p className="font-serif italic text-lavender-800 text-center mt-2 leading-snug">
+              &ldquo;{stick.verse}&rdquo;
+            </p>
+            <p className="text-sm text-ink/85 text-center font-medium mt-3">
+              {stick.meaning}
+            </p>
+
+            {advanced ? (
+              <div className="mt-4 pt-3 border-t border-lavender-200/60 grid grid-cols-3 gap-1.5 text-[10px] text-center">
+                {(["auspicious", "neutral", "cautious"] as const).map((t) => {
+                  const count = LINGQIAN.filter((l) => l.tier === t).length;
+                  const here = stick.tier === t;
+                  return (
+                    <div
+                      key={t}
+                      className={
+                        "rounded-md px-2 py-1.5 " +
+                        (here
+                          ? "bg-lavender-200 text-white font-bold"
+                          : "bg-white/70 text-lavender-600 border border-lavender-200")
+                      }
+                    >
+                      <p className="uppercase tracking-wider font-semibold">
+                        {TIER_LABEL[t].split(" · ")[1]}
+                      </p>
+                      <p className="font-mono mt-0.5">{count} / 99</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <Placeholder />
+        )}
+      </div>
+    </ToolCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────── jiao bei ────────
+
+function JiaoBeiPanel() {
+  const [advanced, setAdvanced] = useState(false);
+  const [throws, setThrows] = useState<{ left: Face; right: Face }[]>([]);
+  const [revealing, setRevealing] = useState(false);
+
+  function tossOnce() {
+    setRevealing(true);
+    setTimeout(() => {
+      const fresh = { left: tossOneBlock(), right: tossOneBlock() };
+      setThrows((prev) => (advanced ? [...prev, fresh].slice(-3) : [fresh]));
+      setRevealing(false);
+    }, 350);
+  }
+
+  function reset() {
+    setThrows([]);
+  }
+
+  // Reset throws when toggling mode so the layout doesn't carry stale rows.
+  useEffect(() => setThrows([]), [advanced]);
+
+  // Initial toss on mount.
+  useEffect(() => {
+    if (throws.length === 0) {
+      setThrows([{ left: tossOneBlock(), right: tossOneBlock() }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const last = throws[throws.length - 1];
+  const lastOutcome: JiaoBeiOutcome | null = last
+    ? readJiaoBei(last.left, last.right)
+    : null;
+
+  const yesCount = throws.filter(
+    (t) => readJiaoBei(t.left, t.right).kind === "yes"
+  ).length;
+
+  return (
+    <ToolCard
+      tint="pink"
+      label="jiaobei · 筊杯"
+      title={advanced ? "ask three times" : "moon blocks"}
+      onAdvanced={advanced}
+      onToggleAdvanced={() => setAdvanced((v) => !v)}
+      onDraw={tossOnce}
+      drawLabel={
+        advanced && throws.length >= 3
+          ? "↻ start a new question"
+          : advanced && throws.length > 0
+            ? `toss ${throws.length + 1} of 3 →`
+            : last
+              ? "↻ toss again"
+              : "✦ toss the blocks"
+      }
+    >
+      <div
+        className={
+          "transition-all duration-200 " +
+          (revealing ? "opacity-0 scale-95" : "opacity-100 scale-100")
+        }
+      >
+        {advanced ? (
+          <p className="text-[11px] text-pink-600 font-semibold text-center mb-2">
+            hold a yes/no question in mind. three tosses confirm.
+          </p>
+        ) : (
+          <p className="text-[11px] text-pink-600 font-semibold text-center mb-2">
+            ask a yes/no question, then toss.
+          </p>
+        )}
+
+        {last ? (
+          <div className="flex justify-center gap-4 mb-3">
+            <Crescent face={last.left} />
+            <Crescent face={last.right} />
+          </div>
+        ) : (
+          <div className="h-[80px]" />
+        )}
+
+        {lastOutcome ? (
+          <>
+            <p className="text-center mt-2">
+              <span
+                className={
+                  "font-script text-2xl " +
+                  (lastOutcome.kind === "yes"
+                    ? "text-pink-800"
+                    : lastOutcome.kind === "no"
+                      ? "text-lavender-800"
+                      : "text-amber-800")
+                }
+              >
+                {lastOutcome.chinese}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider font-bold text-pink-600 ml-2">
+                {lastOutcome.english}
+              </span>
+            </p>
+            <p className="text-sm text-ink/85 text-center font-medium mt-2">
+              {lastOutcome.meaning}
+            </p>
+            {!advanced ? (
+              <p className="font-serif italic text-pink-800 text-center mt-3 leading-snug text-sm">
+                {lastOutcome.prompt}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
+        {advanced && throws.length > 0 ? (
+          <div className="mt-3 pt-3 border-t border-pink-200/60">
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-pink-600 text-center mb-2">
+              all three tosses
+            </p>
+            <ul className="flex justify-center gap-3">
+              {throws.map((t, i) => {
+                const o = readJiaoBei(t.left, t.right);
+                return (
+                  <li
+                    key={i}
+                    className="flex flex-col items-center gap-1 text-[10px]"
+                  >
+                    <div className="flex gap-0.5">
+                      <Crescent face={t.left} small />
+                      <Crescent face={t.right} small />
+                    </div>
+                    <span
+                      className={
+                        "uppercase tracking-wider font-semibold " +
+                        (o.kind === "yes"
+                          ? "text-pink-800"
+                          : o.kind === "no"
+                            ? "text-lavender-800"
+                            : "text-amber-800")
+                      }
+                    >
+                      {o.kind}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {throws.length === 3 ? (
+              <>
+                <p className="text-center text-sm text-ink/85 font-medium mt-3">
+                  {yesCount === 3
+                    ? "three yeses — the agreement is firm. proceed."
+                    : yesCount === 0
+                      ? "no yeses — this isn't the path. let it go."
+                      : `${yesCount} yes${yesCount > 1 ? "es" : ""} of three — partial agreement. take only what's clearly affirmed.`}
+                </p>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="block mx-auto mt-2 text-[11px] font-semibold text-pink-600 hover:text-pink-800"
+                >
+                  reset for a new question
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </ToolCard>
+  );
+}
+
+function Crescent({ face, small = false }: { face: Face; small?: boolean }) {
+  // Curved-up = the rounded edge faces the sky (a half-disc sitting flat).
+  // Flat-up = the same shape rotated 180°. Animate the rotation on change.
+  const size = small ? 26 : 64;
+  const rotation = face === "flat" ? 180 : 0;
+  return (
+    <svg
+      viewBox="0 0 60 36"
+      width={size}
+      height={small ? size * 0.6 : size * 0.6}
+      style={{
+        transform: `rotate(${rotation}deg)`,
+        transition: "transform 350ms cubic-bezier(0.4,0,0.2,1)",
+      }}
+      role="img"
+      aria-label={face === "flat" ? "flat side up" : "curved side up"}
+    >
+      <defs>
+        <linearGradient id={`bei-${face}-${small ? "s" : "b"}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="#F4C0D1" />
+          <stop offset="100%" stopColor="#D4537E" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M 4 30 A 26 26 0 0 1 56 30 L 4 30 Z"
+        fill={`url(#bei-${face}-${small ? "s" : "b"})`}
+        stroke="#993556"
+        strokeWidth="1"
+      />
+    </svg>
   );
 }
 
