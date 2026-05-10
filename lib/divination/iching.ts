@@ -77,3 +77,32 @@ export const HEXAGRAMS: Hexagram[] = [
   { number: 63, glyph: "䷾", pinyin: "Jì Jì", name: "After Completion", meaning: "the goal is reached — and now the harder, quieter work." },
   { number: 64, glyph: "䷿", pinyin: "Wèi Jì", name: "Before Completion", meaning: "almost there; one more careful step, not two quick ones." },
 ];
+
+// LineValue follows the classical three-coin casting:
+//   6 = old yin (changing → yang)
+//   7 = young yang (stable)
+//   8 = young yin (stable)
+//   9 = old yang (changing → yin)
+// Lines are listed bottom-to-top (line 1 is the floor of the hexagram).
+export type LineValue = 6 | 7 | 8 | 9;
+
+export function isYang(v: LineValue): boolean {
+  return v === 7 || v === 9;
+}
+
+export function isMoving(v: LineValue): boolean {
+  return v === 6 || v === 9;
+}
+
+export function tossOneLine(): LineValue {
+  // Three coins, heads = 3, tails = 2, sum is one of {6,7,8,9}.
+  const sum =
+    (Math.random() < 0.5 ? 2 : 3) +
+    (Math.random() < 0.5 ? 2 : 3) +
+    (Math.random() < 0.5 ? 2 : 3);
+  return sum as LineValue;
+}
+
+export function castSixLines(): LineValue[] {
+  return Array.from({ length: 6 }, tossOneLine);
+}
