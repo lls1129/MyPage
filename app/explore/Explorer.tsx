@@ -115,6 +115,13 @@ function BodySphere({
   );
 }
 
+// Distance at which a pin renders at "natural" size. Past this (zoomed out),
+// dots/cards get smaller naturally (perspective for dots, computed for cards).
+// Closer than this (zoomed in), we shrink the mesh / clamp the card scale so
+// apparent size is capped — matters when two pins are close to each other.
+const REF_DISTANCE = 2.5;
+const SCALE_FLOOR = 0.5;
+
 function PinMesh({
   pin,
   selected,
@@ -126,14 +133,30 @@ function PinMesh({
   isDraft: boolean;
   onClick: () => void;
 }) {
-  const pos = new THREE.Vector3(pin.position_x, pin.position_y, pin.position_z)
-    .normalize()
-    .multiplyScalar(1.015)
-    .toArray() as [number, number, number];
+  const pos = useMemo(
+    () =>
+      new THREE.Vector3(pin.position_x, pin.position_y, pin.position_z)
+        .normalize()
+        .multiplyScalar(1.015)
+        .toArray() as [number, number, number],
+    [pin.position_x, pin.position_y, pin.position_z]
+  );
+  const meshRef = useRef<THREE.Mesh>(null);
+  const baseScale = selected ? 1.7 : 1;
+
+  useFrame(({ camera }) => {
+    if (!meshRef.current) return;
+    const dist = camera.position.distanceTo(meshRef.current.position);
+    // distScale = min(1, dist/REF) means: at far zoom no change, at close zoom
+    // shrink mesh proportionally so apparent screen size stops growing.
+    const distScale = Math.max(SCALE_FLOOR, Math.min(1, dist / REF_DISTANCE));
+    meshRef.current.scale.setScalar(baseScale * distScale);
+  });
+
   return (
     <mesh
+      ref={meshRef}
       position={pos}
-      scale={selected ? 1.7 : 1}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -840,13 +863,14 @@ function PinCard({
   const borderColor = TYPE_COLORS[pin.type];
   const ring = selected ? `0 0 0 2px ${borderColor}55` : "none";
 
-  // Front/back fade based on whether the pin shares a hemisphere with the
-  // camera. We do this by hand so the card is always rendered (preventing
-  // the "totally hidden" failure mode of drei's blending occlusion) but
-  // tells you visually that it's behind.
+  // Front/back fade + camera-distance-clamped scale. Done in useFrame so the
+  // wrapper div tracks the camera each frame; the inner button keeps its
+  // hover transform via Tailwind, which composes naturally with the wrapper
+  // scale (parent · child).
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   useFrame(({ camera }) => {
-    if (!buttonRef.current) return;
+    if (!buttonRef.current || !wrapperRef.current) return;
     const camDir = camera.position.clone().normalize();
     const dot = dir.dot(camDir);
     const front = dot > 0.1;
@@ -854,22 +878,34 @@ function PinCard({
     buttonRef.current.style.filter = front
       ? "saturate(1)"
       : "saturate(0.5) blur(0.3px)";
+
+    const dist = camera.position.distanceTo(new THREE.Vector3(...pos));
+    // Variable scale capped at MAX so very-close zoom doesn't make the card
+    // huge (which is bad UX when two pins are nearby).
+    const MAX = 1.3;
+    const raw = REF_DISTANCE / dist;
+    const scale = Math.max(SCALE_FLOOR, Math.min(MAX, raw));
+    wrapperRef.current.style.transform = `scale(${scale.toFixed(3)})`;
   });
 
   return (
-    <Html position={pos} center distanceFactor={3.5} zIndexRange={[20, 0]}>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={onClick}
-        title={pin.note || `${pin.type} pin`}
-        style={{
-          borderColor,
-          boxShadow: ring,
-          opacity: isDraft ? 0.65 : 1,
-        }}
-        className="block w-6 h-6 sm:w-8 sm:h-8 rounded-md border-[1.5px] overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
+    <Html position={pos} center zIndexRange={[20, 0]}>
+      <div
+        ref={wrapperRef}
+        style={{ transformOrigin: "center", willChange: "transform" }}
       >
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={onClick}
+          title={pin.note || `${pin.type} pin`}
+          style={{
+            borderColor,
+            boxShadow: ring,
+            opacity: isDraft ? 0.65 : 1,
+          }}
+          className="block w-6 h-6 sm:w-8 sm:h-8 rounded-md border-[1.5px] overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
+        >
         {photoThumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -890,6 +926,7 @@ function PinCard({
           </div>
         )}
       </button>
+      </div>
     </Html>
   );
 }
