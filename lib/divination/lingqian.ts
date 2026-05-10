@@ -14,6 +14,27 @@ export type Lingqian = {
   meaning: string;
 };
 
+const ZH_DIGITS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+// Convert 1..99 into the Chinese numeral that would be carved on a temple
+// fortune stick (e.g. 99 → 九十九). Falls back to the base-10 digits for
+// anything outside that range, but the stick set itself is bounded 1..99.
+export function toChineseNumeral(n: number): string {
+  if (n <= 0) return "〇";
+  if (n < 10) return ZH_DIGITS[n];
+  if (n === 10) return "十";
+  if (n < 20) {
+    const ones = n - 10;
+    return "十" + (ones > 0 ? ZH_DIGITS[ones] : "");
+  }
+  if (n < 100) {
+    const tens = Math.floor(n / 10);
+    const ones = n % 10;
+    return ZH_DIGITS[tens] + "十" + (ones > 0 ? ZH_DIGITS[ones] : "");
+  }
+  return String(n);
+}
+
 export const LINGQIAN: Lingqian[] = [
   { n: 1, tier: "auspicious", title: "first light", verse: "the eastern sky brightens", meaning: "a new beginning is closer than you think — start the small thing." },
   { n: 2, tier: "auspicious", title: "spring rain", verse: "a soft rain on dry earth", meaning: "what was waiting will accept what you offer." },

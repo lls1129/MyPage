@@ -20,7 +20,12 @@ import {
   elementCycle,
   type Trigram,
 } from "@/lib/divination/bagua";
-import { LINGQIAN, type Lingqian, type Tier } from "@/lib/divination/lingqian";
+import {
+  LINGQIAN,
+  toChineseNumeral,
+  type Lingqian,
+  type Tier,
+} from "@/lib/divination/lingqian";
 import {
   tossOneBlock,
   readJiaoBei,
@@ -631,17 +636,11 @@ function LingqianPanel() {
       >
         {stick ? (
           <>
-            <div className="text-center pt-3 pb-2">
-              <div
-                className="font-script text-lavender-400 leading-none mx-auto"
-                style={{ fontSize: 56 }}
-                aria-hidden
-              >
-                ⌗ {stick.n}
-              </div>
+            <div className="text-center pt-3 pb-2 flex flex-col items-center">
+              <FortuneStick number={stick.n} />
               <p
                 className={
-                  "text-[11px] uppercase tracking-wider font-bold mt-2 " +
+                  "text-[11px] uppercase tracking-wider font-bold mt-3 " +
                   TIER_COLOR[stick.tier]
                 }
               >
@@ -688,6 +687,34 @@ function LingqianPanel() {
         )}
       </div>
     </ToolCard>
+  );
+}
+
+function FortuneStick({ number }: { number: number }) {
+  // A small bamboo-stick rendering: rounded vertical pill with the number in
+  // Chinese numerals stacked top-to-bottom inside, the way a real qian
+  // (籤) is carved.
+  const characters = toChineseNumeral(number).split("");
+  return (
+    <div
+      aria-label={`fortune stick number ${number}`}
+      title={`第 ${toChineseNumeral(number)} 籤`}
+      className="flex items-center justify-center rounded-full bg-gradient-to-b from-lavender-50 via-white to-lavender-100 border border-lavender-400/40 shadow-soft"
+      style={{ width: 36, minHeight: 110, padding: "14px 0" }}
+    >
+      <div
+        className="flex flex-col items-center text-lavender-800 leading-none"
+        style={{
+          fontFamily: 'ui-serif, "Songti SC", "STSong", "SimSun", serif',
+          fontSize: 20,
+          gap: 4,
+        }}
+      >
+        {characters.map((ch, i) => (
+          <span key={i}>{ch}</span>
+        ))}
+      </div>
+    </div>
   );
 }
 
