@@ -167,6 +167,23 @@ export function Explorer({
   const [pinMode, setPinMode] = useState<ExplorePinMode>(initialPinMode);
   const [pinDisplay, setPinDisplay] = useState<PinDisplayMode>(initialPinDisplay);
 
+  // OrbitControls drag tracking — without this, releasing a drag over the
+  // sphere fires onClick and drops a pin (or selects one) by accident.
+  const dragJustEndedRef = useRef(false);
+  const dragClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function handleDragStart() {
+    dragJustEndedRef.current = true;
+    if (dragClearTimerRef.current) clearTimeout(dragClearTimerRef.current);
+  }
+  function handleDragEnd() {
+    if (dragClearTimerRef.current) clearTimeout(dragClearTimerRef.current);
+    // Stay armed for ~80ms so the click event that follows pointerup still
+    // sees the flag and gets suppressed.
+    dragClearTimerRef.current = setTimeout(() => {
+      dragJustEndedRef.current = false;
+    }, 80);
+  }
+
   // Sync mode if server-side value changes (e.g. another admin toggled it).
   useEffect(() => setPinMode(initialPinMode), [initialPinMode]);
   useEffect(() => setPinDisplay(initialPinDisplay), [initialPinDisplay]);
@@ -265,6 +282,7 @@ export function Explorer({
   }
 
   function handleBodyClick(point: [number, number, number]) {
+    if (dragJustEndedRef.current) return;
     if (!isAdmin) return;
     discardDraftIfAny();
     const id = `${DRAFT_PREFIX}${crypto.randomUUID()}`;
@@ -285,6 +303,7 @@ export function Explorer({
   }
 
   function handleSelectPin(id: string) {
+    if (dragJustEndedRef.current) return;
     if (id !== draft?.id) discardDraftIfAny();
     setSelectedId(selectedId === id ? null : id);
   }
@@ -346,9 +365,9 @@ export function Explorer({
   function handleSetType(type: PinType) {
     if (!selected) return;
     if (selectedIsDraft) {
-      startTransition(async () => {
-        await commitDraft({ type });
-      });
+      // Just update the local draft — DON'T commit yet. Admin clicks "save"
+      // (or types a note / links a photo) when they're ready.
+      setDraft((d) => (d ? { ...d, type } : d));
     } else {
       setPins((prev) =>
         prev.map((p) => (p.id === selected.id ? { ...p, type } : p))
@@ -576,6 +595,8 @@ export function Explorer({
             autoRotateSpeed={0.35}
             rotateSpeed={0.6}
             zoomSpeed={0.7}
+            onStart={handleDragStart}
+            onEnd={handleDragEnd}
           />
         </Canvas>
       </div>
@@ -776,13 +797,13 @@ function PinPopupAnchor({
     <Html
       position={pos}
       center
-      distanceFactor={3}
       zIndexRange={[100, 0]}
-      // pointer-events on the wrapper so children can take clicks; the
-      // outer canvas still receives drag events that don't hit the popup.
+      // No distanceFactor → popup stays at a constant screen size regardless
+      // of zoom. That's the closest "max size cap" we get without writing a
+      // useFrame loop to clamp scale.
       style={{ pointerEvents: "auto" }}
     >
-      <div className="w-[320px] max-w-[80vw]">{children}</div>
+      <div className="w-[280px] max-w-[80vw]">{children}</div>
     </Html>
   );
 }
