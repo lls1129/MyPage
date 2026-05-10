@@ -519,6 +519,43 @@ export function Explorer({
     setError(null);
   }
 
+  // Drag sensitivity slider — base value persisted to localStorage. Actual
+  // OrbitControls.rotateSpeed is base * distance-compensation (smaller when
+  // zoomed in), wired up via DistanceCompensatedControls below.
+  const [dragSpeed, setDragSpeed] = useState(0.4);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("explore:dragSpeed");
+    if (saved) {
+      const n = parseFloat(saved);
+      if (!Number.isNaN(n) && n >= 0.05 && n <= 1.5) setDragSpeed(n);
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("explore:dragSpeed", dragSpeed.toString());
+  }, [dragSpeed]);
+
+  // Fullscreen mode — overlays the viewport with the canvas + a close button.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [fullscreen]);
+
+  // OrbitControls instance for runtime rotateSpeed updates.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const controlsRef = useRef<any>(null);
+
   async function handleSavePhotoLinks(photoIds: string[]) {
     if (!selected) return { ok: false, error: "No pin selected." };
     if (selectedIsDraft) {
@@ -553,6 +590,33 @@ export function Explorer({
           🌙 moon
         </BodyButton>
         <span className="flex-1" />
+        {/* Drag-speed slider (everyone sees it — it's a personal preference) */}
+        <label
+          className="hidden sm:inline-flex items-center gap-1.5 rounded-pill bg-white border border-pink-100 px-2.5 py-1 text-[11px] font-semibold text-pink-800"
+          title="drag sensitivity"
+        >
+          <span className="text-pink-600">speed</span>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={dragSpeed}
+            onChange={(e) => setDragSpeed(parseFloat(e.target.value))}
+            className="w-20 accent-pink-200 cursor-pointer"
+            aria-label="drag sensitivity"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={() => setFullscreen(true)}
+          title="enter fullscreen"
+          className="lift inline-flex items-center rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-3 py-1.5 text-xs font-semibold"
+        >
+          ⤢ fullscreen
+        </button>
+
         {isAdmin ? (
           <>
             <ToggleBtn active={pinMode === "popup"} disabled={pending} onClick={handleTogglePinMode} title="panel below ↔ popup at pin">
@@ -585,7 +649,11 @@ export function Explorer({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerLeave}
-        className="relative aspect-[4/3] rounded-lg overflow-hidden border-2 border-white shadow-soft"
+        className={
+          fullscreen
+            ? "fixed inset-0 z-[120] overflow-hidden"
+            : "relative aspect-[4/3] rounded-lg overflow-hidden border-2 border-white shadow-soft"
+        }
         style={{
           background:
             "radial-gradient(ellipse at center, #1a1530 0%, #050510 100%)",
@@ -595,9 +663,21 @@ export function Explorer({
         <span className="absolute top-3 left-4 z-10 font-script text-cream/70 text-base pointer-events-none">
           ✦
         </span>
-        <span className="absolute top-3 right-4 z-10 font-script text-cream/70 text-lg pointer-events-none">
-          ✿
-        </span>
+        {fullscreen ? (
+          <button
+            type="button"
+            onClick={() => setFullscreen(false)}
+            aria-label="exit fullscreen"
+            title="exit fullscreen"
+            className="absolute top-3 right-4 z-20 rounded-pill px-3 py-1.5 text-xs font-semibold bg-cream/15 text-cream border border-cream/25 hover:bg-cream/30"
+          >
+            ✕ exit
+          </button>
+        ) : (
+          <span className="absolute top-3 right-4 z-10 font-script text-cream/70 text-lg pointer-events-none">
+            ✿
+          </span>
+        )}
 
         <Canvas
           flat
@@ -686,14 +766,16 @@ export function Explorer({
             </PinPopupAnchor>
           ) : null}
           <OrbitControls
+            ref={controlsRef}
             enablePan={false}
             minDistance={1.3}
             maxDistance={8}
             autoRotate={!selected}
             autoRotateSpeed={0.35}
-            rotateSpeed={0.6}
+            rotateSpeed={dragSpeed}
             zoomSpeed={0.7}
           />
+          <DragSpeedDriver controlsRef={controlsRef} baseSpeed={dragSpeed} />
         </Canvas>
       </div>
 
@@ -798,6 +880,27 @@ function BodyButton({
       </span>
     </button>
   );
+}
+
+function DragSpeedDriver({
+  controlsRef,
+  baseSpeed,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  controlsRef: React.MutableRefObject<any>;
+  baseSpeed: number;
+}) {
+  // Each frame: rotateSpeed = baseSpeed × (camera_distance / REF_DISTANCE),
+  // capped at 1× the base. So at far zoom the slider's value is what you get;
+  // at close zoom rotation slows proportionally so a small drag isn't a 90°
+  // sweep across the screen.
+  useFrame(({ camera }) => {
+    if (!controlsRef.current) return;
+    const dist = camera.position.length();
+    const compensation = Math.min(1, dist / REF_DISTANCE);
+    controlsRef.current.rotateSpeed = baseSpeed * compensation;
+  });
+  return null;
 }
 
 function ToggleBtn({
