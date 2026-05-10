@@ -692,22 +692,25 @@ function LingqianPanel() {
 
 function FortuneStick({ number }: { number: number }) {
   // A small bamboo-stick rendering: rounded vertical pill with the number in
-  // Chinese numerals stacked top-to-bottom inside, the way a real qian
-  // (籤) is carved.
+  // Chinese numerals stacked top-to-bottom inside, set in Noto Serif TC so
+  // the glyphs read as carved-temple Traditional Chinese rather than the
+  // browser's default sans fallback.
   const characters = toChineseNumeral(number).split("");
   return (
     <div
       aria-label={`fortune stick number ${number}`}
       title={`第 ${toChineseNumeral(number)} 籤`}
       className="flex items-center justify-center rounded-full bg-gradient-to-b from-lavender-50 via-white to-lavender-100 border border-lavender-400/40 shadow-soft"
-      style={{ width: 36, minHeight: 110, padding: "14px 0" }}
+      style={{ width: 38, minHeight: 116, padding: "14px 0" }}
     >
       <div
         className="flex flex-col items-center text-lavender-800 leading-none"
         style={{
-          fontFamily: 'ui-serif, "Songti SC", "STSong", "SimSun", serif',
-          fontSize: 20,
-          gap: 4,
+          fontFamily:
+            'var(--font-noto-serif-tc), "Noto Serif TC", "Songti TC", "STSongti-TC-Regular", "STKaiti", "Kaiti TC", serif',
+          fontSize: 22,
+          fontWeight: 700,
+          gap: 6,
         }}
       >
         {characters.map((ch, i) => (
