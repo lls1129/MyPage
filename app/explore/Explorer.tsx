@@ -773,7 +773,7 @@ function PinCard({
     [pin.position_x, pin.position_y, pin.position_z]
   );
   const pos = useMemo(
-    () => dir.clone().multiplyScalar(1.18).toArray() as [number, number, number],
+    () => dir.clone().multiplyScalar(1.08).toArray() as [number, number, number],
     [dir]
   );
   const borderColor = TYPE_COLORS[pin.type];
@@ -807,7 +807,7 @@ function PinCard({
           boxShadow: ring,
           opacity: isDraft ? 0.65 : 1,
         }}
-        className="block w-12 h-12 rounded-md border-2 overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
+        className="block w-8 h-8 rounded-md border-[1.5px] overflow-hidden bg-cream hover:scale-110 transition-transform shadow-soft cursor-pointer"
       >
         {photoThumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -817,12 +817,12 @@ function PinCard({
             className="w-full h-full object-cover"
           />
         ) : pin.note ? (
-          <div className="w-full h-full flex items-center justify-center p-1 text-[8px] leading-tight font-semibold text-ink overflow-hidden text-center break-words">
-            {pin.note.slice(0, 28)}
+          <div className="w-full h-full flex items-center justify-center p-0.5 text-[7px] leading-[1.05] font-semibold text-ink overflow-hidden text-center break-words">
+            {pin.note.slice(0, 16)}
           </div>
         ) : (
           <div
-            className="w-full h-full flex items-center justify-center text-base font-bold"
+            className="w-full h-full flex items-center justify-center text-sm font-bold"
             style={{ color: borderColor }}
           >
             {TYPE_GLYPHS[pin.type]}
