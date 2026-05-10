@@ -167,21 +167,34 @@ export function Explorer({
   const [pinMode, setPinMode] = useState<ExplorePinMode>(initialPinMode);
   const [pinDisplay, setPinDisplay] = useState<PinDisplayMode>(initialPinDisplay);
 
-  // OrbitControls drag tracking — without this, releasing a drag over the
-  // sphere fires onClick and drops a pin (or selects one) by accident.
+  // Drag detection: distinguish "the user dragged the globe" from "the user
+  // tapped a spot". OrbitControls' onStart fires on pointerdown (not on
+  // actual movement), so it can't tell us — we measure pointer travel from
+  // pointerdown to pointerup on the canvas wrapper instead.
+  const downPosRef = useRef<{ x: number; y: number } | null>(null);
   const dragJustEndedRef = useRef(false);
   const dragClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function handleDragStart() {
-    dragJustEndedRef.current = true;
-    if (dragClearTimerRef.current) clearTimeout(dragClearTimerRef.current);
+  const DRAG_THRESHOLD_PX = 5;
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    downPosRef.current = { x: e.clientX, y: e.clientY };
   }
-  function handleDragEnd() {
-    if (dragClearTimerRef.current) clearTimeout(dragClearTimerRef.current);
-    // Stay armed for ~80ms so the click event that follows pointerup still
-    // sees the flag and gets suppressed.
-    dragClearTimerRef.current = setTimeout(() => {
-      dragJustEndedRef.current = false;
-    }, 80);
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const down = downPosRef.current;
+    downPosRef.current = null;
+    if (!down) return;
+    const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    if (dist > DRAG_THRESHOLD_PX) {
+      dragJustEndedRef.current = true;
+      if (dragClearTimerRef.current) clearTimeout(dragClearTimerRef.current);
+      // Stay armed long enough for the click event that follows pointerup.
+      dragClearTimerRef.current = setTimeout(() => {
+        dragJustEndedRef.current = false;
+      }, 80);
+    }
+  }
+  function handlePointerLeave() {
+    downPosRef.current = null;
   }
 
   // Sync mode if server-side value changes (e.g. another admin toggled it).
@@ -498,6 +511,10 @@ export function Explorer({
       </div>
 
       <div
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerLeave}
         className="relative aspect-[4/3] rounded-lg overflow-hidden border-2 border-white shadow-soft"
         style={{
           background:
@@ -595,8 +612,6 @@ export function Explorer({
             autoRotateSpeed={0.35}
             rotateSpeed={0.6}
             zoomSpeed={0.7}
-            onStart={handleDragStart}
-            onEnd={handleDragEnd}
           />
         </Canvas>
       </div>
@@ -744,7 +759,16 @@ function PinCard({
   const ring = selected ? `0 0 0 2px ${borderColor}55` : "none";
 
   return (
-    <Html position={pos} center distanceFactor={3.5} zIndexRange={[20, 0]}>
+    <Html
+      position={pos}
+      center
+      distanceFactor={3.5}
+      zIndexRange={[20, 0]}
+      // Fade the card out when the pin is on the far side of the sphere so
+      // it visually "goes behind." drei reads scene depth and applies a CSS
+      // blend.
+      occlude="blending"
+    >
       <button
         type="button"
         onClick={onClick}
