@@ -1,10 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Meal } from "@/lib/supabase/meals";
+import { findMealImage } from "@/lib/meals/themealdb";
 
 const MOODS = ["any", "cozy", "light", "fast", "fancy"] as const;
 type Mood = (typeof MOODS)[number];
+
+// Shared with /meals — same key, so a lookup done on one page benefits
+// the other. Empty strings (failed lookups) are dropped on load.
+const IMAGE_CACHE_KEY = "myworld:meals:image-cache:v2";
 
 function tagsFor(meal: Meal): string[] {
   const out: string[] = [];
@@ -19,9 +24,59 @@ function pickFrom(pool: Meal[], exclude?: string): Meal {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+function loadJSON<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveJSON(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // swallow quota/denied
+  }
+}
+
 export function MealStripClient({ meals }: { meals: Meal[] }) {
   const [mood, setMood] = useState<Mood>("any");
   const [meal, setMeal] = useState<Meal>(meals[0]);
+  const [imageCache, setImageCache] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const raw = loadJSON<Record<string, string>>(IMAGE_CACHE_KEY, {});
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v) cleaned[k] = v;
+    }
+    setImageCache(cleaned);
+  }, []);
+  useEffect(() => saveJSON(IMAGE_CACHE_KEY, imageCache), [imageCache]);
+
+  // For library meals without an image_url, look one up via TheMealDB /
+  // Wikipedia and cache. Same shape as /meals so the cache is shared.
+  useEffect(() => {
+    if (!meal) return;
+    if (meal.image_url) return;
+    if (meal.id in imageCache) return;
+    let cancelled = false;
+    findMealImage(meal.name).then((url) => {
+      if (cancelled) return;
+      if (url) {
+        setImageCache((prev) => ({ ...prev, [meal.id]: url }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meal?.id]);
 
   const filteredPool = useMemo(() => {
     if (mood === "any") return meals;
@@ -39,6 +94,8 @@ export function MealStripClient({ meals }: { meals: Meal[] }) {
   }
 
   const tags = tagsFor(meal);
+  const displayedImage = meal.image_url ?? imageCache[meal.id] ?? null;
+  const hasImage = !!displayedImage;
 
   return (
     <section className="rounded-lg bg-white border border-pink-100 shadow-soft p-5 flex flex-col gap-4">
@@ -64,9 +121,19 @@ export function MealStripClient({ meals }: { meals: Meal[] }) {
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
-        <div className="w-14 h-14 shrink-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-2xl">
-          {meal.glyph}
-        </div>
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={displayedImage as string}
+            alt={meal.name}
+            loading="lazy"
+            className="w-14 h-14 shrink-0 rounded-lg object-cover border border-pink-100"
+          />
+        ) : (
+          <div className="w-14 h-14 shrink-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-2xl">
+            {meal.glyph}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="font-script text-pink-800 text-[26px] leading-tight">
             {meal.name}
