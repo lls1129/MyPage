@@ -92,9 +92,15 @@ type Props = {
   library: Meal[];
   statuses: Record<string, MealStatus>;
   isAdmin: boolean;
+  initialMealId?: string;
 };
 
-export function MealPicker({ library, statuses, isAdmin }: Props) {
+export function MealPicker({
+  library,
+  statuses,
+  isAdmin,
+  initialMealId,
+}: Props) {
   // Filter state
   const [mood, setMood] = useState<Mood>("any");
   const [cuisine, setCuisine] = useState<string>("any");
@@ -337,14 +343,17 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
     });
   }
 
-  // Initial pick on mount.
+  // Initial pick on mount. If the URL carried ?id=…, try to land on that
+  // exact meal (deep-link from the homepage widget); otherwise pick at random.
   useEffect(() => {
-    if (current === null && fullLibrary.length > 0) {
-      const next = pickFromPool(fullLibrary);
-      if (next) {
-        setCurrent(next);
-        recordShow(next.id);
-      }
+    if (current !== null || fullLibrary.length === 0) return;
+    const requested = initialMealId
+      ? fullLibrary.find((m) => m.id === initialMealId)
+      : null;
+    const next = requested ?? pickFromPool(fullLibrary);
+    if (next) {
+      setCurrent(next);
+      recordShow(next.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fullLibrary]);

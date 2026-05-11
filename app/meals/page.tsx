@@ -11,14 +11,17 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function MealsPage() {
-  const [result, statuses, admin] = await Promise.all([
+export default async function MealsPage(props: PageProps<"/meals">) {
+  const [result, statuses, admin, params] = await Promise.all([
     listMeals(),
     listMealStatuses(),
     getCurrentAdmin(),
+    props.searchParams,
   ]);
   const library = result.kind === "ok" ? result.meals : [];
   const isAdmin = admin !== null;
+  const initialMealId =
+    typeof params?.id === "string" ? params.id : undefined;
 
   return (
     <PageShell>
@@ -68,6 +71,7 @@ export default async function MealsPage() {
         library={library}
         statuses={statuses}
         isAdmin={isAdmin}
+        initialMealId={initialMealId}
       />
     </PageShell>
   );

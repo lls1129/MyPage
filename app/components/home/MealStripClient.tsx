@@ -161,7 +161,7 @@ export function MealStripClient({ meals }: { meals: Meal[] }) {
             ↻ shuffle
           </button>
           <a
-            href="/meals"
+            href={`/meals?id=${encodeURIComponent(meal.id)}`}
             className="lift rounded-pill px-4 py-2 text-sm font-semibold bg-white text-pink-800 border border-pink-100 hover:border-pink-200"
           >
             full picker →
