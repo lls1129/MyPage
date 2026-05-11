@@ -120,7 +120,10 @@ export function MealPicker({ library }: { library: Meal[] }) {
         const haystack = [
           m.name,
           m.tagline,
+          m.cuisine,
           ...m.ingredients,
+          ...m.ingredients_detail,
+          m.instructions ?? "",
         ]
           .join(" ")
           .toLowerCase();
@@ -231,7 +234,6 @@ export function MealPicker({ library }: { library: Meal[] }) {
   useEffect(() => {
     if (
       current &&
-      current.source === "library" &&
       !eligible.find((m) => m.id === current.id) &&
       eligible.length > 0
     ) {
@@ -293,7 +295,14 @@ export function MealPicker({ library }: { library: Meal[] }) {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="label text-pink-600">ingredient</span>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="label text-pink-600">ingredient</span>
+              {ingredient.trim() ? (
+                <span className="text-[11px] text-lavender-600 font-semibold">
+                  {eligible.length} match{eligible.length === 1 ? "" : "es"}
+                </span>
+              ) : null}
+            </div>
             <input
               type="text"
               value={ingredient}
