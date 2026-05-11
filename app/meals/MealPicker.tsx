@@ -56,16 +56,36 @@ function saveJSON(key: string, value: unknown) {
 
 // Break an instructions paragraph into discrete steps. TheMealDB picks
 // usually include newlines between paragraphs; our library uses ". " between
-// sentences. Strip any leading numbering ("1. ", "- ", etc.) so the <ol>
-// adds its own.
+// sentences. Strip any leading numbering ("1. ", "Step 2:", "- ", etc.) so
+// the <ol> adds its own, and drop pure section-header lines like
+// "Preparation:" / "Cooking instructions" / "Method".
+const SECTION_HEADER =
+  /^(recipe\s+|cooking\s+)?(preparation|instructions?|directions?|method|steps?|ingredients?|notes?|cooking)\s*:?\s*$/i;
+
 function splitInstructions(raw: string): string[] {
   const trimmed = raw.trim();
   const source = trimmed.includes("\n")
     ? trimmed.split(/\n+/)
     : trimmed.split(/\.\s+/);
-  return source
-    .map((s) => s.trim().replace(/^[-•*\d.)]+\s*/, "").replace(/\.+$/, ""))
-    .filter(Boolean);
+
+  const out: string[] = [];
+  for (const part of source) {
+    let t = part.trim();
+    if (!t) continue;
+    if (SECTION_HEADER.test(t)) continue;
+    // Strip "Step N" / "STEP 2" prefix.
+    t = t.replace(/^step\s*\d+\b/i, "");
+    // Strip leading bullet markers.
+    t = t.replace(/^[-•*]+/, "");
+    // Strip leading "1" / "12" before its separator.
+    t = t.replace(/^\d+(?=[\s.):])/, "");
+    // Strip leftover separator punctuation/whitespace.
+    t = t.replace(/^[-:.)—–\s]+/, "").trim();
+    // Trim trailing periods (the <ol> + sentence rhythm reads better).
+    t = t.replace(/\.+$/, "").trim();
+    if (t) out.push(t);
+  }
+  return out;
 }
 
 type Props = {
