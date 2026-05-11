@@ -53,10 +53,11 @@ function normalizeInstructions(raw: string | null): string | null {
   return raw.replace(/\r\n/g, "\n").trim().toLowerCase();
 }
 
-// Try to find an image for a library meal by searching TheMealDB. Many of
-// our seeded meals don't have an image_url; rather than hardcoding URLs we
-// look one up at view-time. The full meal name often won't match exactly,
-// so we fall back to individual significant words (longest first).
+// Try to find an image for a library meal by searching TheMealDB, then
+// Wikipedia. Many of our seeded meals don't have an image_url; rather than
+// hardcoding URLs we look one up at view-time. The full meal name often
+// won't match TheMealDB exactly, so we fall back to individual significant
+// words (longest first), then to a Wikipedia article search.
 function buildSearchQueries(name: string): string[] {
   const queries: string[] = [name];
   const words = name.split(/\s+/).filter((w) => w.length > 3);
@@ -67,7 +68,16 @@ function buildSearchQueries(name: string): string[] {
   return queries;
 }
 
-export async function findMealImage(name: string): Promise<string | null> {
+// Last-resort overrides for meals neither TheMealDB nor Wikipedia can place
+// from a free-text search. Keyed by exact lowercase meal name.
+const KNOWN_IMAGE_FALLBACKS: Record<string, string> = {
+  "tomato burrata toast":
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Burrata2.jpg/500px-Burrata2.jpg",
+  "scallion pancakes":
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Spring_onion_pancake_2013.JPG/500px-Spring_onion_pancake_2013.JPG",
+};
+
+async function findThemealdbImage(name: string): Promise<string | null> {
   for (const q of buildSearchQueries(name)) {
     try {
       const res = await fetch(
@@ -84,6 +94,46 @@ export async function findMealImage(name: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+async function findWikipediaImage(name: string): Promise<string | null> {
+  try {
+    const url =
+      "https://en.wikipedia.org/w/api.php?" +
+      new URLSearchParams({
+        action: "query",
+        generator: "search",
+        gsrsearch: name,
+        gsrlimit: "1",
+        prop: "pageimages",
+        pithumbsize: "500",
+        format: "json",
+        origin: "*",
+      }).toString();
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      query?: {
+        pages?: Record<string, { thumbnail?: { source?: string } }>;
+      };
+    };
+    const pages = data.query?.pages ?? {};
+    for (const page of Object.values(pages)) {
+      const src = page?.thumbnail?.source;
+      if (src) return src;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function findMealImage(name: string): Promise<string | null> {
+  const key = name.trim().toLowerCase();
+  if (KNOWN_IMAGE_FALLBACKS[key]) return KNOWN_IMAGE_FALLBACKS[key];
+  const themealdb = await findThemealdbImage(name);
+  if (themealdb) return themealdb;
+  return findWikipediaImage(name);
 }
 
 export async function fetchSurpriseMeal(): Promise<Meal | null> {

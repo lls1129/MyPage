@@ -22,7 +22,7 @@ type Pool = "all" | "want-to-try" | "favorites";
 const FAV_KEY = "myworld:meals:favorites:v1";
 const RECENT_KEY = "myworld:meals:recents:v1";
 const SAVED_THEMEALDB_KEY = "myworld:meals:saved-themealdb:v1";
-const IMAGE_CACHE_KEY = "myworld:meals:image-cache:v1";
+const IMAGE_CACHE_KEY = "myworld:meals:image-cache:v2";
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 function inTimeBand(minutes: number | null, band: TimeBand): boolean {
