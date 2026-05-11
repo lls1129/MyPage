@@ -432,7 +432,7 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
               <FilterChip
                 active={pool === "want-to-try"}
                 onClick={() => setPool("want-to-try")}
-                label={`✿ want to try (${poolCounts.wantToTry})`}
+                label={`✿ on my list (${poolCounts.wantToTry})`}
               />
               <FilterChip
                 active={pool === "favorites"}
@@ -645,8 +645,8 @@ function StatusRow({
     return (
       <div className="flex flex-wrap items-center gap-2">
         {tried ? <StatusPill tone="solid">✓ tried</StatusPill> : null}
-        {wantToTry && !tried ? (
-          <StatusPill tone="soft">✿ want to try</StatusPill>
+        {wantToTry ? (
+          <StatusPill tone="soft">✿ on my list</StatusPill>
         ) : null}
         {rating > 0 ? <Stars value={rating} /> : null}
       </div>
@@ -666,7 +666,7 @@ function StatusRow({
             : "bg-pink-50 text-pink-800 border-pink-100 hover:border-pink-200")
         }
       >
-        {tried ? "✓ tried" : "○ tried?"}
+        {tried ? "✓ tried" : "○ tried"}
       </button>
       <button
         type="button"
@@ -679,7 +679,7 @@ function StatusRow({
             : "bg-lavender-50 text-lavender-800 border-lavender-100 hover:border-lavender-200")
         }
       >
-        {wantToTry ? "✿ want to try" : "+ want to try"}
+        {wantToTry ? "✿ on my list" : "+ on my list"}
       </button>
       <Stars value={rating} onChange={onRatingChange} disabled={saving} />
     </div>
