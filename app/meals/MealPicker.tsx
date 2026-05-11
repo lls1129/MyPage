@@ -112,7 +112,15 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
     }
     setRecents(cleaned);
     setSavedThemealdb(loadJSON<Record<string, Meal>>(SAVED_THEMEALDB_KEY, {}));
-    setImageCache(loadJSON<Record<string, string>>(IMAGE_CACHE_KEY, {}));
+    // Image cache: drop the empty-string "tried, no result" sentinels so
+    // previously-failed lookups retry once per session against the current
+    // (possibly upgraded) lookup chain. Positive URLs stay cached.
+    const rawCache = loadJSON<Record<string, string>>(IMAGE_CACHE_KEY, {});
+    const cleanedCache: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawCache)) {
+      if (v) cleanedCache[k] = v;
+    }
+    setImageCache(cleanedCache);
   }, []);
   useEffect(() => saveJSON(FAV_KEY, favorites), [favorites]);
   useEffect(() => saveJSON(RECENT_KEY, recents), [recents]);
@@ -262,9 +270,10 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
   // Apply a status patch optimistically, then persist via server action.
   // The server returns the canonical row which we re-sync into state.
   function patchStatus(
-    mealId: string,
+    meal: Meal,
     patch: Partial<Omit<MealStatus, "meal_id" | "updated_at">>
   ) {
+    const mealId = meal.id;
     setStatusError(null);
     setStatusMap((prev) => {
       const existing: MealStatus = prev[mealId] ?? {
@@ -280,18 +289,30 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
         [mealId]: { ...existing, ...patch, updated_at: new Date().toISOString() },
       };
     });
+    // TheMealDB meals only live in localStorage until favorited. If the
+    // user marks one tried/on-my-list/rated/noted, snapshot it so the meal
+    // shows up again on next load (otherwise the status row would orphan).
+    if (meal.source === "themealdb" && !(mealId in savedThemealdb)) {
+      setSavedThemealdb((prev) => ({ ...prev, [mealId]: meal }));
+    }
     startStatusSave(async () => {
-      const res = await setMealStatus({
-        mealId,
-        tried: patch.tried,
-        wantToTry: patch.want_to_try,
-        rating: patch.rating,
-        notes: patch.notes,
-      });
-      if (!res.ok) {
-        setStatusError(res.message);
-      } else {
-        setStatusMap((prev) => ({ ...prev, [mealId]: res.status }));
+      try {
+        const res = await setMealStatus({
+          mealId,
+          tried: patch.tried,
+          wantToTry: patch.want_to_try,
+          rating: patch.rating,
+          notes: patch.notes,
+        });
+        if (!res.ok) {
+          setStatusError(res.message);
+        } else {
+          setStatusMap((prev) => ({ ...prev, [mealId]: res.status }));
+        }
+      } catch (e) {
+        setStatusError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
       }
     });
   }
@@ -446,6 +467,19 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
             {eligible.length === 1 ? "" : "es"} · {fresh.length} fresh
           </p>
         </div>
+
+        {pool === "favorites" ? (
+          <p className="text-[11px] text-lavender-600 italic">
+            ♥ favorites is per-device — switch to <strong>all</strong> to
+            browse new meals and tap ♡ favorite to add them here.
+          </p>
+        ) : null}
+        {pool === "want-to-try" && poolCounts.wantToTry === 0 ? (
+          <p className="text-[11px] text-lavender-600 italic">
+            nothing on your list yet — switch to <strong>all</strong> and tap
+            <strong> + on my list </strong>on meals you want to make.
+          </p>
+        ) : null}
       </section>
 
       {/* Current pick */}
@@ -500,17 +534,17 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
                   isAdmin={isAdmin}
                   saving={statusSaving}
                   onTriedToggle={() =>
-                    patchStatus(current.id, {
+                    patchStatus(current, {
                       tried: !(currentStatus?.tried ?? false),
                     })
                   }
                   onWantToTryToggle={() =>
-                    patchStatus(current.id, {
+                    patchStatus(current, {
                       want_to_try: !(currentStatus?.want_to_try ?? false),
                     })
                   }
                   onRatingChange={(r) =>
-                    patchStatus(current.id, {
+                    patchStatus(current, {
                       rating: currentStatus?.rating === r ? null : r,
                     })
                   }
@@ -562,7 +596,7 @@ export function MealPicker({ library, statuses, isAdmin }: Props) {
               setEditing={setNotesEditing}
               saving={statusSaving}
               onSave={() =>
-                patchStatus(current.id, {
+                patchStatus(current, {
                   notes: notesDraft.trim() === "" ? null : notesDraft.trim(),
                 })
               }
