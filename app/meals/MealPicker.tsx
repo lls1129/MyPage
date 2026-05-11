@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Meal } from "@/lib/supabase/meals";
-import { fetchSurpriseMeal } from "@/lib/meals/themealdb";
+import { fetchSurpriseMeal, findMealImage } from "@/lib/meals/themealdb";
 
 const MOODS = ["any", "cozy", "light", "fast", "fancy", "spicy", "slow"] as const;
 type Mood = (typeof MOODS)[number];
@@ -18,6 +18,8 @@ const TIME_BANDS: { id: TimeBand; label: string }[] = [
 
 const FAV_KEY = "myworld:meals:favorites:v1";
 const RECENT_KEY = "myworld:meals:recents:v1";
+const SAVED_THEMEALDB_KEY = "myworld:meals:saved-themealdb:v1";
+const IMAGE_CACHE_KEY = "myworld:meals:image-cache:v1";
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 function inTimeBand(minutes: number | null, band: TimeBand): boolean {
@@ -57,9 +59,17 @@ export function MealPicker({ library }: { library: Meal[] }) {
   const [ingredient, setIngredient] = useState<string>("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
-  // Persisted state (favorites + recents)
+  // Persisted state (favorites + recents + saved themealdb meals + image cache)
   const [favorites, setFavorites] = useState<string[]>([]);
   const [recents, setRecents] = useState<Record<string, number>>({});
+  // Snapshot favorited TheMealDB meals so they survive reload and merge into
+  // the shuffle pool alongside the library.
+  const [savedThemealdb, setSavedThemealdb] = useState<Record<string, Meal>>(
+    {}
+  );
+  // Cache TheMealDB image lookups so we don't re-fetch every shuffle.
+  // Sentinel "" means "looked up, no image found".
+  const [imageCache, setImageCache] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setFavorites(loadJSON<string[]>(FAV_KEY, []));
@@ -71,9 +81,22 @@ export function MealPicker({ library }: { library: Meal[] }) {
       if (t > cutoff) cleaned[id] = t;
     }
     setRecents(cleaned);
+    setSavedThemealdb(loadJSON<Record<string, Meal>>(SAVED_THEMEALDB_KEY, {}));
+    setImageCache(loadJSON<Record<string, string>>(IMAGE_CACHE_KEY, {}));
   }, []);
   useEffect(() => saveJSON(FAV_KEY, favorites), [favorites]);
   useEffect(() => saveJSON(RECENT_KEY, recents), [recents]);
+  useEffect(() => saveJSON(SAVED_THEMEALDB_KEY, savedThemealdb), [savedThemealdb]);
+  useEffect(() => saveJSON(IMAGE_CACHE_KEY, imageCache), [imageCache]);
+
+  // The shuffle/filter pool is library + any TheMealDB meals the user has
+  // favorited (so they reappear when favorites-only is on, and can be re-shuffled).
+  const fullLibrary = useMemo(() => {
+    const extras = Object.values(savedThemealdb);
+    if (extras.length === 0) return library;
+    const seen = new Set(library.map((m) => m.id));
+    return [...library, ...extras.filter((m) => !seen.has(m.id))];
+  }, [library, savedThemealdb]);
 
   // Current pick (the meal shown). Starts unset; we choose on mount once.
   const [current, setCurrent] = useState<Meal | null>(null);
@@ -82,13 +105,13 @@ export function MealPicker({ library }: { library: Meal[] }) {
 
   const cuisines = useMemo(() => {
     const set = new Set<string>();
-    for (const m of library) if (m.cuisine) set.add(m.cuisine);
+    for (const m of fullLibrary) if (m.cuisine) set.add(m.cuisine);
     return ["any", ...Array.from(set).sort()];
-  }, [library]);
+  }, [fullLibrary]);
 
   const eligible = useMemo(() => {
     const ingTrim = ingredient.trim().toLowerCase();
-    return library.filter((m) => {
+    return fullLibrary.filter((m) => {
       if (favoritesOnly && !favorites.includes(m.id)) return false;
       if (mood !== "any" && !m.moods.includes(mood)) return false;
       if (cuisine !== "any" && m.cuisine !== cuisine) return false;
@@ -105,7 +128,7 @@ export function MealPicker({ library }: { library: Meal[] }) {
       }
       return true;
     });
-  }, [library, favoritesOnly, favorites, mood, cuisine, timeBand, ingredient]);
+  }, [fullLibrary, favoritesOnly, favorites, mood, cuisine, timeBand, ingredient]);
 
   // The freshly-eligible pool: filter eligible, then push down anything
   // recently shown so it floats to the back of the queue.
@@ -154,23 +177,55 @@ export function MealPicker({ library }: { library: Meal[] }) {
     setCurrent(meal);
   }
 
-  function toggleFavorite(id: string) {
+  function toggleFavorite(meal: Meal) {
+    const id = meal.id;
+    const wasFavorite = favorites.includes(id);
     setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      wasFavorite ? prev.filter((x) => x !== id) : [...prev, id]
     );
+    // For TheMealDB picks, also save/remove the snapshot so the meal
+    // survives reload and can re-appear via shuffle / favorites-only.
+    if (meal.source === "themealdb") {
+      setSavedThemealdb((prev) => {
+        if (wasFavorite) {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        }
+        return { ...prev, [id]: meal };
+      });
+    }
   }
 
   // Initial pick on mount.
   useEffect(() => {
-    if (current === null && library.length > 0) {
-      const next = pickFromPool(library);
+    if (current === null && fullLibrary.length > 0) {
+      const next = pickFromPool(fullLibrary);
       if (next) {
         setCurrent(next);
         recordShow(next.id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [library]);
+  }, [fullLibrary]);
+
+  // For library meals without an image_url, look one up via TheMealDB
+  // search and cache the result. Sentinel "" means we tried and got nothing.
+  useEffect(() => {
+    if (!current) return;
+    if (current.source !== "library") return;
+    if (current.image_url) return;
+    if (current.id in imageCache) return;
+    let cancelled = false;
+    findMealImage(current.name).then((url) => {
+      if (cancelled) return;
+      setImageCache((prev) => ({ ...prev, [current.id]: url ?? "" }));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
 
   // If filters change and current is no longer eligible, swap.
   useEffect(() => {
@@ -191,6 +246,10 @@ export function MealPicker({ library }: { library: Meal[] }) {
 
   const isFavorite = current ? favorites.includes(current.id) : false;
   const favCount = favorites.length;
+  const displayedImage = current
+    ? current.image_url ?? imageCache[current.id] ?? null
+    : null;
+  const hasDisplayImage = !!displayedImage && displayedImage !== "";
 
   return (
     <div className="flex flex-col gap-4">
@@ -268,57 +327,86 @@ export function MealPicker({ library }: { library: Meal[] }) {
       </section>
 
       {/* Current pick */}
-      <section className="rounded-lg bg-white border border-pink-100 shadow-soft p-6 md:p-8 flex flex-col gap-5">
+      <section className="rounded-lg bg-white border border-pink-100 shadow-soft p-6 md:p-8 flex flex-col gap-6">
         {current ? (
           <>
-            <div className="flex items-start gap-4 flex-wrap">
-              {current.image_url ? (
+            <div className="flex flex-col md:flex-row md:items-start gap-5 md:gap-7">
+              {hasDisplayImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={current.image_url}
+                  src={displayedImage as string}
                   alt={current.name}
                   loading="lazy"
-                  className="w-24 h-24 rounded-lg object-cover border border-pink-100"
+                  className="w-full md:w-60 md:shrink-0 aspect-square object-cover rounded-lg border border-pink-100"
                 />
               ) : (
-                <div className="w-20 h-20 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-4xl">
+                <div className="w-32 h-32 md:w-36 md:h-36 md:shrink-0 mx-auto md:mx-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-5xl">
                   {current.glyph || "🍽"}
                 </div>
               )}
-              <div className="min-w-0 flex-1">
-                <p className="font-script text-pink-800 text-[32px] md:text-[40px] leading-tight">
-                  {current.name}
-                </p>
-                {current.tagline ? (
-                  <p className="text-sm text-lavender-600 font-medium">
-                    {current.tagline}
+
+              <div className="min-w-0 flex-1 flex flex-col gap-4">
+                <div>
+                  <p className="font-script text-pink-800 text-[32px] md:text-[40px] leading-tight">
+                    {current.name}
                   </p>
-                ) : null}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {current.cuisine ? (
-                    <Tag tint="pink">{current.cuisine}</Tag>
+                  {current.tagline ? (
+                    <p className="text-sm text-lavender-600 font-medium">
+                      {current.tagline}
+                    </p>
                   ) : null}
-                  {current.time_minutes !== null ? (
-                    <Tag tint="lavender">
-                      {current.time_minutes} min
-                    </Tag>
-                  ) : null}
-                  {current.moods.map((m) => (
-                    <Tag key={m} tint="amber">
-                      {m}
-                    </Tag>
-                  ))}
-                  {current.source === "themealdb" ? (
-                    <Tag tint="lavender">from themealdb</Tag>
-                  ) : null}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {current.cuisine ? (
+                      <Tag tint="pink">{current.cuisine}</Tag>
+                    ) : null}
+                    {current.time_minutes !== null ? (
+                      <Tag tint="lavender">{current.time_minutes} min</Tag>
+                    ) : null}
+                    {current.moods.map((m) => (
+                      <Tag key={m} tint="amber">
+                        {m}
+                      </Tag>
+                    ))}
+                    {current.source === "themealdb" ? (
+                      <Tag tint="lavender">from themealdb</Tag>
+                    ) : null}
+                  </div>
                 </div>
-                {current.ingredients.length > 0 ? (
-                  <p className="text-[11px] text-ink/65 font-mono mt-2">
-                    {current.ingredients.join(" · ")}
-                  </p>
+
+                {current.ingredients_detail.length > 0 ? (
+                  <div>
+                    <p className="label text-pink-600 mb-2">ingredients</p>
+                    <ul className="text-sm text-ink/80 space-y-1 columns-1 sm:columns-2 md:columns-1 lg:columns-2 gap-x-6">
+                      {current.ingredients_detail.map((it, i) => (
+                        <li
+                          key={i}
+                          className="leading-snug flex gap-2 break-inside-avoid"
+                        >
+                          <span className="text-pink-300 shrink-0">·</span>
+                          <span>{it}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : current.ingredients.length > 0 ? (
+                  <div>
+                    <p className="label text-pink-600 mb-2">ingredients</p>
+                    <p className="text-[11px] text-ink/65 font-mono">
+                      {current.ingredients.join(" · ")}
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </div>
+
+            {current.instructions ? (
+              <div className="pt-4 border-t border-pink-50">
+                <p className="label text-pink-600 mb-2">how to</p>
+                <p className="text-sm text-ink/80 leading-relaxed whitespace-pre-line">
+                  {current.instructions}
+                </p>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -337,25 +425,19 @@ export function MealPicker({ library }: { library: Meal[] }) {
               >
                 {surpriseLoading ? "asking…" : "✦ surprise me"}
               </button>
-              {current.source === "library" ? (
-                <button
-                  type="button"
-                  onClick={() => toggleFavorite(current.id)}
-                  title={isFavorite ? "remove from favorites" : "save to favorites"}
-                  className={
-                    "lift rounded-pill border shadow-soft px-4 py-2 text-sm font-semibold " +
-                    (isFavorite
-                      ? "bg-pink-100 text-pink-800 border-pink-400"
-                      : "bg-white text-pink-800 border-pink-100 hover:border-pink-200")
-                  }
-                >
-                  {isFavorite ? "♥ saved" : "♡ favorite"}
-                </button>
-              ) : (
-                <span className="text-[11px] text-lavender-600 italic font-semibold">
-                  themealdb meals aren&apos;t savable in this version
-                </span>
-              )}
+              <button
+                type="button"
+                onClick={() => toggleFavorite(current)}
+                title={isFavorite ? "remove from favorites" : "save to favorites"}
+                className={
+                  "lift rounded-pill border shadow-soft px-4 py-2 text-sm font-semibold " +
+                  (isFavorite
+                    ? "bg-pink-100 text-pink-800 border-pink-400"
+                    : "bg-white text-pink-800 border-pink-100 hover:border-pink-200")
+                }
+              >
+                {isFavorite ? "♥ saved" : "♡ favorite"}
+              </button>
               {error ? (
                 <span className="text-xs text-pink-600 font-semibold">{error}</span>
               ) : null}

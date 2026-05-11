@@ -10,6 +10,8 @@ export type Meal = {
   cuisine: string;
   time_minutes: number | null;
   ingredients: string[];
+  ingredients_detail: string[];
+  instructions: string | null;
   image_url: string | null;
   hidden: boolean;
   created_at: string;
@@ -47,6 +49,8 @@ export async function listMeals(): Promise<MealsResult> {
       ...row,
       moods: row.moods ?? [],
       ingredients: row.ingredients ?? [],
+      ingredients_detail: row.ingredients_detail ?? [],
+      instructions: row.instructions ?? null,
       source: "library" as const,
     })) as Meal[];
     return { kind: "ok", meals };
