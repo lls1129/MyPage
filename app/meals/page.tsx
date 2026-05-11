@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
-import { listMeals } from "@/lib/supabase/meals";
+import { listMeals, listMealStatuses } from "@/lib/supabase/meals";
+import { getCurrentAdmin } from "@/lib/supabase/server";
 import { MealPicker } from "./MealPicker";
 
 export const metadata: Metadata = {
@@ -11,8 +12,13 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MealsPage() {
-  const result = await listMeals();
+  const [result, statuses, admin] = await Promise.all([
+    listMeals(),
+    listMealStatuses(),
+    getCurrentAdmin(),
+  ]);
   const library = result.kind === "ok" ? result.meals : [];
+  const isAdmin = admin !== null;
 
   return (
     <PageShell>
@@ -58,7 +64,11 @@ export default async function MealsPage() {
         </div>
       ) : null}
 
-      <MealPicker library={library} />
+      <MealPicker
+        library={library}
+        statuses={statuses}
+        isAdmin={isAdmin}
+      />
     </PageShell>
   );
 }
