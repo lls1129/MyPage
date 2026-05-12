@@ -186,22 +186,30 @@ export function DeepSkyPanel({
                         : "bg-skynavy-900/20 border-skynavy-500/30 opacity-60")
                     }
                   >
-                    {/* Mobile: 2-row stack. Desktop: single flex-wrap row. */}
+                    {/* Mobile: predictable 2-row stack — title (glyph,
+                        ID, name, type) on top with the name truncating
+                        instead of pushing the type label to a new line,
+                        then numbers below. Desktop: single flex-wrap
+                        row carrying the same blocks. */}
                     <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-baseline md:gap-x-3 md:gap-y-1">
-                      {/* Top: glyph + ID/name + type */}
-                      <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                        <span className="text-lg leading-none" aria-hidden>
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span
+                          className="text-lg leading-none shrink-0"
+                          aria-hidden
+                        >
                           {dsoTypeGlyph(t.dso.type)}
                         </span>
-                        <span className="font-script text-cream text-xl leading-none">
+                        <span className="font-script text-cream text-xl leading-none shrink-0">
                           {t.dso.m ? `M${t.dso.m}` : t.dso.id}
                         </span>
                         {t.dso.name ? (
-                          <span className="text-sm text-cream/85 break-words">
+                          <span className="text-sm text-cream/85 truncate min-w-0 flex-1 md:flex-initial">
                             · {t.dso.name}
                           </span>
-                        ) : null}
-                        <span className="text-[10px] uppercase tracking-wider text-pink-200/80 font-semibold">
+                        ) : (
+                          <span className="flex-1 md:hidden" />
+                        )}
+                        <span className="text-[10px] uppercase tracking-wider text-pink-200/80 font-semibold shrink-0 ml-auto md:ml-0">
                           {dsoTypeLabel(t.dso.type)}
                         </span>
                       </div>

@@ -77,14 +77,14 @@ export function WeatherGrid({
         <table className="w-full border-separate border-spacing-x-[2px] border-spacing-y-[3px] text-center text-[11px] font-semibold whitespace-nowrap">
           <thead>
             <tr>
-              <th className="text-left text-cream/55 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10">
+              <th className="text-left text-cream/55 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]">
                 hour
               </th>
               {hours.map((h, i) => (
                 <th
                   key={h.iso}
                   className={
-                    "text-cream/65 font-semibold w-9 " +
+                    "text-cream/65 font-semibold w-8 " +
                     (i === nowIdx ? "text-amber-100" : "")
                   }
                 >
@@ -98,10 +98,10 @@ export function WeatherGrid({
               <tr key={row.key}>
                 <th
                   scope="row"
-                  className="text-left text-cream/70 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10"
+                  className="text-left text-cream/70 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]"
+                  title={`${row.label} (${row.unit})`}
                 >
                   <span className="lowercase">{row.label}</span>
-                  <span className="text-cream/40 ml-1">{row.unit}</span>
                 </th>
                 {hours.map((h, i) => {
                   const v = rawValue(row.key, h);
