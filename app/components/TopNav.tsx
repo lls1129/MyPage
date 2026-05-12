@@ -47,17 +47,20 @@ export function TopNav({
           ✿ my world
         </Link>
 
-        {/* Desktop pill list */}
-        <ul className="hidden md:flex items-center gap-2 flex-wrap">
+        {/* Desktop pill list. flex-1 + overflow-x-auto so on widths where the
+            row would otherwise wrap (iPad portrait, narrow laptops) the tabs
+            scroll horizontally instead. Items must not shrink so they keep
+            their natural width. Scrollbar hidden — drag/trackpad to scroll. */}
+        <ul className="hidden md:flex items-center gap-2 flex-1 min-w-0 overflow-x-auto no-scrollbar">
           {NAV.map((item) => {
             const active = isActive(pathname, item.href);
             return (
-              <li key={item.href}>
+              <li key={item.href} className="shrink-0">
                 <Link
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={
-                    "lift inline-flex items-center rounded-pill px-4 py-2 text-sm font-semibold border " +
+                    "lift inline-flex items-center rounded-pill px-4 py-2 text-sm font-semibold border whitespace-nowrap " +
                     (active
                       ? "bg-pink-200 text-white border-pink-200 shadow-soft"
                       : "bg-white text-pink-800 border-pink-100 hover:border-pink-200")
@@ -70,7 +73,7 @@ export function TopNav({
           })}
         </ul>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Admin / login pill — visible on both. The admin link is hidden on
               mobile because it lives inside the drawer, but sign-out and login
               stay handy. */}

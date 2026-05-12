@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
 import { listMeals, listMealStatuses } from "@/lib/supabase/meals";
 import { getCurrentAdmin } from "@/lib/supabase/server";
+import { getMealsListPublic } from "@/lib/supabase/settings";
 import { MealPicker } from "./MealPicker";
 
 export const metadata: Metadata = {
@@ -12,10 +13,11 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MealsPage(props: PageProps<"/meals">) {
-  const [result, statuses, admin, params] = await Promise.all([
+  const [result, statuses, admin, listIsPublic, params] = await Promise.all([
     listMeals(),
     listMealStatuses(),
     getCurrentAdmin(),
+    getMealsListPublic(),
     props.searchParams,
   ]);
   const library = result.kind === "ok" ? result.meals : [];
@@ -72,6 +74,7 @@ export default async function MealsPage(props: PageProps<"/meals">) {
         statuses={statuses}
         isAdmin={isAdmin}
         initialMealId={initialMealId}
+        listIsPublic={listIsPublic}
       />
     </PageShell>
   );

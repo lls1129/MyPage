@@ -38,3 +38,12 @@ export async function getCardPhotoMode(): Promise<CardPhotoMode> {
   const value = await getSetting<CardPhotoMode>("explore_card_photo");
   return value === "always" ? "always" : "on-select";
 }
+
+// Controls whether non-admin visitors see the "✿ on my list" pool filter
+// and the matching public pill on meals the admin has marked. Default true
+// (option A — share my taste). Admin can flip to false for privacy.
+export async function getMealsListPublic(): Promise<boolean> {
+  const value = await getSetting<boolean>("meals_list_public");
+  // Default true if unset (matches the original public-by-default behavior).
+  return value !== false;
+}

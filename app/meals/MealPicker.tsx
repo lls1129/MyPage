@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { Meal, MealStatus } from "@/lib/supabase/meals";
 import { fetchSurpriseMeal, findMealImage } from "@/lib/meals/themealdb";
-import { setMealStatus } from "./actions";
+import { setMealStatus, setMealsListPublic } from "./actions";
 
 const MOODS = ["any", "cozy", "light", "fast", "fancy", "spicy", "slow"] as const;
 type Mood = (typeof MOODS)[number];
@@ -93,6 +93,7 @@ type Props = {
   statuses: Record<string, MealStatus>;
   isAdmin: boolean;
   initialMealId?: string;
+  listIsPublic: boolean;
 };
 
 export function MealPicker({
@@ -100,6 +101,7 @@ export function MealPicker({
   statuses,
   isAdmin,
   initialMealId,
+  listIsPublic,
 }: Props) {
   // Filter state
   const [mood, setMood] = useState<Mood>("any");
@@ -127,6 +129,14 @@ export function MealPicker({
   const [notesEditing, setNotesEditing] = useState(false);
   const [statusSaving, startStatusSave] = useTransition();
   const [statusError, setStatusError] = useState<string | null>(null);
+
+  // Optimistic mirror of the listIsPublic setting so the admin toggle feels
+  // instant. Re-syncs to the server value if the prop changes.
+  const [listPublic, setListPublic] = useState(listIsPublic);
+  const [visibilitySaving, startVisibilitySave] = useTransition();
+  useEffect(() => setListPublic(listIsPublic), [listIsPublic]);
+
+  const showWantToTry = isAdmin || listPublic;
 
   useEffect(() => {
     setFavorites(loadJSON<string[]>(FAV_KEY, []));
@@ -175,6 +185,33 @@ export function MealPicker({
   const [current, setCurrent] = useState<Meal | null>(null);
   const [surpriseLoading, setSurpriseLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // If the want-to-try pool was selected but it's no longer visible to this
+  // viewer (admin flipped the list to private, or visitor was already on the
+  // hidden chip somehow), fall back to "all".
+  useEffect(() => {
+    if (!showWantToTry && pool === "want-to-try") setPool("all");
+  }, [showWantToTry, pool]);
+
+  function toggleListPublic() {
+    const next = !listPublic;
+    setListPublic(next);
+    setStatusError(null);
+    startVisibilitySave(async () => {
+      try {
+        const res = await setMealsListPublic(next);
+        if (!res.ok) {
+          setListPublic(!next);
+          setStatusError(res.message);
+        }
+      } catch (e) {
+        setListPublic(!next);
+        setStatusError(
+          e instanceof Error ? e.message : "couldn’t save visibility."
+        );
+      }
+    });
+  }
 
   // Reset notes draft when the current meal changes.
   useEffect(() => {
@@ -479,11 +516,13 @@ export function MealPicker({
                 onClick={() => setPool("all")}
                 label={`all (${poolCounts.all})`}
               />
-              <FilterChip
-                active={pool === "want-to-try"}
-                onClick={() => setPool("want-to-try")}
-                label={`✿ on my list (${poolCounts.wantToTry})`}
-              />
+              {showWantToTry ? (
+                <FilterChip
+                  active={pool === "want-to-try"}
+                  onClick={() => setPool("want-to-try")}
+                  label={`✿ on my list (${poolCounts.wantToTry})`}
+                />
+              ) : null}
               <FilterChip
                 active={pool === "favorites"}
                 onClick={() => setPool("favorites")}
@@ -508,6 +547,34 @@ export function MealPicker({
             nothing on your list yet — switch to <strong>all</strong> and tap
             <strong> + on my list </strong>on meals you want to make.
           </p>
+        ) : null}
+
+        {isAdmin ? (
+          <div className="flex items-center gap-2 text-[11px] font-semibold pt-2 border-t border-pink-50">
+            <span className="text-pink-600">on my list visibility:</span>
+            <button
+              type="button"
+              onClick={toggleListPublic}
+              disabled={visibilitySaving}
+              className={
+                "rounded-pill px-3 py-1 border transition-colors disabled:opacity-60 " +
+                (listPublic
+                  ? "bg-pink-100 text-pink-800 border-pink-200"
+                  : "bg-lavender-50 text-lavender-800 border-lavender-200")
+              }
+              title={
+                listPublic
+                  ? "visitors can see this pool and the public ✿ pill"
+                  : "only you can see this pool — visitors don’t see the chip or pill"
+              }
+            >
+              {visibilitySaving
+                ? "saving…"
+                : listPublic
+                  ? "🌐 public"
+                  : "🔒 only me"}
+            </button>
+          </div>
         ) : null}
       </section>
 
@@ -561,6 +628,7 @@ export function MealPicker({
                 <StatusRow
                   status={currentStatus}
                   isAdmin={isAdmin}
+                  showWantToTryPublicly={showWantToTry}
                   saving={statusSaving}
                   onTriedToggle={() =>
                     patchStatus(current, {
@@ -685,6 +753,7 @@ export function MealPicker({
 function StatusRow({
   status,
   isAdmin,
+  showWantToTryPublicly,
   saving,
   onTriedToggle,
   onWantToTryToggle,
@@ -692,6 +761,7 @@ function StatusRow({
 }: {
   status: MealStatus | null;
   isAdmin: boolean;
+  showWantToTryPublicly: boolean;
   saving: boolean;
   onTriedToggle: () => void;
   onWantToTryToggle: () => void;
@@ -701,14 +771,16 @@ function StatusRow({
   const wantToTry = status?.want_to_try ?? false;
   const rating = status?.rating ?? 0;
 
-  // Public viewers: only show pills/stars that are actually set
+  // Public viewers: only show pills/stars that are actually set. The
+  // on-my-list pill is also gated by the admin's visibility setting.
   if (!isAdmin) {
-    const anything = tried || wantToTry || rating > 0;
+    const showWantToTryPill = wantToTry && showWantToTryPublicly;
+    const anything = tried || showWantToTryPill || rating > 0;
     if (!anything) return null;
     return (
       <div className="flex flex-wrap items-center gap-2">
         {tried ? <StatusPill tone="solid">✓ tried</StatusPill> : null}
-        {wantToTry ? (
+        {showWantToTryPill ? (
           <StatusPill tone="soft">✿ on my list</StatusPill>
         ) : null}
         {rating > 0 ? <Stars value={rating} /> : null}

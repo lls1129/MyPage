@@ -5,6 +5,21 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import type { MealStatus } from "@/lib/supabase/meals";
 
+export async function setMealsListPublic(isPublic: boolean) {
+  await requireAdmin();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({
+      key: "meals_list_public",
+      value: isPublic,
+      updated_at: new Date().toISOString(),
+    });
+  if (error) return { ok: false as const, message: error.message };
+  revalidatePath("/meals");
+  return { ok: true as const };
+}
+
 export type StatusPatch = {
   mealId: string;
   tried?: boolean;

@@ -84,3 +84,14 @@ body {
 .lift:hover {
   transform: translateY(-2px);
 }
+
+/* Hide scrollbar but keep scrollability — used on the desktop top nav so
+   tabs scroll horizontally on narrow widths (iPad portrait) instead of
+   wrapping to a second row. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
