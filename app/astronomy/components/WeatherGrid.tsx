@@ -99,9 +99,11 @@ export function WeatherGrid({
                 <th
                   scope="row"
                   className="text-left text-cream/70 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]"
-                  title={`${row.label} (${row.unit})`}
                 >
                   <span className="lowercase">{row.label}</span>
+                  <span className="text-cream/45 ml-0.5 text-[9px] font-normal">
+                    {row.unit}
+                  </span>
                 </th>
                 {hours.map((h, i) => {
                   const v = rawValue(row.key, h);
