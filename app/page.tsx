@@ -4,6 +4,7 @@ import { UtilityStrip } from "./components/home/UtilityStrip";
 import { HomeGrid } from "./components/home/HomeGrid";
 import { MealStrip } from "./components/home/MealStrip";
 import { MoonStrip } from "./components/home/MoonStrip";
+import { DeepSkyStrip } from "./components/home/DeepSkyStrip";
 
 export default function Home() {
   return (
@@ -12,6 +13,7 @@ export default function Home() {
       <UtilityStrip />
       <HomeGrid />
       <MoonStrip />
+      <DeepSkyStrip />
       <MealStrip />
     </PageShell>
   );

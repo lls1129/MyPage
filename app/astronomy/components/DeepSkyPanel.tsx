@@ -122,7 +122,7 @@ export function DeepSkyPanel({
           </p>
         </div>
         {moonNote ? (
-          <p className="text-xs text-cream/65 font-semibold max-w-[260px] text-right">
+          <p className="text-xs text-cream/65 font-semibold md:max-w-[260px] md:text-right w-full md:w-auto">
             🌙 {moonNote}
           </p>
         ) : null}
@@ -180,55 +180,64 @@ export function DeepSkyPanel({
                   <li
                     key={t.dso.id}
                     className={
-                      "flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 px-3 rounded-md border " +
+                      "py-2 px-3 rounded-md border " +
                       (isUp
                         ? "bg-skynavy-900/40 border-skynavy-500/60"
                         : "bg-skynavy-900/20 border-skynavy-500/30 opacity-60")
                     }
                   >
-                    <span className="text-lg leading-none" aria-hidden>
-                      {dsoTypeGlyph(t.dso.type)}
-                    </span>
-                    <span className="font-script text-cream text-xl leading-none">
-                      {t.dso.m ? `M${t.dso.m}` : t.dso.id}
-                    </span>
-                    {t.dso.name ? (
-                      <span className="text-sm text-cream/85">
-                        · {t.dso.name}
-                      </span>
-                    ) : null}
-                    <span className="text-[10px] uppercase tracking-wider text-pink-200/80 font-semibold">
-                      {dsoTypeLabel(t.dso.type)}
-                    </span>
-                    <span className="flex-1" />
-                    {t.dso.mag !== null ? (
-                      <span className="text-xs text-cream/70 font-mono">
-                        mag {t.dso.mag.toFixed(1)}
-                      </span>
-                    ) : null}
-                    <span
-                      className={
-                        "text-xs font-mono " +
-                        (isUp ? "text-amber-100" : "text-cream/40")
-                      }
-                      title={
-                        isUp
-                          ? "current altitude at slider time"
-                          : "below horizon at this time"
-                      }
-                    >
-                      {isUp ? `${Math.round(liveAlt)}° now` : "below"}
-                    </span>
-                    <span
-                      className="text-xs text-cream/55 font-mono"
-                      title="peak altitude during tonight's dark window"
-                    >
-                      peak {Math.round(t.peakAltDeg)}° @{" "}
-                      {fmtTime(new Date(t.peakAtISO), timezone)}
-                    </span>
-                    <span className="text-[10px] text-cream/55 font-semibold uppercase">
-                      {t.dso.con}
-                    </span>
+                    {/* Mobile: 2-row stack. Desktop: single flex-wrap row. */}
+                    <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-baseline md:gap-x-3 md:gap-y-1">
+                      {/* Top: glyph + ID/name + type */}
+                      <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                        <span className="text-lg leading-none" aria-hidden>
+                          {dsoTypeGlyph(t.dso.type)}
+                        </span>
+                        <span className="font-script text-cream text-xl leading-none">
+                          {t.dso.m ? `M${t.dso.m}` : t.dso.id}
+                        </span>
+                        {t.dso.name ? (
+                          <span className="text-sm text-cream/85 break-words">
+                            · {t.dso.name}
+                          </span>
+                        ) : null}
+                        <span className="text-[10px] uppercase tracking-wider text-pink-200/80 font-semibold">
+                          {dsoTypeLabel(t.dso.type)}
+                        </span>
+                      </div>
+                      <span className="hidden md:block md:flex-1" />
+                      {/* Bottom: numbers + constellation */}
+                      <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap text-xs">
+                        {t.dso.mag !== null ? (
+                          <span className="text-cream/70 font-mono">
+                            mag {t.dso.mag.toFixed(1)}
+                          </span>
+                        ) : null}
+                        <span
+                          className={
+                            "font-mono " +
+                            (isUp ? "text-amber-100" : "text-cream/40")
+                          }
+                          title={
+                            isUp
+                              ? "current altitude at slider time"
+                              : "below horizon at this time"
+                          }
+                        >
+                          {isUp ? `${Math.round(liveAlt)}° now` : "below"}
+                        </span>
+                        <span
+                          className="text-cream/55 font-mono"
+                          title="peak altitude during tonight's dark window"
+                        >
+                          peak {Math.round(t.peakAltDeg)}° @{" "}
+                          {fmtTime(new Date(t.peakAtISO), timezone)}
+                        </span>
+                        <span className="text-[10px] text-cream/55 font-semibold uppercase">
+                          {t.dso.con}
+                        </span>
+                      </div>
+                    </div>
                   </li>
                 );
               })}
