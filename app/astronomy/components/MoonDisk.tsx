@@ -12,10 +12,11 @@ import { useId } from "react";
 // of the synodic cycle so the path stays oriented correctly from new
 // → first quarter → full → last quarter → new.
 
-// Wikimedia Commons full moon photo (PD-NASA), 512px. Cached aggressively
-// by browsers — same file on every device, only one network hit.
-const MOON_IMAGE_URL =
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/FullMoon2010.jpg/512px-FullMoon2010.jpg";
+// Self-hosted moon photograph (Wikimedia Commons / FullMoon2010, PD-NASA,
+// 512×487 ~56KB). Originally hot-linked from upload.wikimedia.org but
+// Wikimedia now blocks the default browser User-Agent for thumbnail
+// requests (returns HTTP 400), so we ship the JPEG in /public instead.
+const MOON_IMAGE_URL = "/moon-full.jpg";
 
 type Props = {
   /** SunCalc convention: 0 = new, 0.25 = first quarter, 0.5 = full,

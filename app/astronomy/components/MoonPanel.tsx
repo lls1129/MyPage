@@ -15,15 +15,19 @@ function fmtTime(iso: string | null, tz: string): string {
   });
 }
 
-function fmtDayTime(iso: string, tz: string): string {
-  return new Date(iso).toLocaleString([], {
+function fmtDate(iso: string, tz: string): string {
+  return new Date(iso).toLocaleDateString([], {
     month: "short",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
     timeZone: tz,
   });
+}
+
+// Custom join: toLocaleString in some locales inserts "at" between the
+// date and time, which makes the string long enough to wrap inside the
+// narrow metric cards on mobile. We join with a midpoint instead.
+function fmtDayTime(iso: string, tz: string): string {
+  return `${fmtDate(iso, tz)} · ${fmtTime(iso, tz)}`;
 }
 
 function relativeDay(iso: string): string {
@@ -147,7 +151,8 @@ export function MoonPanel({
           />
           <Metric
             label="at"
-            value={fmtDayTime(current.iso, timezone)}
+            value={fmtDate(current.iso, timezone)}
+            sub={fmtTime(current.iso, timezone)}
           />
         </div>
       </div>
@@ -184,7 +189,7 @@ export function MoonPanel({
           {events.map((ev) => (
             <li
               key={ev.iso}
-              className="rounded-pill bg-cream/10 border border-cream/20 px-3 py-1.5 text-xs font-semibold flex items-center gap-2"
+              className="rounded-pill bg-cream/10 border border-cream/20 px-3 py-1.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap"
             >
               <span aria-hidden className="text-base leading-none">
                 {ev.glyph}
