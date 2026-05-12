@@ -204,12 +204,14 @@ export default async function AstronomyPage(
       />
 
       <DeepSkyPanel
-        dark={dark}
+        darkStartISO={dark ? dark.start.toISOString() : null}
+        darkEndISO={dark ? dark.end.toISOString() : null}
+        darkHours={dark ? dark.hours : null}
+        nowISO={now.toISOString()}
         topTargets={topTargets}
         photographicCount={photographicCount}
         moonNote={moonNote}
-        locationName={location.name}
-        timezone={location.timezone}
+        location={location}
       />
 
       {/* Recommendation card */}

@@ -43,6 +43,38 @@ export function dsoTypeGlyph(type: string): string {
   return TYPE_INFO[type]?.glyph ?? "✦";
 }
 
+// Lightweight RA/Dec → altitude (degrees) for the time slider's live
+// per-row alt. No astronomy-engine in the client bundle — accurate to
+// ~0.5° which is plenty for visualization. Server-side ranking still
+// uses astronomy-engine's Horizon() for precession + refraction.
+export function altAtTime(
+  raHours: number,
+  decDeg: number,
+  latDeg: number,
+  lonDeg: number,
+  date: Date
+): number {
+  const jd = date.getTime() / 86_400_000 + 2440587.5;
+  const T = (jd - 2451545.0) / 36525;
+  // Greenwich Mean Sidereal Time (Meeus 12.4) in degrees → hours.
+  let gmstDeg =
+    280.46061837 +
+    360.98564736629 * (jd - 2451545.0) +
+    0.000387933 * T * T -
+    (T * T * T) / 38_710_000;
+  gmstDeg = ((gmstDeg % 360) + 360) % 360;
+  const gmstHours = gmstDeg / 15;
+  const lstHours = (gmstHours + lonDeg / 15 + 24) % 24;
+  const haDeg = ((((lstHours - raHours) * 15) % 360) + 360) % 360;
+  const haRad = (haDeg * Math.PI) / 180;
+  const decRad = (decDeg * Math.PI) / 180;
+  const latRad = (latDeg * Math.PI) / 180;
+  const sinAlt =
+    Math.sin(latRad) * Math.sin(decRad) +
+    Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad);
+  return (Math.asin(Math.max(-1, Math.min(1, sinAlt))) * 180) / Math.PI;
+}
+
 // Tonight's astronomical-dark window for `location` (sun below −18°).
 // Returns null on polar nights/summer where there's no true dark.
 export function darkWindowTonight(
