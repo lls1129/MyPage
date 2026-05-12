@@ -60,13 +60,20 @@ export default async function AstronomyPage(
   const snapshots = tonightSnapshots(snapshotStart, snapshotEnd, 30, location, now);
   const initialIndex = nearestSnapshotIndex(snapshots, now);
 
-  // Moon: ±15 day window centered on now, step 6 hours = 120-ish snapshots.
-  // That's small enough to ship as JSON props but smooth enough to scrub.
-  const moonStart = new Date(now.getTime() - 15 * 24 * 60 * 60_000);
-  const moonEnd = new Date(now.getTime() + 15 * 24 * 60 * 60_000);
+  // Moon: window covering the next 4 phase events plus 3 days of past
+  // context. Step 6 hours. The 4th event lands ~22–30 days out depending
+  // on the current cycle, so we adapt the upper bound to the last event
+  // — that way clicking any "next phases" pill lands on the right time
+  // instead of snapping to a fixed slider edge.
+  const moonEvents = nextPhaseEvents(now, 4);
+  const lastEventTs =
+    moonEvents.length > 0
+      ? new Date(moonEvents[moonEvents.length - 1].iso).getTime()
+      : now.getTime() + 30 * 24 * 60 * 60_000;
+  const moonStart = new Date(now.getTime() - 3 * 24 * 60 * 60_000);
+  const moonEnd = new Date(lastEventTs + 3 * 24 * 60 * 60_000);
   const moonSnaps = moonSnapshots(moonStart, moonEnd, 360, location, now);
   const moonInitial = nearestMoonSnapshotIndex(moonSnaps, now);
-  const moonEvents = nextPhaseEvents(now, 4);
 
   const weather = await fetchTonightWeather(location);
   const hourly = await fetchHourlyForecast(
