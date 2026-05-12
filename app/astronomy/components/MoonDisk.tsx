@@ -12,11 +12,11 @@ import { useId } from "react";
 // of the synodic cycle so the path stays oriented correctly from new
 // → first quarter → full → last quarter → new.
 
-// Self-hosted moon photograph (Wikimedia Commons / FullMoon2010, PD-NASA,
-// 512×487 ~56KB). Originally hot-linked from upload.wikimedia.org but
-// Wikimedia now blocks the default browser User-Agent for thumbnail
-// requests (returns HTTP 400), so we ship the JPEG in /public instead.
-const MOON_IMAGE_URL = "/moon-full.jpg";
+// Self-hosted moon photograph, tight-cropped to the moon disk itself so
+// the lit area lines up with the dark base circle without leaving a
+// visible black border. (Source: Wikimedia Commons FullMoon2010,
+// PD-NASA; cropped to 446×446.)
+const MOON_IMAGE_URL = "/moon-cropped.jpg";
 
 type Props = {
   /** SunCalc convention: 0 = new, 0.25 = first quarter, 0.5 = full,
@@ -116,14 +116,13 @@ export function MoonDisk({
           isn't clipping the moon image. */}
       <circle cx={cx} cy={cy} r={r} fill={darkColor} />
 
-      {/* Moon photo, clipped to the lit lune. The source JPEG has a
-          little empty space around the moon disk, so we render the
-          image ~8% larger than the disk and let the clip trim the
-          overflow — otherwise the lit half visibly under-fills the
-          dark shadow circle. */}
+      {/* Moon photo, clipped to the lit lune. The cropped JPEG is square
+          and tight on the disk, but we render at 1.04× to swallow the
+          last few pixels of black border at the photo's edges so the
+          lit area reaches the rim cleanly. */}
       {!isNew ? (
         (() => {
-          const inflate = 1.08;
+          const inflate = 1.04;
           const imgSize = r * 2 * inflate;
           const offset = (imgSize - r * 2) / 2;
           return (
