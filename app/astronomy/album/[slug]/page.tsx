@@ -67,13 +67,28 @@ export default async function AstrophotoAlbumPage(
           <p className="font-script text-pink-600 text-3xl">
             no astrophotos here yet ✦
           </p>
-          <p className="text-sm text-ink/80 mt-3">
-            assign astrophotos to this album from the edit modal on{" "}
-            <Link href="/astronomy" className="underline">
-              the astronomy page
-            </Link>
-            .
-          </p>
+          {isAdmin ? (
+            <p className="text-sm text-ink/80 mt-3">
+              upload one directly into this album from{" "}
+              <Link
+                href={`/admin/astrophotos/upload?album=${encodeURIComponent(
+                  album.id
+                )}`}
+                className="underline"
+              >
+                the upload page
+              </Link>
+              , or assign existing astrophotos from the edit modal on{" "}
+              <Link href="/astronomy" className="underline">
+                the astronomy page
+              </Link>
+              .
+            </p>
+          ) : (
+            <p className="text-sm text-ink/80 mt-3">
+              new captures arriving soon ✦
+            </p>
+          )}
         </div>
       )}
     </PageShell>

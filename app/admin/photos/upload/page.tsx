@@ -27,9 +27,13 @@ export default async function UploadPhotoPage(
     : [[], []];
   // Only honor ?album= if it matches a real album id; otherwise default
   // to uncategorized so we don't silently land in nowhere.
-  const initialAlbumId = albums.some((a) => a.id === albumParam)
-    ? albumParam!
-    : "";
+  const albumForReturn = albums.find((a) => a.id === albumParam);
+  const initialAlbumId = albumForReturn ? albumForReturn.id : "";
+  // Cancel returns to where the user came from: the album page if
+  // ?album= matched, else the main library.
+  const cancelHref = albumForReturn
+    ? `/photos/album/${encodeURIComponent(albumForReturn.slug)}`
+    : "/photos";
 
   return (
     <PageShell>
@@ -61,6 +65,7 @@ export default async function UploadPhotoPage(
               albums={albums}
               initialAlbumId={initialAlbumId}
               existingTags={existingTags}
+              cancelHref={cancelHref}
             />
           )
         ) : (

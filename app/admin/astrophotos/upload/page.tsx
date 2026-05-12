@@ -23,9 +23,11 @@ export default async function UploadAstrophotoPage(
 
   const adminReady = isAdminConfigured();
   const albums = adminReady ? await listAlbums("astrophotos") : [];
-  const initialAlbumId = albums.some((a) => a.id === albumParam)
-    ? albumParam!
-    : "";
+  const albumForReturn = albums.find((a) => a.id === albumParam);
+  const initialAlbumId = albumForReturn ? albumForReturn.id : "";
+  const cancelHref = albumForReturn
+    ? `/astronomy/album/${encodeURIComponent(albumForReturn.slug)}`
+    : "/astronomy";
 
   return (
     <PageShell>
@@ -56,6 +58,7 @@ export default async function UploadAstrophotoPage(
               initialError={error}
               albums={albums}
               initialAlbumId={initialAlbumId}
+              cancelHref={cancelHref}
             />
           )
         ) : (

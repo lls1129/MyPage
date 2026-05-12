@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import {
@@ -25,11 +26,13 @@ export function UploadForm({
   albums,
   initialAlbumId = "",
   existingTags = [],
+  cancelHref = "/photos",
 }: {
   initialError?: string;
   albums: Album[];
   initialAlbumId?: string;
   existingTags?: string[];
+  cancelHref?: string;
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -250,7 +253,7 @@ export function UploadForm({
         <p className="text-xs text-pink-600 font-semibold">{error}</p>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           type="submit"
           disabled={pending}
@@ -258,6 +261,16 @@ export function UploadForm({
         >
           {pending ? stageNote || "uploading…" : "upload →"}
         </button>
+        <Link
+          href={cancelHref}
+          aria-disabled={pending}
+          className={
+            "lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold " +
+            (pending ? "pointer-events-none opacity-60" : "")
+          }
+        >
+          cancel
+        </Link>
         {pending && stageNote ? (
           <span className="text-xs text-lavender-600 font-semibold">
             {stageNote}

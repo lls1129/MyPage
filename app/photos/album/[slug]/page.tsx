@@ -62,13 +62,28 @@ export default async function PhotoAlbumPage(
           <p className="font-script text-pink-600 text-3xl">
             no photos here yet ✿
           </p>
-          <p className="text-sm text-ink/80 mt-3">
-            assign photos to this album from the edit modal on{" "}
-            <Link href="/photos" className="underline">
-              the main photo page
-            </Link>
-            .
-          </p>
+          {isAdmin ? (
+            <p className="text-sm text-ink/80 mt-3">
+              upload one directly into this album from{" "}
+              <Link
+                href={`/admin/photos/upload?album=${encodeURIComponent(
+                  album.id
+                )}`}
+                className="underline"
+              >
+                the upload page
+              </Link>
+              , or assign existing photos from the edit modal on{" "}
+              <Link href="/photos" className="underline">
+                the main photo page
+              </Link>
+              .
+            </p>
+          ) : (
+            <p className="text-sm text-ink/80 mt-3">
+              new photos land here soon ✦
+            </p>
+          )}
         </div>
       )}
     </PageShell>

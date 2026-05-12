@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
@@ -176,23 +176,17 @@ export function PhotoGrid({
           ✿ no photos match this tag yet
         </p>
       ) : (
-        <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 mt-2 [column-fill:_auto]">
-          {filtered.map((photo, i) => (
-            <PhotoTile
-              key={photo.id}
-              photo={photo}
-              isAdmin={isAdmin}
-              eager={i < 6}
-              onOpen={() => setOpenIdx(i)}
-              onEdit={() => onEdit(photo)}
-              onToggleHidden={() => onToggleHidden(photo)}
-              onRotateLeft={() => onRotateLeft(photo)}
-              onRotateRight={() => onRotateRight(photo)}
-              onDelete={() => onDelete(photo)}
-              busy={pending}
-            />
-          ))}
-        </div>
+        <MasonryGrid
+          photos={filtered}
+          isAdmin={isAdmin}
+          onOpen={(i) => setOpenIdx(i)}
+          onEdit={onEdit}
+          onToggleHidden={onToggleHidden}
+          onRotateLeft={onRotateLeft}
+          onRotateRight={onRotateRight}
+          onDelete={onDelete}
+          busy={pending}
+        />
       )}
 
       {openIdx !== null ? (
@@ -223,6 +217,92 @@ export function PhotoGrid({
   );
 }
 
+// Pick a column count from the current window width. Matches the
+// Tailwind breakpoints we use elsewhere (sm = 640, lg = 1024).
+function useColumnCount(): number {
+  const [cols, setCols] = useState(() => {
+    if (typeof window === "undefined") return 3;
+    const w = window.innerWidth;
+    return w >= 1024 ? 3 : w >= 640 ? 2 : 1;
+  });
+  useEffect(() => {
+    function update() {
+      const w = window.innerWidth;
+      const next = w >= 1024 ? 3 : w >= 640 ? 2 : 1;
+      setCols((cur) => (cur === next ? cur : next));
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return cols;
+}
+
+// Round-robin distribute photos across N flex-col columns. Avoids the
+// CSS multi-column layout quirks that were hiding photos in columns
+// 2/3 on PC. Column count adapts to viewport on resize; on mobile
+// (1 column) every photo stacks in a single column.
+function MasonryGrid({
+  photos,
+  isAdmin,
+  onOpen,
+  onEdit,
+  onToggleHidden,
+  onRotateLeft,
+  onRotateRight,
+  onDelete,
+  busy,
+}: {
+  photos: Photo[];
+  isAdmin: boolean;
+  onOpen: (i: number) => void;
+  onEdit: (p: Photo) => void;
+  onToggleHidden: (p: Photo) => void;
+  onRotateLeft: (p: Photo) => void;
+  onRotateRight: (p: Photo) => void;
+  onDelete: (p: Photo) => void;
+  busy: boolean;
+}) {
+  const cols = useColumnCount();
+  const buckets = useMemo(() => {
+    const out: { photo: Photo; globalIndex: number }[][] = Array.from(
+      { length: cols },
+      () => []
+    );
+    photos.forEach((photo, i) => {
+      out[i % cols].push({ photo, globalIndex: i });
+    });
+    return out;
+  }, [photos, cols]);
+
+  return (
+    <div
+      className="grid gap-4 mt-2"
+      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+    >
+      {buckets.map((bucket, ci) => (
+        <div key={ci} className="flex flex-col gap-4 min-w-0">
+          {bucket.map(({ photo, globalIndex }) => (
+            <PhotoTile
+              key={photo.id}
+              photo={photo}
+              isAdmin={isAdmin}
+              eager={globalIndex < 6}
+              onOpen={() => onOpen(globalIndex)}
+              onEdit={() => onEdit(photo)}
+              onToggleHidden={() => onToggleHidden(photo)}
+              onRotateLeft={() => onRotateLeft(photo)}
+              onRotateRight={() => onRotateRight(photo)}
+              onDelete={() => onDelete(photo)}
+              busy={busy}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PhotoTile({
   photo,
   isAdmin,
@@ -246,13 +326,6 @@ function PhotoTile({
   onDelete: () => void;
   busy: boolean;
 }) {
-  // Reserve the right amount of space before the image loads so column
-  // layout doesn't shift; helps with the "image not rendering in column
-  // 2" mystery where lazy-loaded items sometimes ended up zero-height.
-  const aspectStyle =
-    photo.width && photo.height
-      ? { aspectRatio: `${photo.width} / ${photo.height}` }
-      : undefined;
   return (
     <div
       className={
@@ -267,7 +340,6 @@ function PhotoTile({
         onClick={onOpen}
         className="block w-full text-left"
         aria-label={photo.caption || "open photo"}
-        style={aspectStyle}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
