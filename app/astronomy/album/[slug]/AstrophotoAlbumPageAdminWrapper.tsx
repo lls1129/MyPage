@@ -23,7 +23,6 @@ export function AstrophotoAlbumPageAdminWrapper({
   return (
     <AlbumPageAdmin
       album={album}
-      uploadHref={`/admin/astrophotos/upload?album=${encodeURIComponent(album.id)}`}
       parentHref="/astronomy"
       onRename={(id, name) => normalize(renameAstrophotoAlbum(id, name))}
       onDelete={(id) => normalize(deleteAstrophotoAlbum(id))}

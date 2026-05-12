@@ -23,10 +23,14 @@ export function PhotoGrid({
   photos,
   isAdmin,
   albums = [],
+  albumId,
 }: {
   photos: Photo[];
   isAdmin: boolean;
   albums?: Album[];
+  /** When set, the "+ upload" pill pre-selects this album so uploads
+   *  from inside an album default to that album, not uncategorized. */
+  albumId?: string;
 }) {
   const router = useRouter();
   const [tag, setTag] = useState<string>("all");
@@ -119,10 +123,14 @@ export function PhotoGrid({
       {isAdmin ? (
         <div className="flex flex-wrap items-center gap-2 -mb-2">
           <Link
-            href="/admin/photos/upload"
+            href={
+              albumId
+                ? `/admin/photos/upload?album=${encodeURIComponent(albumId)}`
+                : "/admin/photos/upload"
+            }
             className="lift inline-flex items-center rounded-pill px-3.5 py-1.5 text-sm font-semibold bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400"
           >
-            + upload
+            + upload{albumId ? " here" : ""}
           </Link>
           {hiddenCount > 0 ? (
             <button

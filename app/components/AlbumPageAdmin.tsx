@@ -1,26 +1,22 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Album } from "@/lib/supabase/albums";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Compact admin strip shown at the top of /photos/album/[slug] and
-// /astronomy/album/[slug]. Provides three actions for the current album:
-// upload directly into it, rename, and delete. Used together with the
-// AlbumManager on the library page; this one only manages "this" album.
+// /astronomy/album/[slug]. Two actions for the current album: rename
+// and delete. (Upload lives in the PhotoGrid / AstrophotoGrid pill,
+// which is context-aware and pre-selects the current album.)
 export function AlbumPageAdmin({
   album,
-  uploadHref,
   parentHref,
   onRename,
   onDelete,
 }: {
   album: Album;
-  /** /admin/photos/upload?album=<id> or /admin/astrophotos/upload?album=<id> */
-  uploadHref: string;
   /** /photos or /astronomy — where to land after a successful delete. */
   parentHref: string;
   onRename: (id: string, newName: string) => Promise<ActionResult>;
@@ -77,12 +73,6 @@ export function AlbumPageAdmin({
       <div className="flex flex-wrap items-center gap-2">
         <p className="label text-pink-600 shrink-0">admin · this album</p>
         <span className="flex-1" />
-        <Link
-          href={uploadHref}
-          className="lift rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-3 py-1 text-xs font-semibold whitespace-nowrap"
-        >
-          + upload here
-        </Link>
         {editing ? null : (
           <>
             <button

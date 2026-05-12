@@ -56,7 +56,12 @@ export default async function PhotoAlbumPage(
       {isAdmin ? <PhotoAlbumPageAdminWrapper album={album} /> : null}
 
       {photos.length > 0 ? (
-        <PhotoGrid photos={photos} isAdmin={isAdmin} albums={allAlbums} />
+        <PhotoGrid
+          photos={photos}
+          isAdmin={isAdmin}
+          albums={allAlbums}
+          albumId={album.id}
+        />
       ) : (
         <div className="mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-8 text-center">
           <p className="font-script text-pink-600 text-3xl">

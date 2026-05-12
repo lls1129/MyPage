@@ -40,10 +40,13 @@ export function AstrophotoGrid({
   astrophotos,
   isAdmin,
   albums = [],
+  albumId,
 }: {
   astrophotos: Astrophoto[];
   isAdmin: boolean;
   albums?: Album[];
+  /** When set, the "+ upload" pill pre-selects this album. */
+  albumId?: string;
 }) {
   const router = useRouter();
   const [showHidden, setShowHidden] = useState(false);
@@ -116,10 +119,14 @@ export function AstrophotoGrid({
       {isAdmin ? (
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <Link
-            href="/admin/astrophotos/upload"
+            href={
+              albumId
+                ? `/admin/astrophotos/upload?album=${encodeURIComponent(albumId)}`
+                : "/admin/astrophotos/upload"
+            }
             className="lift inline-flex items-center rounded-pill px-3.5 py-1.5 text-sm font-semibold bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400"
           >
-            + upload astrophoto
+            + upload astrophoto{albumId ? " here" : ""}
           </Link>
           {hiddenCount > 0 ? (
             <button

@@ -19,7 +19,6 @@ export function PhotoAlbumPageAdminWrapper({ album }: { album: Album }) {
   return (
     <AlbumPageAdmin
       album={album}
-      uploadHref={`/admin/photos/upload?album=${encodeURIComponent(album.id)}`}
       parentHref="/photos"
       onRename={(id, name) => normalize(renamePhotoAlbum(id, name))}
       onDelete={(id) => normalize(deletePhotoAlbum(id))}
