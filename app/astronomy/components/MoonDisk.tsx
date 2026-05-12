@@ -1,22 +1,30 @@
-// Pure SVG moon-phase disk. No state, no client hooks — fine in a server
-// component. The math uses the classic three-shape trick:
-//   1. Dark base circle covering the whole disk
-//   2. Lit semi-circle on the side facing the sun (right for waxing, left for waning)
-//   3. An ellipse (vertical, x-radius = r * |cos(2π·phase)|) on top, colored
-//      LIT if we're in a gibbous phase (extends the half-moon outward) and
-//      DARK if we're in a crescent phase (carves into the half-moon)
+"use client";
+
+import { useId } from "react";
+
+// SVG moon-phase disk. Renders a real moon photo (NASA / Wikimedia full
+// moon image) clipped to the lit lune, with a dark base showing through
+// for the shadowed area.
 //
-// Result: a single SVG with three primitives, mathematically correct from
-// new → first quarter → full → last quarter → new.
+// The lit lune path: one half of the moon's outer perimeter (the side
+// facing the sun) plus one half of the terminator ellipse (x-radius =
+// r * |cos(2π·phase)|). Sweep flags switch through the four quadrants
+// of the synodic cycle so the path stays oriented correctly from new
+// → first quarter → full → last quarter → new.
+
+// Wikimedia Commons full moon photo (PD-NASA), 512px. Cached aggressively
+// by browsers — same file on every device, only one network hit.
+const MOON_IMAGE_URL =
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/FullMoon2010.jpg/512px-FullMoon2010.jpg";
 
 type Props = {
   /** SunCalc convention: 0 = new, 0.25 = first quarter, 0.5 = full,
    *  0.75 = last quarter. Wraps in [0, 1). */
   phaseFraction: number;
-  /** Pixel size of the rendered disk (width = height). */
+  /** Pixel size of the lit disk (width = height = size). When `glow`
+   *  is on the rendered <svg> is slightly bigger to fit the halo. */
   size?: number;
-  /** Custom colors. Defaults play well on a dark skynavy panel. */
-  litColor?: string;
+  /** Dark/shadow fill for the unlit area. */
   darkColor?: string;
   /** Soft rim halo (off by default — turn on for the big version). */
   glow?: boolean;
@@ -25,75 +33,111 @@ type Props = {
 export function MoonDisk({
   phaseFraction,
   size = 200,
-  litColor = "#FFFAF3",
   darkColor = "#060619",
   glow = false,
 }: Props) {
+  // Halo padding so the glow doesn't get clipped at the viewBox corners.
+  const pad = glow ? Math.ceil(size * 0.12) : 0;
+  const total = size + pad * 2;
   const r = size / 2;
-  const cx = r;
-  const cy = r;
+  const cx = r + pad;
+  const cy = r + pad;
 
   const phase = ((phaseFraction % 1) + 1) % 1;
+  const isNew = phase < 0.005 || phase > 0.995;
+  const isFull = Math.abs(phase - 0.5) < 0.005;
+
   const angle = phase * 2 * Math.PI;
   const cosA = Math.cos(angle);
-  const ellipseRx = r * Math.abs(cosA);
-
+  // Tiny floor so SVG arc with rx=0 doesn't behave oddly across renderers.
+  const rx = Math.max(r * Math.abs(cosA), 0.001);
   const waxing = phase < 0.5;
-  const gibbous = phase > 0.25 && phase < 0.75;
+  const crescent = cosA > 0;
+  const sweepOuter = waxing ? 1 : 0;
+  const sweepInner = crescent ? sweepOuter : 1 - sweepOuter;
 
-  // Right semicircle for waxing, left semicircle for waning. Both close back
-  // along the vertical diameter, giving a clean half-disk.
-  const litSemiPath = waxing
-    ? `M ${cx},${cy - r} A ${r},${r} 0 0 1 ${cx},${cy + r} Z`
-    : `M ${cx},${cy - r} A ${r},${r} 0 0 0 ${cx},${cy + r} Z`;
+  const litLunePath = isFull
+    ? `M ${cx - r},${cy} a ${r},${r} 0 1 0 ${2 * r},0 a ${r},${r} 0 1 0 ${-2 * r},0 Z`
+    : `M ${cx},${cy - r} A ${r},${r} 0 0 ${sweepOuter} ${cx},${cy + r} A ${rx},${r} 0 0 ${sweepInner} ${cx},${cy - r} Z`;
 
-  const gradId = `moon-rim-${Math.random().toString(36).slice(2, 9)}`;
+  // useId is hydration-safe: same value on server + client.
+  const uid = useId().replace(/:/g, "-");
+  const clipId = `moon-clip-${uid}`;
+  const haloId = `moon-halo-${uid}`;
+  const litFilterId = `moon-lit-${uid}`;
 
   return (
     <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
+      width={total}
+      height={total}
+      viewBox={`0 0 ${total} ${total}`}
       role="img"
       aria-label="moon phase"
       style={{ display: "block" }}
     >
-      {glow ? (
-        <defs>
-          <radialGradient id={gradId} cx="50%" cy="50%" r="55%">
-            <stop offset="60%" stopColor={litColor} stopOpacity="0" />
-            <stop offset="100%" stopColor={litColor} stopOpacity="0.18" />
+      <defs>
+        <clipPath id={clipId}>
+          {!isNew ? <path d={litLunePath} /> : null}
+        </clipPath>
+        {glow ? (
+          <radialGradient id={haloId} cx="50%" cy="50%" r="50%">
+            <stop offset="65%" stopColor="#FFFAF3" stopOpacity="0" />
+            <stop offset="85%" stopColor="#FFFAF3" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#FFFAF3" stopOpacity="0" />
           </radialGradient>
-        </defs>
-      ) : null}
+        ) : null}
+        {/* Slight warm tint + brightness lift on the lit side so the
+            photo reads as illuminated rather than gray. */}
+        <filter id={litFilterId} x="0" y="0" width="100%" height="100%">
+          <feColorMatrix
+            type="matrix"
+            values="
+              1.05 0    0    0 0.02
+              0    1.02 0    0 0.01
+              0    0    0.98 0 0
+              0    0    0    1 0
+            "
+          />
+        </filter>
+      </defs>
 
+      {/* Halo behind the disk (fits inside the padded viewBox). */}
       {glow ? (
-        <circle cx={cx} cy={cy} r={r * 1.08} fill={`url(#${gradId})`} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r + pad * 0.7}
+          fill={`url(#${haloId})`}
+        />
       ) : null}
 
-      {/* Base dark disk */}
+      {/* Dark base — always present, shows through where the lit area
+          isn't clipping the moon image. */}
       <circle cx={cx} cy={cy} r={r} fill={darkColor} />
 
-      {/* Lit semi-circle */}
-      <path d={litSemiPath} fill={litColor} />
+      {/* Moon photo, clipped to the lit lune. */}
+      {!isNew ? (
+        <image
+          href={MOON_IMAGE_URL}
+          x={cx - r}
+          y={cy - r}
+          width={r * 2}
+          height={r * 2}
+          clipPath={`url(#${clipId})`}
+          filter={`url(#${litFilterId})`}
+          preserveAspectRatio="xMidYMid slice"
+        />
+      ) : null}
 
-      {/* Modifier ellipse — bright for gibbous, dark for crescent */}
-      <ellipse
-        cx={cx}
-        cy={cy}
-        rx={ellipseRx}
-        ry={r}
-        fill={gibbous ? litColor : darkColor}
-      />
-
-      {/* Subtle rim outline */}
+      {/* Crisp rim around the disk so the perimeter reads as round even
+          when the lit area is very thin. */}
       <circle
         cx={cx}
         cy={cy}
         r={r - 0.5}
         fill="none"
-        stroke={litColor}
-        strokeOpacity="0.18"
+        stroke="#FFFAF3"
+        strokeOpacity="0.22"
         strokeWidth="1"
       />
     </svg>
