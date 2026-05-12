@@ -7,7 +7,10 @@ import {
 } from "@/lib/supabase/meals";
 import { listTrashedMealsAsAdmin } from "@/lib/supabase/meals-admin";
 import { getCurrentAdmin } from "@/lib/supabase/server";
-import { getMealsListPublic } from "@/lib/supabase/settings";
+import {
+  getMealsListPublic,
+  getMealsFavoritesPublic,
+} from "@/lib/supabase/settings";
 import { MealPicker } from "./MealPicker";
 
 export const metadata: Metadata = {
@@ -18,15 +21,23 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MealsPage(props: PageProps<"/meals">) {
-  const [result, externalMeals, statuses, admin, listIsPublic, params] =
-    await Promise.all([
-      listMeals(),
-      listExternalMeals(),
-      listMealStatuses(),
-      getCurrentAdmin(),
-      getMealsListPublic(),
-      props.searchParams,
-    ]);
+  const [
+    result,
+    externalMeals,
+    statuses,
+    admin,
+    listIsPublic,
+    favoritesIsPublic,
+    params,
+  ] = await Promise.all([
+    listMeals(),
+    listExternalMeals(),
+    listMealStatuses(),
+    getCurrentAdmin(),
+    getMealsListPublic(),
+    getMealsFavoritesPublic(),
+    props.searchParams,
+  ]);
   const library = result.kind === "ok" ? result.meals : [];
   const isAdmin = admin !== null;
   const trashed = isAdmin ? await listTrashedMealsAsAdmin() : [];
@@ -85,6 +96,7 @@ export default async function MealsPage(props: PageProps<"/meals">) {
         isAdmin={isAdmin}
         initialMealId={initialMealId}
         listIsPublic={listIsPublic}
+        favoritesIsPublic={favoritesIsPublic}
       />
     </PageShell>
   );

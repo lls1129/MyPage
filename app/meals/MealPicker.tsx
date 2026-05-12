@@ -8,6 +8,7 @@ import {
   restoreMeal,
   setMealStatus,
   setMealsListPublic,
+  setMealsFavoritesPublic,
   type ExternalSnapshot,
 } from "./actions";
 
@@ -114,6 +115,7 @@ type Props = {
   isAdmin: boolean;
   initialMealId?: string;
   listIsPublic: boolean;
+  favoritesIsPublic: boolean;
 };
 
 export function MealPicker({
@@ -124,6 +126,7 @@ export function MealPicker({
   isAdmin,
   initialMealId,
   listIsPublic,
+  favoritesIsPublic,
 }: Props) {
   // Filter state
   const [mood, setMood] = useState<Mood>("any");
@@ -144,10 +147,12 @@ export function MealPicker({
   const [statusSaving, startStatusSave] = useTransition();
   const [statusError, setStatusError] = useState<string | null>(null);
 
-  // Visibility toggle for non-admin "on my list" view.
+  // Visibility toggles for non-admin views of on-my-list + favorites.
   const [listPublic, setListPublic] = useState(listIsPublic);
+  const [favsPublic, setFavsPublic] = useState(favoritesIsPublic);
   const [visibilitySaving, startVisibilitySave] = useTransition();
   useEffect(() => setListPublic(listIsPublic), [listIsPublic]);
+  useEffect(() => setFavsPublic(favoritesIsPublic), [favoritesIsPublic]);
 
   // Trash state: server-provided initially, mutated optimistically on
   // remove/restore. We add the meal back so the picker still shows it
@@ -161,6 +166,7 @@ export function MealPicker({
   const [removeSaving, startRemoveSave] = useTransition();
 
   const showWantToTry = isAdmin || listPublic;
+  const showFavorites = isAdmin || favsPublic;
 
   useEffect(() => {
     const r = loadJSON<Record<string, number>>(RECENT_KEY, {});
@@ -254,10 +260,11 @@ export function MealPicker({
   const [surpriseLoading, setSurpriseLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If the want-to-try pool was selected but it's no longer visible, fall back.
+  // If a hidden-for-this-viewer pool was selected, fall back to "all".
   useEffect(() => {
     if (!showWantToTry && pool === "want-to-try") setPool("all");
-  }, [showWantToTry, pool]);
+    if (!showFavorites && pool === "favorites") setPool("all");
+  }, [showWantToTry, showFavorites, pool]);
 
   function toggleListPublic() {
     const next = !listPublic;
@@ -272,6 +279,26 @@ export function MealPicker({
         }
       } catch (e) {
         setListPublic(!next);
+        setStatusError(
+          e instanceof Error ? e.message : "couldn’t save visibility."
+        );
+      }
+    });
+  }
+
+  function toggleFavsPublic() {
+    const next = !favsPublic;
+    setFavsPublic(next);
+    setStatusError(null);
+    startVisibilitySave(async () => {
+      try {
+        const res = await setMealsFavoritesPublic(next);
+        if (!res.ok) {
+          setFavsPublic(!next);
+          setStatusError(res.message);
+        }
+      } catch (e) {
+        setFavsPublic(!next);
         setStatusError(
           e instanceof Error ? e.message : "couldn’t save visibility."
         );
@@ -436,6 +463,21 @@ export function MealPicker({
     const s = statusMap[meal.id];
     if (!s) return false;
     return !!(s.tried || s.want_to_try || s.favorited || s.rating || s.notes);
+  }
+
+  function describeMealState(meal: Meal): string {
+    const s = statusMap[meal.id];
+    if (!s) return "";
+    const parts: string[] = [];
+    if (s.favorited) parts.push("favorited");
+    if (s.want_to_try) parts.push("on your list");
+    if (s.tried) parts.push("marked tried");
+    if (s.rating) parts.push(`rated ${s.rating}★`);
+    if (s.notes) parts.push("has notes");
+    if (parts.length === 0) return "";
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return parts.join(" and ");
+    return parts.slice(0, -1).join(", ") + ", and " + parts[parts.length - 1];
   }
 
   function requestRemove(meal: Meal) {
@@ -647,11 +689,13 @@ export function MealPicker({
                   label={`✿ on my list (${poolCounts.wantToTry})`}
                 />
               ) : null}
-              <FilterChip
-                active={pool === "favorites"}
-                onClick={() => setPool("favorites")}
-                label={`♥ favorites (${poolCounts.favs})`}
-              />
+              {showFavorites ? (
+                <FilterChip
+                  active={pool === "favorites"}
+                  onClick={() => setPool("favorites")}
+                  label={`♥ favorites (${poolCounts.favs})`}
+                />
+              ) : null}
             </div>
           </div>
           <p className="text-[11px] text-lavender-600 font-semibold">
@@ -674,30 +718,22 @@ export function MealPicker({
         ) : null}
 
         {isAdmin ? (
-          <div className="flex items-center gap-2 text-[11px] font-semibold pt-2 border-t border-pink-50">
-            <span className="text-pink-600">on my list visibility:</span>
-            <button
-              type="button"
-              onClick={toggleListPublic}
-              disabled={visibilitySaving}
-              className={
-                "rounded-pill px-3 py-1 border transition-colors disabled:opacity-60 " +
-                (listPublic
-                  ? "bg-pink-100 text-pink-800 border-pink-200"
-                  : "bg-lavender-50 text-lavender-800 border-lavender-200")
-              }
-              title={
-                listPublic
-                  ? "visitors can see this pool and the public ✿ pill"
-                  : "only you can see this pool — visitors don’t see the chip or pill"
-              }
-            >
-              {visibilitySaving
-                ? "saving…"
-                : listPublic
-                  ? "🌐 public"
-                  : "🔒 only me"}
-            </button>
+          <div className="flex flex-col gap-1.5 text-[11px] font-semibold pt-2 border-t border-pink-50">
+            <span className="label text-pink-600">visibility</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <VisibilityToggle
+                label="✿ on my list"
+                isPublic={listPublic}
+                saving={visibilitySaving}
+                onToggle={toggleListPublic}
+              />
+              <VisibilityToggle
+                label="♥ favorites"
+                isPublic={favsPublic}
+                saving={visibilitySaving}
+                onToggle={toggleFavsPublic}
+              />
+            </div>
           </div>
         ) : null}
       </section>
@@ -832,7 +868,8 @@ export function MealPicker({
             {removeConfirm ? (
               <div className="flex flex-wrap items-center gap-2 rounded-md bg-pink-50 border border-pink-200 px-3 py-2 text-xs">
                 <span className="text-pink-800 font-semibold">
-                  remove “{removeConfirm.name}”? it has saved state.
+                  remove “{removeConfirm.name}”? it’s{" "}
+                  {describeMealState(removeConfirm) || "still saved"}.
                 </span>
                 <button
                   type="button"
@@ -898,7 +935,7 @@ export function MealPicker({
                     ✕ remove
                   </button>
                 </>
-              ) : isFavorite ? (
+              ) : isFavorite && showFavorites ? (
                 <span
                   title="admin's favorite"
                   className="rounded-pill px-4 py-2 text-sm font-semibold bg-pink-100 text-pink-800 border border-pink-200"
@@ -918,6 +955,40 @@ export function MealPicker({
         )}
       </section>
     </div>
+  );
+}
+
+function VisibilityToggle({
+  label,
+  isPublic,
+  saving,
+  onToggle,
+}: {
+  label: string;
+  isPublic: boolean;
+  saving: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={saving}
+      className={
+        "rounded-pill px-3 py-1 border transition-colors disabled:opacity-60 " +
+        (isPublic
+          ? "bg-pink-100 text-pink-800 border-pink-200"
+          : "bg-lavender-50 text-lavender-800 border-lavender-200")
+      }
+      title={
+        isPublic
+          ? `visitors can see ${label} on your meals`
+          : `only you can see ${label} — visitors don’t see the chip or pill`
+      }
+    >
+      <span className="text-pink-600 mr-1.5 font-normal">{label}:</span>
+      {isPublic ? "🌐 public" : "🔒 only me"}
+    </button>
   );
 }
 

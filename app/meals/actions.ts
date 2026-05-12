@@ -21,6 +21,21 @@ export async function setMealsListPublic(isPublic: boolean) {
   return { ok: true as const };
 }
 
+export async function setMealsFavoritesPublic(isPublic: boolean) {
+  await requireAdmin();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({
+      key: "meals_favorites_public",
+      value: isPublic,
+      updated_at: new Date().toISOString(),
+    });
+  if (error) return { ok: false as const, message: error.message };
+  revalidatePath("/meals");
+  return { ok: true as const };
+}
+
 // Payload that lets a TheMealDB snapshot ride along with a status change,
 // so the meal data persists in Postgres (visible across devices) the first
 // time the admin interacts with it.

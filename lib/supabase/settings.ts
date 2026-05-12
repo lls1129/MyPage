@@ -44,6 +44,11 @@ export async function getCardPhotoMode(): Promise<CardPhotoMode> {
 // (option A — share my taste). Admin can flip to false for privacy.
 export async function getMealsListPublic(): Promise<boolean> {
   const value = await getSetting<boolean>("meals_list_public");
-  // Default true if unset (matches the original public-by-default behavior).
+  return value !== false;
+}
+
+// Same idea for the "♥ favorites" pool and public pill.
+export async function getMealsFavoritesPublic(): Promise<boolean> {
+  const value = await getSetting<boolean>("meals_favorites_public");
   return value !== false;
 }
