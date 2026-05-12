@@ -151,8 +151,7 @@ export default async function AstronomyPage(
         snapshots={moonSnaps}
         initialIndex={moonInitial}
         events={moonEvents}
-        timezone={location.timezone}
-        locationName={location.name}
+        location={location}
       />
 
       {/* Recommendation card */}

@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { MoonSnapshot } from "@/lib/astronomy/moon";
+import { moonAt, type MoonSnapshot } from "@/lib/astronomy/moon";
 import type { MoonPhaseEvent } from "@/lib/astronomy/moon-events";
+import type { Location } from "@/lib/astronomy/location";
 import { MoonDisk } from "./MoonDisk";
 
 function fmtTime(iso: string | null, tz: string): string {
@@ -60,17 +61,22 @@ export function MoonPanel({
   snapshots,
   initialIndex,
   events,
-  timezone,
-  locationName,
+  location,
 }: {
   snapshots: MoonSnapshot[];
   initialIndex: number;
   events: MoonPhaseEvent[];
-  timezone: string;
-  locationName: string;
+  location: Location;
 }) {
+  const timezone = location.timezone;
   const [idx, setIdx] = useState(initialIndex);
-  const current = snapshots[idx];
+  // When set, takes precedence over the slider-indexed snapshot — used
+  // when the user taps a phase pill so the "at" / illumination / disk
+  // reflect the EXACT event time rather than the nearest 6-hour grid
+  // point. The slider still snaps to the closest grid index visually.
+  const [override, setOverride] = useState<MoonSnapshot | null>(null);
+  const gridSnapshot = snapshots[idx];
+  const current = override ?? gridSnapshot;
   if (!current) return null;
   const max = snapshots.length - 1;
 
@@ -103,20 +109,34 @@ export function MoonPanel({
       }
     });
     setIdx(best);
+    setOverride(null);
   }
 
-  function snapToISO(targetISO: string) {
-    const target = new Date(targetISO).getTime();
+  function snapToEvent(targetISO: string) {
+    const target = new Date(targetISO);
+    const targetMs = target.getTime();
     let best = 0;
     let bestDiff = Number.POSITIVE_INFINITY;
     snapshots.forEach((s, i) => {
-      const d = Math.abs(new Date(s.iso).getTime() - target);
+      const d = Math.abs(new Date(s.iso).getTime() - targetMs);
       if (d < bestDiff) {
         bestDiff = d;
         best = i;
       }
     });
     setIdx(best);
+    // Compute the exact-time snapshot client-side so the display
+    // reflects the event moment (not the nearest 6-hour grid point).
+    const exact = moonAt(target, location);
+    exact.minutesFromNow = Math.round(
+      (targetMs - Date.now()) / 60_000
+    );
+    setOverride(exact);
+  }
+
+  function onDragSlider(next: number) {
+    setIdx(next);
+    setOverride(null);
   }
 
   return (
@@ -128,7 +148,7 @@ export function MoonPanel({
             {current.phaseName}
           </p>
           <p className="text-[11px] text-cream/55 font-semibold mt-0.5 capitalize">
-            {locationName}
+            {location.name}
           </p>
         </div>
         <p className="text-xs text-cream/60 font-semibold">
@@ -180,7 +200,7 @@ export function MoonPanel({
           max={max}
           step={1}
           value={idx}
-          onChange={(e) => setIdx(parseInt(e.target.value, 10))}
+          onChange={(e) => onDragSlider(parseInt(e.target.value, 10))}
           aria-label="moon-phase time slider"
           className="w-full accent-pink-200"
         />
@@ -210,7 +230,7 @@ export function MoonPanel({
             <li key={ev.iso}>
               <button
                 type="button"
-                onClick={() => snapToISO(ev.iso)}
+                onClick={() => snapToEvent(ev.iso)}
                 className="lift rounded-pill bg-cream/10 border border-cream/20 hover:bg-cream/20 hover:border-cream/40 px-3 py-1.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap"
               >
                 <span aria-hidden className="text-base leading-none">
