@@ -9,6 +9,7 @@ import {
   extension,
 } from "@/lib/upload-utils";
 import { signPhotoUpload, insertPhotoRow } from "./actions";
+import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
 
@@ -19,7 +20,13 @@ function parseTagsCsv(raw: string): string[] {
     .filter(Boolean);
 }
 
-export function UploadForm({ initialError }: { initialError?: string }) {
+export function UploadForm({
+  initialError,
+  albums,
+}: {
+  initialError?: string;
+  albums: Album[];
+}) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -90,6 +97,11 @@ export function UploadForm({ initialError }: { initialError?: string }) {
       if (upErr) throw new Error(upErr.message);
 
       setStageNote("saving metadata…");
+      const albumIdRaw = formData.get("album_id");
+      const albumId =
+        typeof albumIdRaw === "string" && albumIdRaw !== ""
+          ? albumIdRaw
+          : null;
       const result = await insertPhotoRow({
         storagePath: sign.path,
         imageUrl: sign.publicUrl,
@@ -98,6 +110,7 @@ export function UploadForm({ initialError }: { initialError?: string }) {
         takenAt: exif.takenAt,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
+        albumId,
       });
       if (!result.ok) throw new Error(result.error);
 
@@ -193,6 +206,30 @@ export function UploadForm({ initialError }: { initialError?: string }) {
         <p className="text-[11px] text-lavender-600">
           comma-separated. shown as filter pills on /photos.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="album_id" className="label text-pink-600">
+          album
+        </label>
+        <select
+          id="album_id"
+          name="album_id"
+          defaultValue=""
+          className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
+        >
+          <option value="">— uncategorized —</option>
+          {albums.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+        {albums.length === 0 ? (
+          <p className="text-[11px] text-lavender-600">
+            no albums yet. create one on /photos first.
+          </p>
+        ) : null}
       </div>
 
       {error ? (

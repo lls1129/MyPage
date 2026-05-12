@@ -9,6 +9,7 @@ import {
   extension,
 } from "@/lib/upload-utils";
 import { signAstrophotoUpload, insertAstrophotoRow } from "./actions";
+import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "astrophotos";
 
@@ -18,7 +19,13 @@ function trimOrNull(v: FormDataEntryValue | null): string | null {
   return t.length === 0 ? null : t;
 }
 
-export function UploadForm({ initialError }: { initialError?: string }) {
+export function UploadForm({
+  initialError,
+  albums,
+}: {
+  initialError?: string;
+  albums: Album[];
+}) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -101,6 +108,11 @@ export function UploadForm({ initialError }: { initialError?: string }) {
 
       // 4. Insert metadata row.
       setStageNote("saving metadata…");
+      const albumIdRaw = formData.get("album_id");
+      const albumId =
+        typeof albumIdRaw === "string" && albumIdRaw !== ""
+          ? albumIdRaw
+          : null;
       const result = await insertAstrophotoRow({
         storagePath: sign.path,
         imageUrl: sign.publicUrl,
@@ -115,6 +127,7 @@ export function UploadForm({ initialError }: { initialError?: string }) {
         exposureStack: trimOrNull(formData.get("exposure_stack")),
         processing: trimOrNull(formData.get("processing")),
         location: trimOrNull(formData.get("location")),
+        albumId,
       });
       if (!result.ok) throw new Error(result.error);
 
@@ -193,6 +206,30 @@ export function UploadForm({ initialError }: { initialError?: string }) {
         <Field name="exposure_stack" label="exposure stack" placeholder="120 × 180s rgb" />
         <Field name="processing" label="processing" placeholder="pixinsight, graxpert" />
         <Field name="location" label="location" placeholder="bortle 4 site, sierra nevada" />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="album_id" className="label text-pink-600">
+          album
+        </label>
+        <select
+          id="album_id"
+          name="album_id"
+          defaultValue=""
+          className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
+        >
+          <option value="">— uncategorized —</option>
+          {albums.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+        {albums.length === 0 ? (
+          <p className="text-[11px] text-lavender-600">
+            no albums yet. create one on /astronomy first.
+          </p>
+        ) : null}
       </div>
 
       {error ? (

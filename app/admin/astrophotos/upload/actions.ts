@@ -42,6 +42,7 @@ export type AstrophotoMetadata = {
   exposureStack: string | null;
   processing: string | null;
   location: string | null;
+  albumId: string | null;
 };
 
 export async function insertAstrophotoRow(
@@ -65,6 +66,7 @@ export async function insertAstrophotoRow(
     exposure_stack: meta.exposureStack,
     processing: meta.processing,
     location: meta.location,
+    album_id: meta.albumId,
   });
   if (error) {
     // Best-effort cleanup of the orphaned upload.
@@ -72,5 +74,6 @@ export async function insertAstrophotoRow(
     return { ok: false, error: error.message };
   }
   revalidatePath("/astronomy");
+  if (meta.albumId) revalidatePath(`/astronomy/album/[slug]`, "page");
   return { ok: true };
 }

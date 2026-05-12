@@ -24,6 +24,37 @@ export async function createAstrophotoAlbum(name: string) {
   return { ok: true as const, album: data };
 }
 
+// Rename an astrophoto album. Regenerates the slug.
+export async function renameAstrophotoAlbum(id: string, newName: string) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const trimmed = newName.trim();
+  if (!trimmed) return { ok: false as const, error: "name required" };
+  const slug = slugify(trimmed);
+  if (!slug) return { ok: false as const, error: "name produces an empty slug" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ name: trimmed, slug })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
+// Delete an astrophoto album. Astrophotos fall back to uncategorized
+// via the FK's ON DELETE SET NULL.
+export async function deleteAstrophotoAlbum(id: string) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const admin = createAdminClient();
+  const { error } = await admin.from("albums").delete().eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  return { ok: true as const };
+}
+
 // Assign an astrophoto to an album (or null to make it uncategorized).
 export async function setAstrophotoAlbum(
   astrophotoId: string,

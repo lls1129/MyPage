@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageShell } from "../../../components/PageShell";
 import { isAdminConfigured } from "@/lib/supabase/admin";
+import { listAlbums } from "@/lib/supabase/albums";
 import { UploadForm } from "./UploadForm";
 
 export const metadata: Metadata = {
@@ -18,6 +19,7 @@ export default async function UploadAstrophotoPage(
   const status = typeof params?.status === "string" ? params.status : undefined;
 
   const adminReady = isAdminConfigured();
+  const albums = adminReady ? await listAlbums("astrophotos") : [];
 
   return (
     <PageShell>
@@ -44,7 +46,7 @@ export default async function UploadAstrophotoPage(
           status === "ok" ? (
             <UploadSuccess />
           ) : (
-            <UploadForm initialError={error} />
+            <UploadForm initialError={error} albums={albums} />
           )
         ) : (
           <div className="mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6">

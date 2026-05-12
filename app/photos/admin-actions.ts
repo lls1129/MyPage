@@ -136,6 +136,38 @@ export async function createPhotoAlbum(name: string) {
   return { ok: true as const, album: data };
 }
 
+// Rename a photo album. Regenerates the slug from the new name so the
+// /photos/album/[slug] URL matches what the admin typed; old URLs 404.
+export async function renamePhotoAlbum(id: string, newName: string) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const trimmed = newName.trim();
+  if (!trimmed) return { ok: false as const, error: "name required" };
+  const slug = slugify(trimmed);
+  if (!slug) return { ok: false as const, error: "name produces an empty slug" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ name: trimmed, slug })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
+// Delete a photo album. Photos in the album fall back to uncategorized
+// via the album_id FK's ON DELETE SET NULL.
+export async function deletePhotoAlbum(id: string) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const admin = createAdminClient();
+  const { error } = await admin.from("albums").delete().eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  return { ok: true as const };
+}
+
 // Assign a photo to an album (or null to make it uncategorized).
 export async function setPhotoAlbum(
   photoId: string,

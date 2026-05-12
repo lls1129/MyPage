@@ -36,6 +36,7 @@ export type PhotoMetadata = {
   takenAt: string | null;
   width: number | null;
   height: number | null;
+  albumId: string | null;
 };
 
 export async function insertPhotoRow(
@@ -50,11 +51,13 @@ export async function insertPhotoRow(
     taken_at: meta.takenAt,
     width: meta.width,
     height: meta.height,
+    album_id: meta.albumId,
   });
   if (error) {
     await admin.storage.from(BUCKET).remove([meta.storagePath]);
     return { ok: false, error: error.message };
   }
   revalidatePath("/photos");
+  if (meta.albumId) revalidatePath(`/photos/album/[slug]`, "page");
   return { ok: true };
 }
