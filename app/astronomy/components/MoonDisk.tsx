@@ -116,18 +116,29 @@ export function MoonDisk({
           isn't clipping the moon image. */}
       <circle cx={cx} cy={cy} r={r} fill={darkColor} />
 
-      {/* Moon photo, clipped to the lit lune. */}
+      {/* Moon photo, clipped to the lit lune. The source JPEG has a
+          little empty space around the moon disk, so we render the
+          image ~8% larger than the disk and let the clip trim the
+          overflow — otherwise the lit half visibly under-fills the
+          dark shadow circle. */}
       {!isNew ? (
-        <image
-          href={MOON_IMAGE_URL}
-          x={cx - r}
-          y={cy - r}
-          width={r * 2}
-          height={r * 2}
-          clipPath={`url(#${clipId})`}
-          filter={`url(#${litFilterId})`}
-          preserveAspectRatio="xMidYMid slice"
-        />
+        (() => {
+          const inflate = 1.08;
+          const imgSize = r * 2 * inflate;
+          const offset = (imgSize - r * 2) / 2;
+          return (
+            <image
+              href={MOON_IMAGE_URL}
+              x={cx - r - offset}
+              y={cy - r - offset}
+              width={imgSize}
+              height={imgSize}
+              clipPath={`url(#${clipId})`}
+              filter={`url(#${litFilterId})`}
+              preserveAspectRatio="xMidYMid slice"
+            />
+          );
+        })()
       ) : null}
 
       {/* Crisp rim around the disk so the perimeter reads as round even

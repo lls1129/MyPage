@@ -23,11 +23,12 @@ function fmtDate(iso: string, tz: string): string {
   });
 }
 
-// Custom join: toLocaleString in some locales inserts "at" between the
-// date and time, which makes the string long enough to wrap inside the
-// narrow metric cards on mobile. We join with a midpoint instead.
+// Custom join: toLocaleString in some locales inserts the word "at"
+// between the date and time ("May 7 at 14:47"), which makes the string
+// long enough to wrap inside the narrow metric cards on mobile. We
+// keep the natural look but drop the "at" — plain space.
 function fmtDayTime(iso: string, tz: string): string {
-  return `${fmtDate(iso, tz)} · ${fmtTime(iso, tz)}`;
+  return `${fmtDate(iso, tz)} ${fmtTime(iso, tz)}`;
 }
 
 function relativeDay(iso: string): string {
@@ -96,6 +97,20 @@ export function MoonPanel({
     let bestDiff = Number.POSITIVE_INFINITY;
     snapshots.forEach((s, i) => {
       const d = Math.abs(s.minutesFromNow);
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = i;
+      }
+    });
+    setIdx(best);
+  }
+
+  function snapToISO(targetISO: string) {
+    const target = new Date(targetISO).getTime();
+    let best = 0;
+    let bestDiff = Number.POSITIVE_INFINITY;
+    snapshots.forEach((s, i) => {
+      const d = Math.abs(new Date(s.iso).getTime() - target);
       if (d < bestDiff) {
         bestDiff = d;
         best = i;
@@ -182,24 +197,32 @@ export function MoonPanel({
         </div>
       </div>
 
-      {/* Phase events timeline */}
+      {/* Phase events timeline — tap any pill to jump the slider there */}
       <div>
-        <p className="label text-pink-200 mb-3">next phases</p>
+        <p className="label text-pink-200 mb-3">
+          next phases
+          <span className="text-cream/40 normal-case tracking-normal ml-2 font-normal">
+            tap to jump
+          </span>
+        </p>
         <ul className="flex flex-wrap gap-2">
           {events.map((ev) => (
-            <li
-              key={ev.iso}
-              className="rounded-pill bg-cream/10 border border-cream/20 px-3 py-1.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap"
-            >
-              <span aria-hidden className="text-base leading-none">
-                {ev.glyph}
-              </span>
-              <span className="text-cream capitalize">{ev.name}</span>
-              <span className="text-cream/60">·</span>
-              <span className="text-cream/70">{relativeDay(ev.iso)}</span>
-              <span className="text-cream/50 text-[10px]">
-                {fmtDayTime(ev.iso, timezone)}
-              </span>
+            <li key={ev.iso}>
+              <button
+                type="button"
+                onClick={() => snapToISO(ev.iso)}
+                className="lift rounded-pill bg-cream/10 border border-cream/20 hover:bg-cream/20 hover:border-cream/40 px-3 py-1.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap"
+              >
+                <span aria-hidden className="text-base leading-none">
+                  {ev.glyph}
+                </span>
+                <span className="text-cream capitalize">{ev.name}</span>
+                <span className="text-cream/60">·</span>
+                <span className="text-cream/70">{relativeDay(ev.iso)}</span>
+                <span className="text-cream/50 text-[10px]">
+                  {fmtDayTime(ev.iso, timezone)}
+                </span>
+              </button>
             </li>
           ))}
         </ul>
