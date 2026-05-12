@@ -54,12 +54,21 @@ export function MoonDisk({
   const rx = Math.max(r * Math.abs(cosA), 0.001);
   const waxing = phase < 0.5;
   const crescent = cosA > 0;
+  // Inner-arc sweep flag derivation (going bot→top across the lune):
+  // - crescent: rx is near r, terminator hugs the lit side of center —
+  //   the arc bulges through the OPPOSITE side from the outer arc.
+  // - gibbous: rx is near 0, terminator carves into the dark side —
+  //   the arc bulges through the SAME side as the outer arc.
+  // Was previously flipped, rendering near-full as a thin sliver on
+  // the wrong edge (looked fully black).
   const sweepOuter = waxing ? 1 : 0;
-  const sweepInner = crescent ? sweepOuter : 1 - sweepOuter;
+  const sweepInner = crescent ? 1 - sweepOuter : sweepOuter;
 
-  const litLunePath = isFull
-    ? `M ${cx - r},${cy} a ${r},${r} 0 1 0 ${2 * r},0 a ${r},${r} 0 1 0 ${-2 * r},0 Z`
-    : `M ${cx},${cy - r} A ${r},${r} 0 0 ${sweepOuter} ${cx},${cy + r} A ${rx},${r} 0 0 ${sweepInner} ${cx},${cy - r} Z`;
+  // Lune path for partial phases. The full-moon case uses a <circle>
+  // in the clipPath (below) — a 180° arc path is ambiguous in the SVG
+  // spec and some renderers draw zero area for it, which would clip
+  // the image away entirely.
+  const litLunePath = `M ${cx},${cy - r} A ${r},${r} 0 0 ${sweepOuter} ${cx},${cy + r} A ${rx},${r} 0 0 ${sweepInner} ${cx},${cy - r} Z`;
 
   // useId is hydration-safe: same value on server + client.
   const uid = useId().replace(/:/g, "-");
@@ -78,7 +87,11 @@ export function MoonDisk({
     >
       <defs>
         <clipPath id={clipId}>
-          {!isNew ? <path d={litLunePath} /> : null}
+          {isNew ? null : isFull ? (
+            <circle cx={cx} cy={cy} r={r} />
+          ) : (
+            <path d={litLunePath} />
+          )}
         </clipPath>
         {glow ? (
           <radialGradient id={haloId} cx="50%" cy="50%" r="50%">
