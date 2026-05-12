@@ -120,49 +120,51 @@ export function MealStripClient({ meals }: { meals: Meal[] }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 flex-wrap">
-        {hasImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={displayedImage as string}
-            alt={meal.name}
-            loading="lazy"
-            className="w-14 h-14 shrink-0 rounded-lg object-cover border border-pink-100"
-          />
-        ) : (
-          <div className="w-14 h-14 shrink-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-2xl">
-            {meal.glyph}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="font-script text-pink-800 text-[26px] leading-tight">
-            {meal.name}
-          </div>
-          <div className="text-sm text-lavender-600 font-medium">
-            {meal.tagline}
-          </div>
-          <div className="flex flex-wrap gap-1 mt-2">
-            {tags.map((t) => (
-              <span
-                key={t}
-                className="text-[11px] text-pink-800 bg-pink-50 border border-pink-100 rounded-pill px-2 py-[2px] font-semibold"
-              >
-                {t}
-              </span>
-            ))}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          {hasImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={displayedImage as string}
+              alt={meal.name}
+              loading="lazy"
+              className="w-14 h-14 shrink-0 rounded-lg object-cover border border-pink-100"
+            />
+          ) : (
+            <div className="w-14 h-14 shrink-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-2xl">
+              {meal.glyph}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="font-script text-pink-800 text-[26px] leading-tight break-words">
+              {meal.name}
+            </div>
+            <div className="text-sm text-lavender-600 font-medium">
+              {meal.tagline}
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {tags.map((t) => (
+                <span
+                  key={t}
+                  className="text-[11px] text-pink-800 bg-pink-50 border border-pink-100 rounded-pill px-2 py-[2px] font-semibold"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             type="button"
             onClick={shuffle}
-            className="lift rounded-pill px-4 py-2 text-sm font-semibold bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400"
+            className="lift rounded-pill px-4 py-2 text-sm font-semibold bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 whitespace-nowrap"
           >
             ↻ shuffle
           </button>
           <a
             href={`/meals?id=${encodeURIComponent(meal.id)}`}
-            className="lift rounded-pill px-4 py-2 text-sm font-semibold bg-white text-pink-800 border border-pink-100 hover:border-pink-200"
+            className="lift rounded-pill px-4 py-2 text-sm font-semibold bg-white text-pink-800 border border-pink-100 hover:border-pink-200 whitespace-nowrap"
           >
             full picker →
           </a>

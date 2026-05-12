@@ -571,18 +571,21 @@ export function MealPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
-  // If filters change and current is no longer eligible, swap.
+  // If filters change and current is no longer eligible, swap. We skip
+  // the swap entirely when current isn't yet part of fullLibrary (i.e.
+  // a transient ✦ surprise me pick that hasn't been persisted) — favoring
+  // such a meal optimistically changes statusMap → eligible reference,
+  // and we don't want that to yank the user away from the meal they
+  // just interacted with.
   useEffect(() => {
-    if (
-      current &&
-      !eligible.find((m) => m.id === current.id) &&
-      eligible.length > 0
-    ) {
-      const next = pickFromPool(fresh.length > 0 ? fresh : eligible);
-      if (next) {
-        setCurrent(next);
-        recordShow(next.id);
-      }
+    if (!current) return;
+    if (!fullLibrary.find((m) => m.id === current.id)) return;
+    if (eligible.length === 0) return;
+    if (eligible.find((m) => m.id === current.id)) return;
+    const next = pickFromPool(fresh.length > 0 ? fresh : eligible);
+    if (next) {
+      setCurrent(next);
+      recordShow(next.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eligible]);
@@ -1008,7 +1011,7 @@ function TrashPanel({
         {entries.map((entry) => (
           <li
             key={entry.meal.id}
-            className="flex items-center gap-2 rounded-pill bg-white border border-lavender-200 pl-3 pr-1 py-1 text-xs"
+            className="flex items-center gap-3 rounded-pill bg-white border border-lavender-200 pl-4 pr-2 py-1.5 text-xs"
           >
             <span className="text-lavender-800 font-semibold">
               {entry.meal.name}
@@ -1017,7 +1020,7 @@ function TrashPanel({
               type="button"
               onClick={() => onRestore(entry)}
               disabled={saving}
-              className="rounded-pill bg-lavender-100 text-lavender-800 border border-lavender-200 px-2 py-[2px] font-semibold hover:bg-lavender-200 disabled:opacity-60"
+              className="rounded-pill bg-lavender-100 text-lavender-800 border border-lavender-200 px-2.5 py-[3px] font-semibold hover:bg-lavender-200 disabled:opacity-60"
               title="restore"
             >
               ↻ restore
