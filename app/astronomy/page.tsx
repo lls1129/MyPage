@@ -60,7 +60,10 @@ export default async function AstronomyPage(
 
   const snapshotStart = new Date(Math.min(sunsetTs - 30 * 60_000, now.getTime()));
   const snapshotEnd = new Date(Math.max(sunriseTs + 30 * 60_000, now.getTime() + 60_000));
-  const snapshots = tonightSnapshots(snapshotStart, snapshotEnd, 30, location, now);
+  // 5-min snapshot resolution for a smooth slider. ~12h of dark gives
+  // ~140 snapshots × ~700 bytes each ≈ 100KB raw / ~15KB gzipped — a
+  // worthwhile trade for the feel.
+  const snapshots = tonightSnapshots(snapshotStart, snapshotEnd, 5, location, now);
   const initialIndex = nearestSnapshotIndex(snapshots, now);
 
   // Moon: ship just an initial snapshot + bounds + events; MoonPanel

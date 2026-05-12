@@ -77,7 +77,7 @@ export function WeatherGrid({
         <table className="w-full border-separate border-spacing-x-[2px] border-spacing-y-[3px] text-center text-[11px] font-semibold whitespace-nowrap">
           <thead>
             <tr>
-              <th className="text-left text-cream/55 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]">
+              <th className="text-left text-cream/55 font-semibold pl-1 pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]">
                 hour
               </th>
               {hours.map((h, i) => (
@@ -98,7 +98,7 @@ export function WeatherGrid({
               <tr key={row.key}>
                 <th
                   scope="row"
-                  className="text-left text-cream/70 font-semibold pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]"
+                  className="text-left text-cream/70 font-semibold pl-1 pr-2 sticky left-0 bg-skynavy-900/90 z-10 w-[58px]"
                 >
                   <span className="lowercase">{row.label}</span>
                   <span className="text-cream/45 ml-0.5 text-[9px] font-normal">
