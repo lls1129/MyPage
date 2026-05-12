@@ -57,85 +57,96 @@ function relativeSliderLabel(minutes: number): string {
   return minutes < 0 ? `${days}d ago` : `in ${days}d`;
 }
 
+// Slider granularity: minutes per tick. 5 = scrubbable in 5-min steps
+// across a ~30-day window (≈8700 ticks), smoother than any reasonable
+// pre-computed grid, computed on the fly so we don't ship snapshots.
+const STEP_MINUTES = 5;
+
 export function MoonPanel({
-  snapshots,
-  initialIndex,
+  initialSnapshot,
+  startISO,
+  endISO,
+  nowISO,
   events,
   location,
 }: {
-  snapshots: MoonSnapshot[];
-  initialIndex: number;
+  initialSnapshot: MoonSnapshot;
+  startISO: string;
+  endISO: string;
+  nowISO: string;
   events: MoonPhaseEvent[];
   location: Location;
 }) {
   const timezone = location.timezone;
-  const [idx, setIdx] = useState(initialIndex);
-  // When set, takes precedence over the slider-indexed snapshot — used
-  // when the user taps a phase pill so the "at" / illumination / disk
-  // reflect the EXACT event time rather than the nearest 6-hour grid
-  // point. The slider still snaps to the closest grid index visually.
+  const startMs = useMemo(() => new Date(startISO).getTime(), [startISO]);
+  const endMs = useMemo(() => new Date(endISO).getTime(), [endISO]);
+  const nowMs = useMemo(() => new Date(nowISO).getTime(), [nowISO]);
+  const maxTick = Math.round((endMs - startMs) / 60_000 / STEP_MINUTES);
+  const nowTick = Math.round((nowMs - startMs) / 60_000 / STEP_MINUTES);
+
+  const [tick, setTick] = useState(nowTick);
+  // When set, takes precedence over the slider-derived snapshot — used
+  // when the user taps a phase pill so "at" / illumination / disk all
+  // reflect the EXACT event time. The slider snaps to the nearest tick
+  // visually.
   const [override, setOverride] = useState<MoonSnapshot | null>(null);
-  const gridSnapshot = snapshots[idx];
-  const current = override ?? gridSnapshot;
-  if (!current) return null;
-  const max = snapshots.length - 1;
 
-  const startLabel = useMemo(() => {
-    const first = snapshots[0];
-    return first ? new Date(first.iso).toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-      timeZone: timezone,
-    }) : "";
-  }, [snapshots, timezone]);
+  // Compute the snapshot for the slider's current position. moonAt is
+  // pure suncalc — already in the bundle, cheap per call.
+  const liveSnapshot = useMemo<MoonSnapshot>(() => {
+    if (tick === nowTick) {
+      // Use the server-rendered initial snapshot for the SSR/hydration
+      // pass so there's no mismatch.
+      return initialSnapshot;
+    }
+    const date = new Date(startMs + tick * STEP_MINUTES * 60_000);
+    const snap = moonAt(date, location);
+    snap.minutesFromNow = Math.round((date.getTime() - nowMs) / 60_000);
+    return snap;
+  }, [tick, nowTick, startMs, location, nowMs, initialSnapshot]);
 
-  const endLabel = useMemo(() => {
-    const last = snapshots[max];
-    return last ? new Date(last.iso).toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-      timeZone: timezone,
-    }) : "";
-  }, [snapshots, max, timezone]);
+  const current = override ?? liveSnapshot;
+
+  const startLabel = useMemo(
+    () =>
+      new Date(startMs).toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+        timeZone: timezone,
+      }),
+    [startMs, timezone]
+  );
+  const endLabel = useMemo(
+    () =>
+      new Date(endMs).toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+        timeZone: timezone,
+      }),
+    [endMs, timezone]
+  );
 
   function snapToNow() {
-    let best = 0;
-    let bestDiff = Number.POSITIVE_INFINITY;
-    snapshots.forEach((s, i) => {
-      const d = Math.abs(s.minutesFromNow);
-      if (d < bestDiff) {
-        bestDiff = d;
-        best = i;
-      }
-    });
-    setIdx(best);
+    setTick(nowTick);
     setOverride(null);
   }
 
   function snapToEvent(targetISO: string) {
     const target = new Date(targetISO);
     const targetMs = target.getTime();
-    let best = 0;
-    let bestDiff = Number.POSITIVE_INFINITY;
-    snapshots.forEach((s, i) => {
-      const d = Math.abs(new Date(s.iso).getTime() - targetMs);
-      if (d < bestDiff) {
-        bestDiff = d;
-        best = i;
-      }
-    });
-    setIdx(best);
-    // Compute the exact-time snapshot client-side so the display
-    // reflects the event moment (not the nearest 6-hour grid point).
-    const exact = moonAt(target, location);
-    exact.minutesFromNow = Math.round(
-      (targetMs - Date.now()) / 60_000
+    const targetTick = Math.round(
+      (targetMs - startMs) / 60_000 / STEP_MINUTES
     );
+    setTick(Math.max(0, Math.min(maxTick, targetTick)));
+    // The slider can only land on STEP_MINUTES ticks; override carries
+    // the exact-time snapshot so the display matches the event minute.
+    const exact = moonAt(target, location);
+    exact.minutesFromNow = Math.round((targetMs - Date.now()) / 60_000);
     setOverride(exact);
   }
 
   function onDragSlider(next: number) {
-    setIdx(next);
+    setTick(next);
     setOverride(null);
   }
 
@@ -197,9 +208,9 @@ export function MoonPanel({
         <input
           type="range"
           min={0}
-          max={max}
+          max={maxTick}
           step={1}
-          value={idx}
+          value={tick}
           onChange={(e) => onDragSlider(parseInt(e.target.value, 10))}
           aria-label="moon-phase time slider"
           className="w-full accent-pink-200"

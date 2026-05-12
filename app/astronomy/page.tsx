@@ -7,10 +7,7 @@ import {
   nearestSnapshotIndex,
   formatTime,
 } from "@/lib/astronomy/sky";
-import {
-  moonSnapshots,
-  nearestMoonSnapshotIndex,
-} from "@/lib/astronomy/moon";
+import { moonAt } from "@/lib/astronomy/moon";
 import { nextPhaseEvents } from "@/lib/astronomy/moon-events";
 import { fetchTonightWeather, fetchHourlyForecast } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
@@ -60,11 +57,11 @@ export default async function AstronomyPage(
   const snapshots = tonightSnapshots(snapshotStart, snapshotEnd, 30, location, now);
   const initialIndex = nearestSnapshotIndex(snapshots, now);
 
-  // Moon: window covering the next 4 phase events plus 3 days of past
-  // context. Step 6 hours. The 4th event lands ~22–30 days out depending
-  // on the current cycle, so we adapt the upper bound to the last event
-  // — that way clicking any "next phases" pill lands on the right time
-  // instead of snapping to a fixed slider edge.
+  // Moon: ship just an initial snapshot + bounds + events; MoonPanel
+  // computes the slider snapshots on the fly (5-minute granularity)
+  // via suncalc, which is already in the client bundle. The window
+  // spans 3 days back → 3 days past the last phase event, so all 4
+  // "next phases" pills land within the slider.
   const moonEvents = nextPhaseEvents(now, 4);
   const lastEventTs =
     moonEvents.length > 0
@@ -72,8 +69,7 @@ export default async function AstronomyPage(
       : now.getTime() + 30 * 24 * 60 * 60_000;
   const moonStart = new Date(now.getTime() - 3 * 24 * 60 * 60_000);
   const moonEnd = new Date(lastEventTs + 3 * 24 * 60 * 60_000);
-  const moonSnaps = moonSnapshots(moonStart, moonEnd, 360, location, now);
-  const moonInitial = nearestMoonSnapshotIndex(moonSnaps, now);
+  const moonInitialSnapshot = moonAt(now, location);
 
   const weather = await fetchTonightWeather(location);
   const hourly = await fetchHourlyForecast(
@@ -148,8 +144,10 @@ export default async function AstronomyPage(
       </section>
 
       <MoonPanel
-        snapshots={moonSnaps}
-        initialIndex={moonInitial}
+        initialSnapshot={moonInitialSnapshot}
+        startISO={moonStart.toISOString()}
+        endISO={moonEnd.toISOString()}
+        nowISO={now.toISOString()}
         events={moonEvents}
         location={location}
       />
