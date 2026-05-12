@@ -36,7 +36,8 @@ export function UploadForm({
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [tagsValue, setTagsValue] = useState<string>("");
+  const [tagList, setTagList] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -201,26 +202,33 @@ export function UploadForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor="tags" className="label text-pink-600">
-          tags
-        </label>
+        <span className="label text-pink-600">tags</span>
+        <TagChipInput
+          tags={tagList}
+          draft={tagDraft}
+          setTags={setTagList}
+          setDraft={setTagDraft}
+        />
+        {/* Hidden field carries the joined CSV to the server action so
+            insertPhotoRow / parseTagsCsv stay unchanged. We also commit
+            any pending draft into the CSV on submit so users don't lose
+            text they typed but didn't press Enter on. */}
         <input
-          id="tags"
+          type="hidden"
           name="tags"
-          type="text"
-          value={tagsValue}
-          onChange={(e) => setTagsValue(e.target.value)}
-          placeholder="travel, nature, food"
-          className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink placeholder:text-pink-400 focus:outline-none focus:border-pink-200"
+          value={joinTags(tagList, tagDraft)}
         />
         <p className="text-[11px] text-lavender-600">
-          comma-separated. shown as filter pills on /photos.
+          press Enter or comma to capsule each tag. Backspace on an empty
+          field removes the last.
         </p>
         {existingTags.length > 0 ? (
           <TagSuggestions
             available={existingTags}
-            current={tagsValue}
-            onPick={setTagsValue}
+            current={tagList}
+            onPick={(t) => {
+              if (!tagList.includes(t)) setTagList([...tagList, t]);
+            }}
           />
         ) : null}
       </div>
@@ -281,30 +289,100 @@ export function UploadForm({
   );
 }
 
+// Join the committed tag list with any uncommitted draft text so the
+// hidden field carries everything the user typed, even if they forgot
+// to press Enter on the last word.
+function joinTags(committed: string[], draft: string): string {
+  const draftTag = draft.trim().toLowerCase();
+  if (draftTag && !committed.includes(draftTag)) {
+    return [...committed, draftTag].join(", ");
+  }
+  return committed.join(", ");
+}
+
+// Chip-style tag entry. Tags are stored as an array; typing into the
+// input and pressing Enter or comma promotes the text to a removable
+// capsule. Backspace on an empty input pops the last tag.
+function TagChipInput({
+  tags,
+  draft,
+  setTags,
+  setDraft,
+}: {
+  tags: string[];
+  draft: string;
+  setTags: (next: string[]) => void;
+  setDraft: (next: string) => void;
+}) {
+  function commitDraft() {
+    const t = draft.trim().toLowerCase();
+    if (!t) return;
+    if (!tags.includes(t)) setTags([...tags, t]);
+    setDraft("");
+  }
+  return (
+    <div className="bg-pink-50 border border-pink-100 rounded-sm px-2 py-1.5 flex flex-wrap items-center gap-1.5 focus-within:border-pink-200">
+      {tags.map((t) => (
+        <span
+          key={t}
+          className="inline-flex items-center gap-1 rounded-pill bg-white border border-pink-200 text-xs font-semibold text-pink-800 pl-2 pr-1 py-0.5"
+        >
+          {t}
+          <button
+            type="button"
+            onClick={() => setTags(tags.filter((x) => x !== t))}
+            aria-label={`remove ${t}`}
+            className="w-4 h-4 inline-flex items-center justify-center text-pink-400 hover:text-pink-800 hover:bg-pink-50 rounded-full leading-none"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => {
+          const v = e.target.value;
+          // If user pastes/types text with a comma, split it into
+          // chips immediately instead of leaving the comma in the draft.
+          if (v.includes(",")) {
+            const parts = v.split(",").map((p) => p.trim().toLowerCase()).filter(Boolean);
+            const next = [...tags];
+            for (const p of parts) if (!next.includes(p)) next.push(p);
+            setTags(next);
+            setDraft("");
+          } else {
+            setDraft(v);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commitDraft();
+          } else if (e.key === "Backspace" && draft === "" && tags.length > 0) {
+            setTags(tags.slice(0, -1));
+          }
+        }}
+        onBlur={commitDraft}
+        placeholder={tags.length === 0 ? "travel, nature…" : ""}
+        className="bg-transparent flex-1 min-w-[100px] text-sm text-ink placeholder:text-pink-400 focus:outline-none px-1 py-0.5"
+      />
+    </div>
+  );
+}
+
 // Suggestion chips below the tags input. Click adds the tag to the
-// current comma-separated value (skipping duplicates).
+// committed list (skipping duplicates).
 function TagSuggestions({
   available,
   current,
   onPick,
 }: {
   available: string[];
-  current: string;
-  onPick: (next: string) => void;
+  current: string[];
+  onPick: (tag: string) => void;
 }) {
-  const currentSet = new Set(
-    current
-      .split(/[,\n]/)
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  function append(tag: string) {
-    if (currentSet.has(tag.toLowerCase())) return;
-    const trimmed = current.trimEnd();
-    const sep =
-      trimmed.length === 0 ? "" : trimmed.endsWith(",") ? " " : ", ";
-    onPick(`${trimmed}${sep}${tag}`);
-  }
+  const currentSet = new Set(current.map((t) => t.toLowerCase()));
   return (
     <div className="flex flex-wrap gap-1.5 pt-1">
       <span className="text-[11px] text-lavender-600 font-semibold mr-1">
@@ -316,7 +394,7 @@ function TagSuggestions({
           <button
             key={t}
             type="button"
-            onClick={() => append(t)}
+            onClick={() => onPick(t)}
             disabled={picked}
             className={
               "rounded-pill px-2 py-0.5 text-[11px] font-semibold border transition-colors " +
