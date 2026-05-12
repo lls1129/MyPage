@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageShell } from "../../../components/PageShell";
 import { isAdminConfigured } from "@/lib/supabase/admin";
 import { listAlbums } from "@/lib/supabase/albums";
+import { listAllTags } from "@/lib/supabase/photos";
 import { UploadForm } from "./UploadForm";
 
 export const metadata: Metadata = {
@@ -17,9 +18,18 @@ export default async function UploadPhotoPage(
   const params = await props.searchParams;
   const error = typeof params?.error === "string" ? params.error : undefined;
   const status = typeof params?.status === "string" ? params.status : undefined;
+  const albumParam =
+    typeof params?.album === "string" ? params.album : undefined;
 
   const adminReady = isAdminConfigured();
-  const albums = adminReady ? await listAlbums("photos") : [];
+  const [albums, existingTags] = adminReady
+    ? await Promise.all([listAlbums("photos"), listAllTags()])
+    : [[], []];
+  // Only honor ?album= if it matches a real album id; otherwise default
+  // to uncategorized so we don't silently land in nowhere.
+  const initialAlbumId = albums.some((a) => a.id === albumParam)
+    ? albumParam!
+    : "";
 
   return (
     <PageShell>
@@ -46,7 +56,12 @@ export default async function UploadPhotoPage(
           status === "ok" ? (
             <UploadSuccess />
           ) : (
-            <UploadForm initialError={error} albums={albums} />
+            <UploadForm
+              initialError={error}
+              albums={albums}
+              initialAlbumId={initialAlbumId}
+              existingTags={existingTags}
+            />
           )
         ) : (
           <div className="mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6">

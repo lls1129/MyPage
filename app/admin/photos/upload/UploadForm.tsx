@@ -23,12 +23,17 @@ function parseTagsCsv(raw: string): string[] {
 export function UploadForm({
   initialError,
   albums,
+  initialAlbumId = "",
+  existingTags = [],
 }: {
   initialError?: string;
   albums: Album[];
+  initialAlbumId?: string;
+  existingTags?: string[];
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
+  const [tagsValue, setTagsValue] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -200,12 +205,21 @@ export function UploadForm({
           id="tags"
           name="tags"
           type="text"
+          value={tagsValue}
+          onChange={(e) => setTagsValue(e.target.value)}
           placeholder="travel, nature, food"
           className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink placeholder:text-pink-400 focus:outline-none focus:border-pink-200"
         />
         <p className="text-[11px] text-lavender-600">
           comma-separated. shown as filter pills on /photos.
         </p>
+        {existingTags.length > 0 ? (
+          <TagSuggestions
+            available={existingTags}
+            current={tagsValue}
+            onPick={setTagsValue}
+          />
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -215,7 +229,7 @@ export function UploadForm({
         <select
           id="album_id"
           name="album_id"
-          defaultValue=""
+          defaultValue={initialAlbumId}
           className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
         >
           <option value="">— uncategorized —</option>
@@ -251,5 +265,57 @@ export function UploadForm({
         ) : null}
       </div>
     </form>
+  );
+}
+
+// Suggestion chips below the tags input. Click adds the tag to the
+// current comma-separated value (skipping duplicates).
+function TagSuggestions({
+  available,
+  current,
+  onPick,
+}: {
+  available: string[];
+  current: string;
+  onPick: (next: string) => void;
+}) {
+  const currentSet = new Set(
+    current
+      .split(/[,\n]/)
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  function append(tag: string) {
+    if (currentSet.has(tag.toLowerCase())) return;
+    const trimmed = current.trimEnd();
+    const sep =
+      trimmed.length === 0 ? "" : trimmed.endsWith(",") ? " " : ", ";
+    onPick(`${trimmed}${sep}${tag}`);
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-1">
+      <span className="text-[11px] text-lavender-600 font-semibold mr-1">
+        existing:
+      </span>
+      {available.map((t) => {
+        const picked = currentSet.has(t.toLowerCase());
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => append(t)}
+            disabled={picked}
+            className={
+              "rounded-pill px-2 py-0.5 text-[11px] font-semibold border transition-colors " +
+              (picked
+                ? "bg-pink-100 text-pink-400 border-pink-100 cursor-default"
+                : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+            }
+          >
+            {t}
+          </button>
+        );
+      })}
+    </div>
   );
 }

@@ -83,6 +83,30 @@ export function storageKeyFromPublicUrl(
   return tail.split("?")[0] || null;
 }
 
+// All unique tags across the photo library, sorted alphabetically. Used
+// to power tag-suggestion buttons in the upload form so admin can pick
+// from existing tags instead of retyping. Empty/null tag arrays are
+// skipped; runs through the service-role client so hidden rows count too.
+export async function listAllTags(): Promise<string[]> {
+  if (!isAdminConfigured()) return [];
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.from("photos").select("tags");
+    if (error || !data) return [];
+    const set = new Set<string>();
+    for (const row of data) {
+      const tags = (row.tags ?? []) as string[];
+      for (const t of tags) {
+        const trimmed = t.trim();
+        if (trimmed) set.add(trimmed);
+      }
+    }
+    return Array.from(set).sort();
+  } catch {
+    return [];
+  }
+}
+
 // Lookup helper used by the explorer for both card thumbnails and pin-panel
 // linked-photo display. Returns full Photo objects so the lightbox can render
 // caption / date / tags too. Public read (anon-RLS so hidden photos are

@@ -176,12 +176,13 @@ export function PhotoGrid({
           ✿ no photos match this tag yet
         </p>
       ) : (
-        <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 mt-2 [column-fill:_balance]">
+        <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 mt-2 [column-fill:_auto]">
           {filtered.map((photo, i) => (
             <PhotoTile
               key={photo.id}
               photo={photo}
               isAdmin={isAdmin}
+              eager={i < 6}
               onOpen={() => setOpenIdx(i)}
               onEdit={() => onEdit(photo)}
               onToggleHidden={() => onToggleHidden(photo)}
@@ -225,6 +226,7 @@ export function PhotoGrid({
 function PhotoTile({
   photo,
   isAdmin,
+  eager,
   onOpen,
   onEdit,
   onToggleHidden,
@@ -235,6 +237,7 @@ function PhotoTile({
 }: {
   photo: Photo;
   isAdmin: boolean;
+  eager: boolean;
   onOpen: () => void;
   onEdit: () => void;
   onToggleHidden: () => void;
@@ -243,6 +246,13 @@ function PhotoTile({
   onDelete: () => void;
   busy: boolean;
 }) {
+  // Reserve the right amount of space before the image loads so column
+  // layout doesn't shift; helps with the "image not rendering in column
+  // 2" mystery where lazy-loaded items sometimes ended up zero-height.
+  const aspectStyle =
+    photo.width && photo.height
+      ? { aspectRatio: `${photo.width} / ${photo.height}` }
+      : undefined;
   return (
     <div
       className={
@@ -257,6 +267,7 @@ function PhotoTile({
         onClick={onOpen}
         className="block w-full text-left"
         aria-label={photo.caption || "open photo"}
+        style={aspectStyle}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -264,7 +275,8 @@ function PhotoTile({
           alt={photo.caption || ""}
           width={photo.width ?? undefined}
           height={photo.height ?? undefined}
-          loading="lazy"
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
           style={rotationStyle(photo.rotation)}
           className={
             "block w-full h-auto transition-transform " +

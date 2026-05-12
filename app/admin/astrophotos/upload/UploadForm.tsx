@@ -22,9 +22,11 @@ function trimOrNull(v: FormDataEntryValue | null): string | null {
 export function UploadForm({
   initialError,
   albums,
+  initialAlbumId = "",
 }: {
   initialError?: string;
   albums: Album[];
+  initialAlbumId?: string;
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -215,7 +217,7 @@ export function UploadForm({
         <select
           id="album_id"
           name="album_id"
-          defaultValue=""
+          defaultValue={initialAlbumId}
           className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
         >
           <option value="">— uncategorized —</option>

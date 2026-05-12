@@ -9,6 +9,7 @@ import {
 import { getAlbumBySlug, listAlbums } from "@/lib/supabase/albums";
 import { getCurrentAdmin } from "@/lib/supabase/server";
 import { AstrophotoGrid } from "../../components/AstrophotoGrid";
+import { AstrophotoAlbumPageAdminWrapper } from "./AstrophotoAlbumPageAdminWrapper";
 
 export const metadata: Metadata = {
   title: "album · astrophotos · my world",
@@ -52,6 +53,8 @@ export default async function AstrophotoAlbumPage(
           {astrophotos.length === 1 ? "" : "s"} in this album.
         </p>
       </header>
+
+      {isAdmin ? <AstrophotoAlbumPageAdminWrapper album={album} /> : null}
 
       {astrophotos.length > 0 ? (
         <AstrophotoGrid

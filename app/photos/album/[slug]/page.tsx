@@ -9,6 +9,7 @@ import {
 import { getAlbumBySlug, listAlbums } from "@/lib/supabase/albums";
 import { getCurrentAdmin } from "@/lib/supabase/server";
 import { PhotoGrid } from "../../PhotoGrid";
+import { PhotoAlbumPageAdminWrapper } from "./PhotoAlbumPageAdminWrapper";
 
 export const metadata: Metadata = {
   title: "album · photos · my world",
@@ -51,6 +52,8 @@ export default async function PhotoAlbumPage(
           {photos.length} photo{photos.length === 1 ? "" : "s"} in this album.
         </p>
       </header>
+
+      {isAdmin ? <PhotoAlbumPageAdminWrapper album={album} /> : null}
 
       {photos.length > 0 ? (
         <PhotoGrid photos={photos} isAdmin={isAdmin} albums={allAlbums} />
