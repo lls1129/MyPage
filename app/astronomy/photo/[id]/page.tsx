@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageShell } from "../../../components/PageShell";
 import { getAstrophoto, type Astrophoto } from "@/lib/supabase/astrophotos";
+import { listAlbums } from "@/lib/supabase/albums";
 import { getCurrentAdmin } from "@/lib/supabase/server";
 import { AdminBar } from "./AdminBar";
 
@@ -71,6 +72,7 @@ export default async function AstrophotoDetailPage(
   const date = formatDate(photo.taken_at) ?? formatDate(photo.created_at);
   const techRows = TECH_FIELDS.filter((f) => Boolean(photo[f.key]));
   const admin = await getCurrentAdmin();
+  const albums = admin ? await listAlbums("astrophotos") : [];
 
   return (
     <PageShell>
@@ -84,7 +86,7 @@ export default async function AstrophotoDetailPage(
 
         {admin ? (
           <div className="mt-3">
-            <AdminBar photo={photo} />
+            <AdminBar photo={photo} albums={albums} />
           </div>
         ) : null}
 

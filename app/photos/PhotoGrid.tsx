@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
+import type { Album } from "@/lib/supabase/albums";
 import { Lightbox } from "./Lightbox";
 import { PhotoEditModal } from "./PhotoEditModal";
 import {
@@ -21,9 +22,11 @@ function rotationStyle(rotation: number | null | undefined) {
 export function PhotoGrid({
   photos,
   isAdmin,
+  albums = [],
 }: {
   photos: Photo[];
   isAdmin: boolean;
+  albums?: Album[];
 }) {
   const router = useRouter();
   const [tag, setTag] = useState<string>("all");
@@ -209,7 +212,11 @@ export function PhotoGrid({
       ) : null}
 
       {editing ? (
-        <PhotoEditModal photo={editing} onClose={() => setEditing(null)} />
+        <PhotoEditModal
+          photo={editing}
+          albums={albums}
+          onClose={() => setEditing(null)}
+        />
       ) : null}
     </>
   );

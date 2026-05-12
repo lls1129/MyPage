@@ -17,6 +17,7 @@ import SunCalc from "suncalc";
 import { fetchTonightWeather, fetchHourlyForecast } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
 import { listAstrophotos, listAllAstrophotosAsAdmin } from "@/lib/supabase/astrophotos";
+import { listAlbumsWithCovers, listAlbums } from "@/lib/supabase/albums";
 import { getCurrentAdmin } from "@/lib/supabase/server";
 import { LocationPicker } from "./LocationPicker";
 import { TimeSlider } from "./components/TimeSlider";
@@ -24,6 +25,8 @@ import { WeatherGrid } from "./components/WeatherGrid";
 import { MoonPanel } from "./components/MoonPanel";
 import { DeepSkyPanel } from "./components/DeepSkyPanel";
 import { AstrophotoGrid } from "./components/AstrophotoGrid";
+import { AlbumCardGrid } from "../components/AlbumCardGrid";
+import { AstrophotoAlbumAdmin } from "./components/AstrophotoAlbumAdmin";
 
 export const metadata: Metadata = {
   title: "astronomy · my world",
@@ -146,11 +149,16 @@ export default async function AstronomyPage(
     forecastEnd.toISOString()
   );
   const admin = await getCurrentAdmin();
-  const astrophotosResult = admin
-    ? await listAllAstrophotosAsAdmin()
-    : await listAstrophotos();
-  const astrophotos =
+  const isAdmin = Boolean(admin);
+  const [astrophotosResult, astrophotoAlbumsWithCovers, astrophotoAlbums] =
+    await Promise.all([
+      isAdmin ? listAllAstrophotosAsAdmin() : listAstrophotos(),
+      listAlbumsWithCovers("astrophotos", isAdmin),
+      listAlbums("astrophotos"),
+    ]);
+  const allAstrophotos =
     astrophotosResult.kind === "ok" ? astrophotosResult.astrophotos : [];
+  const astrophotos = allAstrophotos.filter((a) => !a.album_id);
   const rec = pickRecommendation(sky, weather);
 
   const cloudLabel =
@@ -247,8 +255,8 @@ export default async function AstronomyPage(
       </section>
 
       {/* Astrophoto album */}
-      <section className="mt-2">
-        <header className="mb-5">
+      <section className="mt-2 flex flex-col gap-5">
+        <header>
           <p className="label text-lavender-600 mb-2">astrophotos ✦</p>
           <h2 className="font-script text-pink-600 text-[32px] md:text-[40px] leading-none">
             slow album
@@ -258,7 +266,33 @@ export default async function AstronomyPage(
             equipment story.
           </p>
         </header>
-        <AstrophotoGrid astrophotos={astrophotos} isAdmin={Boolean(admin)} />
+
+        {astrophotoAlbumsWithCovers.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <p className="label text-lavender-600">albums</p>
+            <AlbumCardGrid
+              albums={astrophotoAlbumsWithCovers}
+              basePath="/astronomy/album"
+            />
+          </div>
+        ) : null}
+
+        {isAdmin ? (
+          <AstrophotoAlbumAdmin existing={astrophotoAlbums} />
+        ) : null}
+
+        {astrophotos.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            {astrophotoAlbumsWithCovers.length > 0 ? (
+              <p className="label text-lavender-600">uncategorized</p>
+            ) : null}
+            <AstrophotoGrid
+              astrophotos={astrophotos}
+              isAdmin={isAdmin}
+              albums={astrophotoAlbums}
+            />
+          </div>
+        ) : null}
       </section>
     </PageShell>
   );

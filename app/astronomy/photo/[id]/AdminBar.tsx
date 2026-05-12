@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Astrophoto } from "@/lib/supabase/astrophotos";
+import type { Album } from "@/lib/supabase/albums";
 import {
   rotateAstrophoto,
   toggleAstrophotoHidden,
@@ -11,7 +12,13 @@ import {
 } from "../../admin-actions";
 import { AstrophotoEditModal } from "../../components/AstrophotoEditModal";
 
-export function AdminBar({ photo }: { photo: Astrophoto }) {
+export function AdminBar({
+  photo,
+  albums,
+}: {
+  photo: Astrophoto;
+  albums: Album[];
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState(false);
@@ -90,7 +97,11 @@ export function AdminBar({ photo }: { photo: Astrophoto }) {
       </div>
 
       {editing ? (
-        <AstrophotoEditModal photo={photo} onClose={() => setEditing(false)} />
+        <AstrophotoEditModal
+          photo={photo}
+          albums={albums}
+          onClose={() => setEditing(false)}
+        />
       ) : null}
     </>
   );

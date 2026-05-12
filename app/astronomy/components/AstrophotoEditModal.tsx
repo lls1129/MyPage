@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal, useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Astrophoto } from "@/lib/supabase/astrophotos";
+import type { Album } from "@/lib/supabase/albums";
 import { updateAstrophotoMeta } from "../admin-actions";
 
 const FIELDS: { name: keyof Astrophoto; label: string; placeholder: string }[] = [
@@ -17,9 +18,11 @@ const FIELDS: { name: keyof Astrophoto; label: string; placeholder: string }[] =
 
 export function AstrophotoEditModal({
   photo,
+  albums,
   onClose,
 }: {
   photo: Astrophoto;
+  albums: Album[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -97,6 +100,30 @@ export function AstrophotoEditModal({
                 placeholder={f.placeholder}
               />
             ))}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="album_id" className="label text-pink-600">
+              album
+            </label>
+            <select
+              id="album_id"
+              name="album_id"
+              defaultValue={photo.album_id ?? ""}
+              className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
+            >
+              <option value="">— uncategorized —</option>
+              {albums.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            {albums.length === 0 ? (
+              <p className="text-[11px] text-lavender-600">
+                no albums yet. create one on the /astronomy page first.
+              </p>
+            ) : null}
           </div>
 
           {error ? (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Astrophoto } from "@/lib/supabase/astrophotos";
+import type { Album } from "@/lib/supabase/albums";
 import { AstrophotoEditModal } from "./AstrophotoEditModal";
 import {
   toggleAstrophotoHidden,
@@ -38,9 +39,11 @@ function rotationStyle(rotation: number | null | undefined) {
 export function AstrophotoGrid({
   astrophotos,
   isAdmin,
+  albums = [],
 }: {
   astrophotos: Astrophoto[];
   isAdmin: boolean;
+  albums?: Album[];
 }) {
   const router = useRouter();
   const [showHidden, setShowHidden] = useState(false);
@@ -225,7 +228,11 @@ export function AstrophotoGrid({
       </ul>
 
       {editing ? (
-        <AstrophotoEditModal photo={editing} onClose={() => setEditing(null)} />
+        <AstrophotoEditModal
+          photo={editing}
+          albums={albums}
+          onClose={() => setEditing(null)}
+        />
       ) : null}
     </>
   );

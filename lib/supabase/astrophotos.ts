@@ -19,6 +19,7 @@ export type Astrophoto = {
   processing: string | null;
   location: string | null;
   created_at: string;
+  album_id: string | null;
 };
 
 export type AstrophotosResult =

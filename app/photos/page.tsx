@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { PageShell } from "../components/PageShell";
 import { listPhotos, listAllPhotosAsAdmin } from "@/lib/supabase/photos";
+import { listAlbumsWithCovers, listAlbums } from "@/lib/supabase/albums";
 import { getCurrentAdmin } from "@/lib/supabase/server";
 import { PhotoGrid } from "./PhotoGrid";
+import { AlbumCardGrid } from "../components/AlbumCardGrid";
+import { AlbumAdmin } from "./AlbumAdmin";
 
 export const metadata: Metadata = {
   title: "photos · my world",
@@ -14,7 +17,16 @@ export const dynamic = "force-dynamic";
 
 export default async function PhotosPage() {
   const admin = await getCurrentAdmin();
-  const result = admin ? await listAllPhotosAsAdmin() : await listPhotos();
+  const isAdmin = Boolean(admin);
+  const [result, albumsWithCovers, allAlbums] = await Promise.all([
+    isAdmin ? listAllPhotosAsAdmin() : listPhotos(),
+    listAlbumsWithCovers("photos", isAdmin),
+    listAlbums("photos"),
+  ]);
+  // Uncategorized = photos with no album_id. Album-assigned photos
+  // render on their own /photos/album/[slug] pages.
+  const uncategorized =
+    result.kind === "ok" ? result.photos.filter((p) => !p.album_id) : [];
 
   return (
     <PageShell>
@@ -28,11 +40,31 @@ export default async function PhotosPage() {
         </p>
       </header>
 
-      {result.kind === "ok" && result.photos.length > 0 ? (
-        <PhotoGrid photos={result.photos} isAdmin={Boolean(admin)} />
+      {albumsWithCovers.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <p className="label text-lavender-600">albums</p>
+          <AlbumCardGrid albums={albumsWithCovers} basePath="/photos/album" />
+        </section>
       ) : null}
 
-      {result.kind === "ok" && result.photos.length === 0 ? (
+      {isAdmin ? <AlbumAdmin existing={allAlbums} /> : null}
+
+      {result.kind === "ok" && uncategorized.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          {albumsWithCovers.length > 0 ? (
+            <p className="label text-lavender-600">uncategorized</p>
+          ) : null}
+          <PhotoGrid
+            photos={uncategorized}
+            isAdmin={isAdmin}
+            albums={allAlbums}
+          />
+        </section>
+      ) : null}
+
+      {result.kind === "ok" &&
+      result.photos.length === 0 &&
+      albumsWithCovers.length === 0 ? (
         <div className="mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-8 text-center">
           <p className="font-script text-pink-600 text-3xl">no photos yet ✿</p>
           <p className="text-sm text-ink/80 mt-3">

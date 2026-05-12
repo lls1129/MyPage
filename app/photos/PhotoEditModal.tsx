@@ -4,13 +4,16 @@ import { useEffect, useState } from "react";
 import { createPortal, useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
+import type { Album } from "@/lib/supabase/albums";
 import { updatePhotoMeta } from "./admin-actions";
 
 export function PhotoEditModal({
   photo,
+  albums,
   onClose,
 }: {
   photo: Photo;
+  albums: Album[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -97,6 +100,30 @@ export function PhotoEditModal({
               className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink placeholder:text-pink-400 focus:outline-none focus:border-pink-200"
             />
             <p className="text-[11px] text-lavender-600">comma-separated.</p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="album_id" className="label text-pink-600">
+              album
+            </label>
+            <select
+              id="album_id"
+              name="album_id"
+              defaultValue={photo.album_id ?? ""}
+              className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
+            >
+              <option value="">— uncategorized —</option>
+              {albums.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            {albums.length === 0 ? (
+              <p className="text-[11px] text-lavender-600">
+                no albums yet. create one on the /photos page first.
+              </p>
+            ) : null}
           </div>
 
           {error ? (

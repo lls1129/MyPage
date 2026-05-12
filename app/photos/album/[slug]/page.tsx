@@ -1,0 +1,73 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { PageShell } from "../../../components/PageShell";
+import {
+  listPhotos,
+  listAllPhotosAsAdmin,
+} from "@/lib/supabase/photos";
+import { getAlbumBySlug, listAlbums } from "@/lib/supabase/albums";
+import { getCurrentAdmin } from "@/lib/supabase/server";
+import { PhotoGrid } from "../../PhotoGrid";
+
+export const metadata: Metadata = {
+  title: "album · photos · my world",
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function PhotoAlbumPage(
+  props: PageProps<"/photos/album/[slug]">
+) {
+  const params = await props.params;
+  const slug = params.slug;
+  const album = await getAlbumBySlug("photos", slug);
+  if (!album) notFound();
+
+  const admin = await getCurrentAdmin();
+  const isAdmin = Boolean(admin);
+  const [result, allAlbums] = await Promise.all([
+    isAdmin ? listAllPhotosAsAdmin() : listPhotos(),
+    listAlbums("photos"),
+  ]);
+  const photos =
+    result.kind === "ok"
+      ? result.photos.filter((p) => p.album_id === album.id)
+      : [];
+
+  return (
+    <PageShell>
+      <header className="mt-2">
+        <Link
+          href="/photos"
+          className="label text-lavender-600 hover:underline"
+        >
+          ← all photos
+        </Link>
+        <h1 className="font-script text-pink-600 text-[40px] md:text-[48px] leading-none mt-2">
+          {album.name}
+        </h1>
+        <p className="text-ink/80 text-sm mt-3 max-w-prose">
+          {photos.length} photo{photos.length === 1 ? "" : "s"} in this album.
+        </p>
+      </header>
+
+      {photos.length > 0 ? (
+        <PhotoGrid photos={photos} isAdmin={isAdmin} albums={allAlbums} />
+      ) : (
+        <div className="mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-8 text-center">
+          <p className="font-script text-pink-600 text-3xl">
+            no photos here yet ✿
+          </p>
+          <p className="text-sm text-ink/80 mt-3">
+            assign photos to this album from the edit modal on{" "}
+            <Link href="/photos" className="underline">
+              the main photo page
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+    </PageShell>
+  );
+}

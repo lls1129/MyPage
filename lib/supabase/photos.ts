@@ -13,6 +13,7 @@ export type Photo = {
   height: number | null;
   taken_at: string | null;
   created_at: string;
+  album_id: string | null;
 };
 
 export type PhotosResult =

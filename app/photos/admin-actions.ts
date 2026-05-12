@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { storageRefFromUrl } from "@/lib/supabase/storage-utils";
+import { slugify } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
 
@@ -19,16 +20,27 @@ export async function updatePhotoMeta(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const caption = String(formData.get("caption") ?? "").trim();
   const tagsRaw = String(formData.get("tags") ?? "");
+  // Empty string means "uncategorized"; a uuid means assign to that album.
+  const albumIdRaw = formData.get("album_id");
+  const albumId =
+    typeof albumIdRaw === "string" && albumIdRaw !== ""
+      ? albumIdRaw
+      : null;
   if (!id) return { ok: false, error: "Missing id." };
 
   const admin = createAdminClient();
   const { error } = await admin
     .from("photos")
-    .update({ caption, tags: parseTagsCsv(tagsRaw) })
+    .update({
+      caption,
+      tags: parseTagsCsv(tagsRaw),
+      album_id: albumId,
+    })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
   return { ok: true };
 }
 
@@ -103,6 +115,43 @@ export async function deletePhoto(id: string) {
 
   revalidatePath("/photos");
   return { ok: true };
+}
+
+// Create a new album in the "photos" library. Returns the new row so
+// the caller can update its UI immediately.
+export async function createPhotoAlbum(name: string) {
+  await requireAdmin();
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false as const, error: "name required" };
+  const slug = slugify(trimmed);
+  if (!slug) return { ok: false as const, error: "name produces an empty slug" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("albums")
+    .insert({ name: trimmed, slug, kind: "photos" })
+    .select()
+    .single();
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  return { ok: true as const, album: data };
+}
+
+// Assign a photo to an album (or null to make it uncategorized).
+export async function setPhotoAlbum(
+  photoId: string,
+  albumId: string | null
+) {
+  await requireAdmin();
+  if (!photoId) return { ok: false as const, error: "missing photo id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("photos")
+    .update({ album_id: albumId })
+    .eq("id", photoId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  if (albumId) revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
 }
 
 // Move a photo row from `photos` into `astrophotos`. The file in Storage

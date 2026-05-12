@@ -4,6 +4,43 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { storageRefFromUrl } from "@/lib/supabase/storage-utils";
+import { slugify } from "@/lib/supabase/albums";
+
+// Create a new album in the "astrophotos" library.
+export async function createAstrophotoAlbum(name: string) {
+  await requireAdmin();
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false as const, error: "name required" };
+  const slug = slugify(trimmed);
+  if (!slug) return { ok: false as const, error: "name produces an empty slug" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("albums")
+    .insert({ name: trimmed, slug, kind: "astrophotos" })
+    .select()
+    .single();
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  return { ok: true as const, album: data };
+}
+
+// Assign an astrophoto to an album (or null to make it uncategorized).
+export async function setAstrophotoAlbum(
+  astrophotoId: string,
+  albumId: string | null
+) {
+  await requireAdmin();
+  if (!astrophotoId) return { ok: false as const, error: "missing astrophoto id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("astrophotos")
+    .update({ album_id: albumId })
+    .eq("id", astrophotoId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  if (albumId) revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
 
 function trimOrNull(v: FormDataEntryValue | null): string | null {
   if (typeof v !== "string") return null;
@@ -26,6 +63,12 @@ export async function updateAstrophotoMeta(formData: FormData) {
     takenAt = Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
+  const albumIdRaw = formData.get("album_id");
+  const albumId =
+    typeof albumIdRaw === "string" && albumIdRaw !== ""
+      ? albumIdRaw
+      : null;
+
   const update: Record<string, string | null> = {
     object_name: objectName,
     caption: String(formData.get("caption") ?? "").trim(),
@@ -35,6 +78,7 @@ export async function updateAstrophotoMeta(formData: FormData) {
     exposure_stack: trimOrNull(formData.get("exposure_stack")),
     processing: trimOrNull(formData.get("processing")),
     location: trimOrNull(formData.get("location")),
+    album_id: albumId,
   };
   if (takenAt !== undefined) update.taken_at = takenAt;
 
@@ -44,6 +88,7 @@ export async function updateAstrophotoMeta(formData: FormData) {
 
   revalidatePath("/astronomy");
   revalidatePath(`/astronomy/photo/${id}`);
+  revalidatePath(`/astronomy/album/[slug]`, "page");
   return { ok: true };
 }
 
