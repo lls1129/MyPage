@@ -75,8 +75,13 @@ export function WeatherGrid({
   return (
     <div className="rounded-md bg-skynavy-900/40 border border-skynavy-500 p-3 md:p-4">
       <div className="flex items-baseline justify-between mb-3 gap-2 flex-wrap">
-        <p className="label text-pink-200">tonight&apos;s forecast</p>
-        <Legend />
+        <p className="label text-pink-200">next 48 hours</p>
+        {/* On mobile the legend wraps to its own row; ml-auto pushes
+            it right rather than letting it sit awkwardly at the left
+            edge of the wrapped row. */}
+        <div className="ml-auto">
+          <Legend />
+        </div>
       </div>
 
       {/* Two side-by-side tables: a fixed labels column on the left and

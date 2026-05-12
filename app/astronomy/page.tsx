@@ -134,10 +134,16 @@ export default async function AstronomyPage(
   }
 
   const weather = await fetchTonightWeather(location);
+  // Forecast spans a fixed 48 hours from "now" at the user's location,
+  // regardless of when the page was loaded — so the table looks the
+  // same size at 8pm or at midnight, not shrinking as the next sunrise
+  // approaches.
+  const forecastStart = now;
+  const forecastEnd = new Date(now.getTime() + 48 * 60 * 60_000);
   const hourly = await fetchHourlyForecast(
     location,
-    snapshotStart.toISOString(),
-    snapshotEnd.toISOString()
+    forecastStart.toISOString(),
+    forecastEnd.toISOString()
   );
   const admin = await getCurrentAdmin();
   const astrophotosResult = admin

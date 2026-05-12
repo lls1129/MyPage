@@ -55,7 +55,9 @@ export async function fetchHourlyForecast(
       `?latitude=${location.lat}` +
       `&longitude=${location.lon}` +
       `&hourly=cloud_cover,relative_humidity_2m,wind_speed_10m,precipitation_probability,temperature_2m` +
-      `&forecast_days=2` +
+      // 3 days so we always have at least the next 48 hours available
+      // regardless of what time of day the page was loaded.
+      `&forecast_days=3` +
       `&timezone=${encodeURIComponent(location.timezone)}`;
     const res = await fetch(url, { next: { revalidate: 600 } });
     if (!res.ok) return [];
