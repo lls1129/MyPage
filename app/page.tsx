@@ -3,6 +3,7 @@ import { Hero } from "./components/home/Hero";
 import { UtilityStrip } from "./components/home/UtilityStrip";
 import { HomeGrid } from "./components/home/HomeGrid";
 import { MealStrip } from "./components/home/MealStrip";
+import { MoonStrip } from "./components/home/MoonStrip";
 
 export default function Home() {
   return (
@@ -10,6 +11,7 @@ export default function Home() {
       <Hero />
       <UtilityStrip />
       <HomeGrid />
+      <MoonStrip />
       <MealStrip />
     </PageShell>
   );

@@ -7,6 +7,11 @@ import {
   nearestSnapshotIndex,
   formatTime,
 } from "@/lib/astronomy/sky";
+import {
+  moonSnapshots,
+  nearestMoonSnapshotIndex,
+} from "@/lib/astronomy/moon";
+import { nextPhaseEvents } from "@/lib/astronomy/moon-events";
 import { fetchTonightWeather, fetchHourlyForecast } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
 import { listAstrophotos, listAllAstrophotosAsAdmin } from "@/lib/supabase/astrophotos";
@@ -14,6 +19,7 @@ import { getCurrentAdmin } from "@/lib/supabase/server";
 import { LocationPicker } from "./LocationPicker";
 import { TimeSlider } from "./components/TimeSlider";
 import { WeatherGrid } from "./components/WeatherGrid";
+import { MoonPanel } from "./components/MoonPanel";
 import { AstrophotoGrid } from "./components/AstrophotoGrid";
 
 export const metadata: Metadata = {
@@ -53,6 +59,14 @@ export default async function AstronomyPage(
   const snapshotEnd = new Date(Math.max(sunriseTs + 30 * 60_000, now.getTime() + 60_000));
   const snapshots = tonightSnapshots(snapshotStart, snapshotEnd, 30, location, now);
   const initialIndex = nearestSnapshotIndex(snapshots, now);
+
+  // Moon: ±15 day window centered on now, step 6 hours = 120-ish snapshots.
+  // That's small enough to ship as JSON props but smooth enough to scrub.
+  const moonStart = new Date(now.getTime() - 15 * 24 * 60 * 60_000);
+  const moonEnd = new Date(now.getTime() + 15 * 24 * 60 * 60_000);
+  const moonSnaps = moonSnapshots(moonStart, moonEnd, 360, location, now);
+  const moonInitial = nearestMoonSnapshotIndex(moonSnaps, now);
+  const moonEvents = nextPhaseEvents(now, 4);
 
   const weather = await fetchTonightWeather(location);
   const hourly = await fetchHourlyForecast(
@@ -125,6 +139,14 @@ export default async function AstronomyPage(
 
         <WeatherGrid hours={hourly} nowISO={now.toISOString()} />
       </section>
+
+      <MoonPanel
+        snapshots={moonSnaps}
+        initialIndex={moonInitial}
+        events={moonEvents}
+        timezone={location.timezone}
+        locationName={location.name}
+      />
 
       {/* Recommendation card */}
       <section
