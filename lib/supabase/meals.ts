@@ -28,9 +28,16 @@ export type MealStatus = {
   meal_id: string;
   tried: boolean;
   want_to_try: boolean;
+  favorited: boolean;
   rating: number | null;
   notes: string | null;
   updated_at: string;
+};
+
+export type TrashedMeal = {
+  meal: Meal;
+  removed_at: string;
+  is_external: boolean;
 };
 
 function classify(error: { code?: string; message: string }) {
@@ -49,9 +56,11 @@ export async function listMeals(): Promise<MealsResult> {
   if (!configured) return { kind: "unconfigured" };
   try {
     const supabase = await createClient();
+    // RLS already filters hidden + removed_at. Belt + braces here.
     const { data, error } = await supabase
       .from("meals")
       .select("*")
+      .is("removed_at", null)
       .order("created_at", { ascending: false });
     if (error) return classify(error);
     const meals = (data ?? []).map((row) => ({
@@ -68,6 +77,41 @@ export async function listMeals(): Promise<MealsResult> {
   }
 }
 
+// Active external meal snapshots (TheMealDB picks the admin has saved
+// to the DB). Map to the same Meal shape so the picker can mix them in
+// with library meals transparently.
+export async function listExternalMeals(): Promise<Meal[]> {
+  const { configured } = readSupabaseEnv();
+  if (!configured) return [];
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("external_meal_snapshots")
+      .select("*")
+      .is("removed_at", null)
+      .order("created_at", { ascending: false });
+    if (error) return [];
+    return (data ?? []).map((row) => ({
+      id: row.meal_id,
+      name: row.name,
+      tagline: row.tagline ?? "",
+      glyph: row.glyph ?? "",
+      moods: row.moods ?? [],
+      cuisine: row.cuisine ?? "",
+      time_minutes: row.time_minutes,
+      ingredients: row.ingredients ?? [],
+      ingredients_detail: row.ingredients_detail ?? [],
+      instructions: row.instructions ?? null,
+      image_url: row.image_url ?? null,
+      hidden: false,
+      created_at: row.created_at,
+      source: "themealdb" as const,
+    })) as Meal[];
+  } catch {
+    return [];
+  }
+}
+
 // Returns the meal_status rows as a map keyed by meal_id. If the table is
 // missing (migration not yet applied) we return an empty map rather than
 // surfacing an error — the picker degrades gracefully.
@@ -80,7 +124,15 @@ export async function listMealStatuses(): Promise<Record<string, MealStatus>> {
     if (error) return {};
     const map: Record<string, MealStatus> = {};
     for (const row of data ?? []) {
-      map[row.meal_id] = row as MealStatus;
+      map[row.meal_id] = {
+        meal_id: row.meal_id,
+        tried: row.tried ?? false,
+        want_to_try: row.want_to_try ?? false,
+        favorited: row.favorited ?? false,
+        rating: row.rating ?? null,
+        notes: row.notes ?? null,
+        updated_at: row.updated_at,
+      };
     }
     return map;
   } catch {

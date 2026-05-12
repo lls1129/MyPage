@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import type { Meal, MealStatus } from "@/lib/supabase/meals";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { Meal, MealStatus, TrashedMeal } from "@/lib/supabase/meals";
 import { fetchSurpriseMeal, findMealImage } from "@/lib/meals/themealdb";
-import { setMealStatus, setMealsListPublic } from "./actions";
+import {
+  removeMeal,
+  restoreMeal,
+  setMealStatus,
+  setMealsListPublic,
+  type ExternalSnapshot,
+} from "./actions";
 
 const MOODS = ["any", "cozy", "light", "fast", "fancy", "spicy", "slow"] as const;
 type Mood = (typeof MOODS)[number];
@@ -19,9 +25,13 @@ const TIME_BANDS: { id: TimeBand; label: string }[] = [
 
 type Pool = "all" | "want-to-try" | "favorites";
 
-const FAV_KEY = "myworld:meals:favorites:v1";
+// Legacy keys — read on first admin mount to migrate to DB, then ignored.
+const LEGACY_FAV_KEY = "myworld:meals:favorites:v1";
+const LEGACY_SAVED_THEMEALDB_KEY = "myworld:meals:saved-themealdb:v1";
+const MIGRATED_KEY = "myworld:meals:migrated:v1";
+// Still per-device — these are device-local UX state, not data the user
+// would miss across machines.
 const RECENT_KEY = "myworld:meals:recents:v1";
-const SAVED_THEMEALDB_KEY = "myworld:meals:saved-themealdb:v1";
 const IMAGE_CACHE_KEY = "myworld:meals:image-cache:v2";
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -54,11 +64,8 @@ function saveJSON(key: string, value: unknown) {
   }
 }
 
-// Break an instructions paragraph into discrete steps. TheMealDB picks
-// usually include newlines between paragraphs; our library uses ". " between
-// sentences. Strip any leading numbering ("1. ", "Step 2:", "- ", etc.) so
-// the <ol> adds its own, and drop pure section-header lines like
-// "Preparation:" / "Cooking instructions" / "Method".
+// Break an instructions paragraph into discrete steps (see splitter tests
+// in the commit message — handles "Step N", section headers, etc.).
 const SECTION_HEADER =
   /^(recipe\s+|cooking\s+)?(preparation|instructions?|directions?|method|steps?|ingredients?|notes?|cooking)\s*:?\s*$/i;
 
@@ -73,23 +80,36 @@ function splitInstructions(raw: string): string[] {
     let t = part.trim();
     if (!t) continue;
     if (SECTION_HEADER.test(t)) continue;
-    // Strip "Step N" / "STEP 2" prefix.
     t = t.replace(/^step\s*\d+\b/i, "");
-    // Strip leading bullet markers.
     t = t.replace(/^[-•*]+/, "");
-    // Strip leading "1" / "12" before its separator.
     t = t.replace(/^\d+(?=[\s.):])/, "");
-    // Strip leftover separator punctuation/whitespace.
     t = t.replace(/^[-:.)—–\s]+/, "").trim();
-    // Trim trailing periods (the <ol> + sentence rhythm reads better).
     t = t.replace(/\.+$/, "").trim();
     if (t) out.push(t);
   }
   return out;
 }
 
+function toSnapshot(meal: Meal): ExternalSnapshot {
+  return {
+    meal_id: meal.id,
+    name: meal.name,
+    tagline: meal.tagline,
+    glyph: meal.glyph,
+    moods: meal.moods,
+    cuisine: meal.cuisine,
+    time_minutes: meal.time_minutes,
+    ingredients: meal.ingredients,
+    ingredients_detail: meal.ingredients_detail,
+    instructions: meal.instructions,
+    image_url: meal.image_url,
+  };
+}
+
 type Props = {
   library: Meal[];
+  externalMeals: Meal[];
+  trashed: TrashedMeal[];
   statuses: Record<string, MealStatus>;
   isAdmin: boolean;
   initialMealId?: string;
@@ -98,6 +118,8 @@ type Props = {
 
 export function MealPicker({
   library,
+  externalMeals,
+  trashed,
   statuses,
   isAdmin,
   initialMealId,
@@ -110,19 +132,11 @@ export function MealPicker({
   const [ingredient, setIngredient] = useState<string>("");
   const [pool, setPool] = useState<Pool>("all");
 
-  // Persisted state (favorites + recents + saved themealdb meals + image cache)
-  const [favorites, setFavorites] = useState<string[]>([]);
+  // Per-device UX state (recents + image cache).
   const [recents, setRecents] = useState<Record<string, number>>({});
-  // Snapshot favorited TheMealDB meals so they survive reload and merge into
-  // the shuffle pool alongside the library.
-  const [savedThemealdb, setSavedThemealdb] = useState<Record<string, Meal>>(
-    {}
-  );
-  // Cache TheMealDB image lookups so we don't re-fetch every shuffle.
-  // Sentinel "" means "looked up, no image found".
   const [imageCache, setImageCache] = useState<Record<string, string>>({});
 
-  // Mirror of server statuses so we can show optimistic updates.
+  // Mirror of server statuses for optimistic updates.
   const [statusMap, setStatusMap] =
     useState<Record<string, MealStatus>>(statuses);
   const [notesDraft, setNotesDraft] = useState<string>("");
@@ -130,16 +144,25 @@ export function MealPicker({
   const [statusSaving, startStatusSave] = useTransition();
   const [statusError, setStatusError] = useState<string | null>(null);
 
-  // Optimistic mirror of the listIsPublic setting so the admin toggle feels
-  // instant. Re-syncs to the server value if the prop changes.
+  // Visibility toggle for non-admin "on my list" view.
   const [listPublic, setListPublic] = useState(listIsPublic);
   const [visibilitySaving, startVisibilitySave] = useTransition();
   useEffect(() => setListPublic(listIsPublic), [listIsPublic]);
 
+  // Trash state: server-provided initially, mutated optimistically on
+  // remove/restore. We add the meal back so the picker still shows it
+  // briefly under "trash"; restore moves it back into active.
+  const [trashState, setTrashState] = useState<TrashedMeal[]>(trashed);
+  useEffect(() => setTrashState(trashed), [trashed]);
+
+  // Inline remove confirmation: when set, the picker shows a small
+  // "really remove?" prompt instead of immediately deleting.
+  const [removeConfirm, setRemoveConfirm] = useState<Meal | null>(null);
+  const [removeSaving, startRemoveSave] = useTransition();
+
   const showWantToTry = isAdmin || listPublic;
 
   useEffect(() => {
-    setFavorites(loadJSON<string[]>(FAV_KEY, []));
     const r = loadJSON<Record<string, number>>(RECENT_KEY, {});
     const cutoff = Date.now() - RECENT_WINDOW_MS;
     const cleaned: Record<string, number> = {};
@@ -147,10 +170,6 @@ export function MealPicker({
       if (t > cutoff) cleaned[id] = t;
     }
     setRecents(cleaned);
-    setSavedThemealdb(loadJSON<Record<string, Meal>>(SAVED_THEMEALDB_KEY, {}));
-    // Image cache: drop the empty-string "tried, no result" sentinels so
-    // previously-failed lookups retry once per session against the current
-    // (possibly upgraded) lookup chain. Positive URLs stay cached.
     const rawCache = loadJSON<Record<string, string>>(IMAGE_CACHE_KEY, {});
     const cleanedCache: Record<string, string> = {};
     for (const [k, v] of Object.entries(rawCache)) {
@@ -158,37 +177,84 @@ export function MealPicker({
     }
     setImageCache(cleanedCache);
   }, []);
-  useEffect(() => saveJSON(FAV_KEY, favorites), [favorites]);
   useEffect(() => saveJSON(RECENT_KEY, recents), [recents]);
-  useEffect(
-    () => saveJSON(SAVED_THEMEALDB_KEY, savedThemealdb),
-    [savedThemealdb]
-  );
   useEffect(() => saveJSON(IMAGE_CACHE_KEY, imageCache), [imageCache]);
 
-  // Sync server-provided statuses if they change between renders
-  // (e.g. after revalidatePath).
+  // Sync server-provided statuses (e.g. after revalidatePath).
   useEffect(() => {
     setStatusMap(statuses);
   }, [statuses]);
 
-  // The shuffle/filter pool is library + any TheMealDB meals the user has
-  // favorited (so they reappear when favorites-only is on, and can be re-shuffled).
-  const fullLibrary = useMemo(() => {
-    const extras = Object.values(savedThemealdb);
-    if (extras.length === 0) return library;
-    const seen = new Set(library.map((m) => m.id));
-    return [...library, ...extras.filter((m) => !seen.has(m.id))];
-  }, [library, savedThemealdb]);
+  // One-time admin migration of legacy localStorage (favorites + saved
+  // TheMealDB snapshots) to the DB. Guarded by a localStorage flag.
+  const migrationKickedOff = useRef(false);
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (migrationKickedOff.current) return;
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem(MIGRATED_KEY) === "1") return;
+    migrationKickedOff.current = true;
+    const legacyFavs = loadJSON<string[]>(LEGACY_FAV_KEY, []);
+    const legacySnaps = loadJSON<Record<string, Meal>>(
+      LEGACY_SAVED_THEMEALDB_KEY,
+      {}
+    );
+    const calls: Promise<unknown>[] = [];
+    const handled = new Set<string>();
+    for (const id of legacyFavs) {
+      handled.add(id);
+      const snap = legacySnaps[id];
+      calls.push(
+        setMealStatus({
+          mealId: id,
+          favorited: true,
+          snapshot: snap ? toSnapshot(snap) : undefined,
+        })
+      );
+    }
+    for (const [id, meal] of Object.entries(legacySnaps)) {
+      if (handled.has(id)) continue;
+      calls.push(
+        setMealStatus({
+          mealId: id,
+          snapshot: toSnapshot(meal),
+        })
+      );
+    }
+    if (calls.length === 0) {
+      window.localStorage.setItem(MIGRATED_KEY, "1");
+      return;
+    }
+    Promise.allSettled(calls).then(() => {
+      window.localStorage.setItem(MIGRATED_KEY, "1");
+      // We don't delete the legacy keys — keep as a safety net in case
+      // the user wants to inspect what was there.
+    });
+  }, [isAdmin]);
 
-  // Current pick (the meal shown). Starts unset; we choose on mount once.
+  // Combined active pool: library + saved external snapshots (DB-backed).
+  const fullLibrary = useMemo(() => {
+    if (externalMeals.length === 0) return library;
+    const seen = new Set(library.map((m) => m.id));
+    return [...library, ...externalMeals.filter((m) => !seen.has(m.id))];
+  }, [library, externalMeals]);
+
+  // Favorites are now derived from meal_status.favorited — synced across
+  // the admin's devices, public-readable so visitors see what you save.
+  const favorites = useMemo(() => {
+    const out: string[] = [];
+    for (const [id, s] of Object.entries(statusMap)) {
+      if (s.favorited) out.push(id);
+    }
+    return out;
+  }, [statusMap]);
+
+  // Current pick.
   const [current, setCurrent] = useState<Meal | null>(null);
   const [surpriseLoading, setSurpriseLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If the want-to-try pool was selected but it's no longer visible to this
-  // viewer (admin flipped the list to private, or visitor was already on the
-  // hidden chip somehow), fall back to "all".
+  // If the want-to-try pool was selected but it's no longer visible, fall back.
   useEffect(() => {
     if (!showWantToTry && pool === "want-to-try") setPool("all");
   }, [showWantToTry, pool]);
@@ -213,10 +279,10 @@ export function MealPicker({
     });
   }
 
-  // Reset notes draft when the current meal changes.
   useEffect(() => {
     setNotesEditing(false);
     setStatusError(null);
+    setRemoveConfirm(null);
     if (current) {
       setNotesDraft(statusMap[current.id]?.notes ?? "");
     } else {
@@ -265,8 +331,6 @@ export function MealPicker({
     ingredient,
   ]);
 
-  // The freshly-eligible pool: filter eligible, then push down anything
-  // recently shown so it floats to the back of the queue.
   const fresh = useMemo(() => {
     const cutoff = Date.now() - RECENT_WINDOW_MS;
     return eligible.filter((m) => !recents[m.id] || recents[m.id] < cutoff);
@@ -312,26 +376,15 @@ export function MealPicker({
     setCurrent(meal);
   }
 
+  // Favorite is now a status field, admin-only writable. The first
+  // time admin favorites a TheMealDB pick, the snapshot rides along
+  // so the meal data persists in DB for all devices.
   function toggleFavorite(meal: Meal) {
-    const id = meal.id;
-    const wasFavorite = favorites.includes(id);
-    setFavorites((prev) =>
-      wasFavorite ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-    if (meal.source === "themealdb") {
-      setSavedThemealdb((prev) => {
-        if (wasFavorite) {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        }
-        return { ...prev, [id]: meal };
-      });
-    }
+    if (!isAdmin) return;
+    const wasFavorite = statusMap[meal.id]?.favorited ?? false;
+    patchStatus(meal, { favorited: !wasFavorite });
   }
 
-  // Apply a status patch optimistically, then persist via server action.
-  // The server returns the canonical row which we re-sync into state.
   function patchStatus(
     meal: Meal,
     patch: Partial<Omit<MealStatus, "meal_id" | "updated_at">>
@@ -343,6 +396,7 @@ export function MealPicker({
         meal_id: mealId,
         tried: false,
         want_to_try: false,
+        favorited: false,
         rating: null,
         notes: null,
         updated_at: new Date().toISOString(),
@@ -352,20 +406,18 @@ export function MealPicker({
         [mealId]: { ...existing, ...patch, updated_at: new Date().toISOString() },
       };
     });
-    // TheMealDB meals only live in localStorage until favorited. If the
-    // user marks one tried/on-my-list/rated/noted, snapshot it so the meal
-    // shows up again on next load (otherwise the status row would orphan).
-    if (meal.source === "themealdb" && !(mealId in savedThemealdb)) {
-      setSavedThemealdb((prev) => ({ ...prev, [mealId]: meal }));
-    }
+    const snapshot =
+      meal.source === "themealdb" ? toSnapshot(meal) : undefined;
     startStatusSave(async () => {
       try {
         const res = await setMealStatus({
           mealId,
           tried: patch.tried,
           wantToTry: patch.want_to_try,
+          favorited: patch.favorited,
           rating: patch.rating,
           notes: patch.notes,
+          snapshot,
         });
         if (!res.ok) {
           setStatusError(res.message);
@@ -380,8 +432,74 @@ export function MealPicker({
     });
   }
 
-  // Initial pick on mount. If the URL carried ?id=…, try to land on that
-  // exact meal (deep-link from the homepage widget); otherwise pick at random.
+  function mealHasState(meal: Meal): boolean {
+    const s = statusMap[meal.id];
+    if (!s) return false;
+    return !!(s.tried || s.want_to_try || s.favorited || s.rating || s.notes);
+  }
+
+  function requestRemove(meal: Meal) {
+    if (!isAdmin) return;
+    if (mealHasState(meal)) {
+      setRemoveConfirm(meal);
+    } else {
+      performRemove(meal);
+    }
+  }
+
+  function performRemove(meal: Meal) {
+    setRemoveConfirm(null);
+    const isExternal = meal.source === "themealdb";
+    // Optimistic: add to local trash, drop current.
+    const trashEntry: TrashedMeal = {
+      meal,
+      removed_at: new Date().toISOString(),
+      is_external: isExternal,
+    };
+    setTrashState((prev) => {
+      const next = [trashEntry, ...prev.filter((t) => t.meal.id !== meal.id)];
+      return next.slice(0, 3);
+    });
+    if (current?.id === meal.id) setCurrent(null);
+    startRemoveSave(async () => {
+      try {
+        const res = await removeMeal({ mealId: meal.id, isExternal });
+        if (!res.ok) {
+          setStatusError(`couldn’t remove: ${res.message}`);
+          // Roll back optimism.
+          setTrashState(trashed);
+        }
+      } catch (e) {
+        setStatusError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+        setTrashState(trashed);
+      }
+    });
+  }
+
+  function performRestore(entry: TrashedMeal) {
+    setTrashState((prev) => prev.filter((t) => t.meal.id !== entry.meal.id));
+    startRemoveSave(async () => {
+      try {
+        const res = await restoreMeal({
+          mealId: entry.meal.id,
+          isExternal: entry.is_external,
+        });
+        if (!res.ok) {
+          setStatusError(`couldn’t restore: ${res.message}`);
+          setTrashState(trashed);
+        }
+      } catch (e) {
+        setStatusError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+        setTrashState(trashed);
+      }
+    });
+  }
+
+  // Initial pick on mount. Deep-link via ?id=… if it points at an active meal.
   useEffect(() => {
     if (current !== null || fullLibrary.length === 0) return;
     const requested = initialMealId
@@ -395,11 +513,9 @@ export function MealPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fullLibrary]);
 
-  // For library meals without an image_url, look one up via TheMealDB
-  // search and cache the result. Sentinel "" means we tried and got nothing.
+  // Image lookup for library/external meals without image_url.
   useEffect(() => {
     if (!current) return;
-    if (current.source !== "library") return;
     if (current.image_url) return;
     if (current.id in imageCache) return;
     let cancelled = false;
@@ -429,26 +545,34 @@ export function MealPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eligible]);
 
-  const isFavorite = current ? favorites.includes(current.id) : false;
   const currentStatus = current ? statusMap[current.id] ?? null : null;
+  const isFavorite = currentStatus?.favorited ?? false;
   const displayedImage = current
     ? current.image_url ?? imageCache[current.id] ?? null
     : null;
   const hasDisplayImage = !!displayedImage && displayedImage !== "";
 
-  // Pool counts (for the segmented control labels).
   const poolCounts = useMemo(() => {
     let wantToTry = 0;
     let favs = 0;
     for (const m of fullLibrary) {
       if (statusMap[m.id]?.want_to_try) wantToTry++;
-      if (favorites.includes(m.id)) favs++;
+      if (statusMap[m.id]?.favorited) favs++;
     }
     return { all: fullLibrary.length, wantToTry, favs };
-  }, [fullLibrary, statusMap, favorites]);
+  }, [fullLibrary, statusMap]);
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Trash panel (admin only, visible when there's something to restore) */}
+      {isAdmin && trashState.length > 0 ? (
+        <TrashPanel
+          entries={trashState}
+          saving={removeSaving}
+          onRestore={performRestore}
+        />
+      ) : null}
+
       {/* Filter bar */}
       <section className="rounded-lg bg-white border border-pink-100 shadow-soft p-4 md:p-5 flex flex-col gap-4">
         <FilterRow label="mood">
@@ -536,13 +660,13 @@ export function MealPicker({
           </p>
         </div>
 
-        {pool === "favorites" ? (
+        {pool === "favorites" && poolCounts.favs === 0 && isAdmin ? (
           <p className="text-[11px] text-lavender-600 italic">
-            ♥ favorites is per-device — switch to <strong>all</strong> to
-            browse new meals and tap ♡ favorite to add them here.
+            no favorites yet — switch to <strong>all</strong> and tap
+            <strong> ♡ favorite </strong>on meals you want to save.
           </p>
         ) : null}
-        {pool === "want-to-try" && poolCounts.wantToTry === 0 ? (
+        {pool === "want-to-try" && poolCounts.wantToTry === 0 && isAdmin ? (
           <p className="text-[11px] text-lavender-600 italic">
             nothing on your list yet — switch to <strong>all</strong> and tap
             <strong> + on my list </strong>on meals you want to make.
@@ -705,6 +829,30 @@ export function MealPicker({
               </p>
             ) : null}
 
+            {removeConfirm ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md bg-pink-50 border border-pink-200 px-3 py-2 text-xs">
+                <span className="text-pink-800 font-semibold">
+                  remove “{removeConfirm.name}”? it has saved state.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => performRemove(removeConfirm)}
+                  disabled={removeSaving}
+                  className="rounded-pill bg-pink-200 text-white border border-pink-200 px-3 py-1 font-semibold disabled:opacity-60"
+                >
+                  {removeSaving ? "removing…" : "yes, remove"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRemoveConfirm(null)}
+                  disabled={removeSaving}
+                  className="rounded-pill bg-white text-pink-800 border border-pink-100 px-3 py-1 font-semibold disabled:opacity-60"
+                >
+                  cancel
+                </button>
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -722,19 +870,42 @@ export function MealPicker({
               >
                 {surpriseLoading ? "asking…" : "✦ surprise me"}
               </button>
-              <button
-                type="button"
-                onClick={() => toggleFavorite(current)}
-                title={isFavorite ? "remove from favorites" : "save to favorites"}
-                className={
-                  "lift rounded-pill border shadow-soft px-4 py-2 text-sm font-semibold " +
-                  (isFavorite
-                    ? "bg-pink-100 text-pink-800 border-pink-400"
-                    : "bg-white text-pink-800 border-pink-100 hover:border-pink-200")
-                }
-              >
-                {isFavorite ? "♥ saved" : "♡ favorite"}
-              </button>
+              {isAdmin ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => toggleFavorite(current)}
+                    disabled={statusSaving}
+                    title={
+                      isFavorite ? "remove from favorites" : "save to favorites"
+                    }
+                    className={
+                      "lift rounded-pill border shadow-soft px-4 py-2 text-sm font-semibold disabled:opacity-60 " +
+                      (isFavorite
+                        ? "bg-pink-100 text-pink-800 border-pink-400"
+                        : "bg-white text-pink-800 border-pink-100 hover:border-pink-200")
+                    }
+                  >
+                    {isFavorite ? "♥ saved" : "♡ favorite"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestRemove(current)}
+                    disabled={removeSaving || !!removeConfirm}
+                    title="remove this meal (with undo)"
+                    className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                  >
+                    ✕ remove
+                  </button>
+                </>
+              ) : isFavorite ? (
+                <span
+                  title="admin's favorite"
+                  className="rounded-pill px-4 py-2 text-sm font-semibold bg-pink-100 text-pink-800 border border-pink-200"
+                >
+                  ♥ saved
+                </span>
+              ) : null}
               {error ? (
                 <span className="text-xs text-pink-600 font-semibold">{error}</span>
               ) : null}
@@ -747,6 +918,46 @@ export function MealPicker({
         )}
       </section>
     </div>
+  );
+}
+
+function TrashPanel({
+  entries,
+  saving,
+  onRestore,
+}: {
+  entries: TrashedMeal[];
+  saving: boolean;
+  onRestore: (e: TrashedMeal) => void;
+}) {
+  return (
+    <section className="rounded-md bg-lavender-50 border border-lavender-200 px-3 py-2 flex flex-col gap-2">
+      <p className="label text-lavender-800">trash · last {entries.length}</p>
+      <ul className="flex flex-wrap gap-2">
+        {entries.map((entry) => (
+          <li
+            key={entry.meal.id}
+            className="flex items-center gap-2 rounded-pill bg-white border border-lavender-200 pl-3 pr-1 py-1 text-xs"
+          >
+            <span className="text-lavender-800 font-semibold">
+              {entry.meal.name}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRestore(entry)}
+              disabled={saving}
+              className="rounded-pill bg-lavender-100 text-lavender-800 border border-lavender-200 px-2 py-[2px] font-semibold hover:bg-lavender-200 disabled:opacity-60"
+              title="restore"
+            >
+              ↻ restore
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[10px] text-lavender-800/80 italic">
+        only the most recent 3 are kept — older removals are purged for good.
+      </p>
+    </section>
   );
 }
 
@@ -771,8 +982,6 @@ function StatusRow({
   const wantToTry = status?.want_to_try ?? false;
   const rating = status?.rating ?? 0;
 
-  // Public viewers: only show pills/stars that are actually set. The
-  // on-my-list pill is also gated by the admin's visibility setting.
   if (!isAdmin) {
     const showWantToTryPill = wantToTry && showWantToTryPublicly;
     const anything = tried || showWantToTryPill || rating > 0;
@@ -787,7 +996,6 @@ function StatusRow({
       </div>
     );
   }
-  // Admin: always render all controls so they're easy to toggle.
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button
@@ -908,10 +1116,8 @@ function NotesSection({
 }) {
   const stored = status?.notes ?? "";
 
-  // Public viewer with no notes: render nothing.
   if (!isAdmin && !stored) return null;
 
-  // Public viewer with notes: read-only.
   if (!isAdmin) {
     return (
       <div className="pt-4 border-t border-pink-50">
@@ -923,7 +1129,6 @@ function NotesSection({
     );
   }
 
-  // Admin idle (not editing): show the stored note (or an "add" affordance).
   if (!editing) {
     return (
       <div className="pt-4 border-t border-pink-50">
@@ -948,7 +1153,6 @@ function NotesSection({
     );
   }
 
-  // Admin editing: textarea + save/cancel.
   return (
     <div className="pt-4 border-t border-pink-50">
       <p className="label text-pink-600 mb-2">notes</p>
