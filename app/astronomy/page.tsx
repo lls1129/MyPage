@@ -9,6 +9,11 @@ import {
 } from "@/lib/astronomy/sky";
 import { moonAt } from "@/lib/astronomy/moon";
 import { nextPhaseEvents } from "@/lib/astronomy/moon-events";
+import {
+  computeTonightDSOs,
+  darkWindowTonight,
+} from "@/lib/astronomy/deepsky";
+import SunCalc from "suncalc";
 import { fetchTonightWeather, fetchHourlyForecast } from "@/lib/astronomy/weather";
 import { pickRecommendation } from "@/lib/astronomy/recommendation";
 import { listAstrophotos, listAllAstrophotosAsAdmin } from "@/lib/supabase/astrophotos";
@@ -17,6 +22,7 @@ import { LocationPicker } from "./LocationPicker";
 import { TimeSlider } from "./components/TimeSlider";
 import { WeatherGrid } from "./components/WeatherGrid";
 import { MoonPanel } from "./components/MoonPanel";
+import { DeepSkyPanel } from "./components/DeepSkyPanel";
 import { AstrophotoGrid } from "./components/AstrophotoGrid";
 
 export const metadata: Metadata = {
@@ -70,6 +76,51 @@ export default async function AstronomyPage(
   const moonStart = new Date(now.getTime() - 3 * 24 * 60 * 60_000);
   const moonEnd = new Date(lastEventTs + 3 * 24 * 60 * 60_000);
   const moonInitialSnapshot = moonAt(now, location);
+
+  // Deep sky tonight: dark window, then rank DSOs by composite
+  // observability score across that window. Moon penalty is scaled by
+  // the moon's illumination × the fraction of the dark window it's
+  // above the horizon (a full moon that sets early is much less of a
+  // problem than one that stays up all night).
+  const dark = darkWindowTonight(now, location);
+  let topTargets: ReturnType<typeof computeTonightDSOs> = [];
+  let photographicCount = 0;
+  let moonNote: string | null = null;
+  if (dark) {
+    // Sample moon altitude across the dark window in ~30-min chunks.
+    let moonUp = 0;
+    let moonSamples = 0;
+    const step = 30 * 60_000;
+    for (let t = dark.start.getTime(); t <= dark.end.getTime(); t += step) {
+      const pos = SunCalc.getMoonPosition(
+        new Date(t),
+        location.lat,
+        location.lon
+      );
+      moonSamples++;
+      if (pos.altitude > 0) moonUp++;
+    }
+    const moonAboveFrac = moonSamples > 0 ? moonUp / moonSamples : 0;
+    const ill = sky.moon.illumination;
+    const impact = ill * moonAboveFrac;
+    if (impact > 0.55) {
+      moonNote = `${Math.round(ill * 100)}% lit, up for ${Math.round(moonAboveFrac * 100)}% of dark — bright sky, faint targets are tough`;
+    } else if (impact > 0.25) {
+      moonNote = `${Math.round(ill * 100)}% lit, up for ${Math.round(moonAboveFrac * 100)}% of dark — partial moonlight`;
+    } else if (ill < 0.15 || moonAboveFrac < 0.1) {
+      moonNote = `${Math.round(ill * 100)}% lit — minimal moon, great for faint nebulae`;
+    }
+    const ranked = computeTonightDSOs(now, location, dark, {
+      minPeakAlt: 25,
+      maxMag: 10,
+      moonIllumination: ill,
+      moonAboveHorizonFraction: moonAboveFrac,
+    });
+    topTargets = ranked.slice(0, 8);
+    photographicCount = ranked.filter(
+      (r) => r.peakAltDeg >= 35 && r.dso.mag !== null && r.dso.mag < 10
+    ).length;
+  }
 
   const weather = await fetchTonightWeather(location);
   const hourly = await fetchHourlyForecast(
@@ -150,6 +201,15 @@ export default async function AstronomyPage(
         nowISO={now.toISOString()}
         events={moonEvents}
         location={location}
+      />
+
+      <DeepSkyPanel
+        dark={dark}
+        topTargets={topTargets}
+        photographicCount={photographicCount}
+        moonNote={moonNote}
+        locationName={location.name}
+        timezone={location.timezone}
       />
 
       {/* Recommendation card */}
