@@ -578,7 +578,7 @@ export function Explorer({
         <span className="flex-1" />
         {/* Drag-speed slider (everyone sees it — it's a personal preference) */}
         <label
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-pill bg-white border border-pink-100 px-2.5 py-1 text-[11px] font-semibold text-pink-800"
+          className="inline-flex items-center gap-1.5 rounded-pill bg-white border border-pink-100 px-2.5 py-1 text-[11px] font-semibold text-pink-800"
           title="drag sensitivity"
         >
           <span className="text-pink-600">speed</span>
@@ -589,7 +589,7 @@ export function Explorer({
             step={0.05}
             value={dragSpeed}
             onChange={(e) => setDragSpeed(parseFloat(e.target.value))}
-            className="w-20 accent-pink-200 cursor-pointer"
+            className="w-20 sm:w-20 accent-pink-200 cursor-pointer"
             aria-label="drag sensitivity"
           />
         </label>
