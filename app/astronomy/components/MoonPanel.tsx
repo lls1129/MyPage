@@ -228,34 +228,79 @@ export function MoonPanel({
         </div>
       </div>
 
-      {/* Phase events timeline — tap any pill to jump the slider there */}
+      {/* Phase + eclipse events — tap any pill to jump the slider there.
+          Eclipse pills (lunar / solar) get an amber accent so they read
+          as separate from the regular quarter phases. */}
       <div>
         <p className="label text-pink-200 mb-3">
-          next phases
+          next phases &amp; eclipses
           <span className="text-cream/40 normal-case tracking-normal ml-2 font-normal">
             tap to jump
           </span>
         </p>
         <ul className="flex flex-wrap gap-2">
-          {events.map((ev) => (
-            <li key={ev.iso}>
-              <button
-                type="button"
-                onClick={() => snapToEvent(ev.iso)}
-                className="lift rounded-pill bg-cream/10 border border-cream/20 hover:bg-cream/20 hover:border-cream/40 px-3 py-1.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap"
-              >
-                <span aria-hidden className="text-base leading-none">
-                  {ev.glyph}
-                </span>
-                <span className="text-cream capitalize">{ev.name}</span>
-                <span className="text-cream/60">·</span>
-                <span className="text-cream/70">{relativeDay(ev.iso)}</span>
-                <span className="text-cream/50 text-[10px]">
-                  {fmtDayTime(ev.iso, timezone)}
-                </span>
-              </button>
-            </li>
-          ))}
+          {events.map((ev) => {
+            const isEclipse =
+              ev.kind === "lunar-eclipse" || ev.kind === "solar-eclipse";
+            return (
+              <li key={ev.iso + ev.kind}>
+                <button
+                  type="button"
+                  onClick={() => snapToEvent(ev.iso)}
+                  className={
+                    "lift rounded-pill px-3 py-1.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap border " +
+                    (isEclipse
+                      ? "bg-amber-100/15 border-amber-100/40 hover:bg-amber-100/25 hover:border-amber-100/60"
+                      : "bg-cream/10 border-cream/20 hover:bg-cream/20 hover:border-cream/40")
+                  }
+                >
+                  <span aria-hidden className="text-base leading-none">
+                    {ev.glyph}
+                  </span>
+                  <span
+                    className={
+                      "capitalize " +
+                      (isEclipse ? "text-amber-100" : "text-cream")
+                    }
+                  >
+                    {ev.name}
+                    {ev.detail ? (
+                      <span
+                        className={
+                          "ml-1 normal-case " +
+                          (isEclipse ? "text-amber-100/70" : "text-cream/60")
+                        }
+                      >
+                        ({ev.detail})
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={
+                      isEclipse ? "text-amber-100/60" : "text-cream/60"
+                    }
+                  >
+                    ·
+                  </span>
+                  <span
+                    className={
+                      isEclipse ? "text-amber-100/80" : "text-cream/70"
+                    }
+                  >
+                    {relativeDay(ev.iso)}
+                  </span>
+                  <span
+                    className={
+                      "text-[10px] " +
+                      (isEclipse ? "text-amber-100/55" : "text-cream/50")
+                    }
+                  >
+                    {fmtDayTime(ev.iso, timezone)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </section>

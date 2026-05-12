@@ -8,7 +8,7 @@ import {
   formatTime,
 } from "@/lib/astronomy/sky";
 import { moonAt } from "@/lib/astronomy/moon";
-import { nextPhaseEvents } from "@/lib/astronomy/moon-events";
+import { nextPhaseEvents, nextEclipses } from "@/lib/astronomy/moon-events";
 import {
   computeTonightDSOs,
   darkWindowTonight,
@@ -68,10 +68,18 @@ export default async function AstronomyPage(
   // via suncalc, which is already in the client bundle. The window
   // spans 3 days back → 3 days past the last phase event, so all 4
   // "next phases" pills land within the slider.
-  const moonEvents = nextPhaseEvents(now, 4);
+  const phaseEvents = nextPhaseEvents(now, 4);
+  const { lunar, solar } = nextEclipses(now);
+  // Pills shown on the moon panel: 4 quarter phases + the next lunar
+  // and solar eclipses, sorted by date so they read chronologically.
+  const moonEvents = [
+    ...phaseEvents,
+    ...(lunar ? [lunar] : []),
+    ...(solar ? [solar] : []),
+  ].sort((a, b) => a.iso.localeCompare(b.iso));
   const lastEventTs =
-    moonEvents.length > 0
-      ? new Date(moonEvents[moonEvents.length - 1].iso).getTime()
+    phaseEvents.length > 0
+      ? new Date(phaseEvents[phaseEvents.length - 1].iso).getTime()
       : now.getTime() + 30 * 24 * 60 * 60_000;
   const moonStart = new Date(now.getTime() - 3 * 24 * 60 * 60_000);
   const moonEnd = new Date(lastEventTs + 3 * 24 * 60 * 60_000);
