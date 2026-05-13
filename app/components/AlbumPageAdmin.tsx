@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Album } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
 import {
+  addCropToCoverHistory,
   addToCoverHistory,
   getCoverHistory,
   removeFromCoverHistory,
+  type HistoryEntry,
   type LibraryKind,
 } from "@/lib/cover-history";
 
@@ -57,12 +59,30 @@ export function AlbumPageAdmin({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  // Per-browser recently-pinned cover URLs for this album, loaded
-  // from localStorage. Hydrate after mount to avoid SSR/CSR mismatch.
-  const [history, setHistory] = useState<string[]>([]);
+  // Per-browser recently-pinned covers for this album, loaded from
+  // localStorage. Each entry tracks the URL plus any crops admin
+  // has applied to it. Hydrate after mount to avoid SSR/CSR mismatch.
+  // Also auto-fold the server's current cover into local history if
+  // it isn't already there — this is how a URL set from a different
+  // device starts showing up in the "recent" row.
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   useEffect(() => {
-    setHistory(getCoverHistory(libraryKind, album.id));
-  }, [libraryKind, album.id]);
+    const existing = getCoverHistory(libraryKind, album.id);
+    const currentUrl = album.cover_image_url;
+    if (currentUrl && !existing.some((e) => e.url === currentUrl)) {
+      setHistory(addToCoverHistory(libraryKind, album.id, currentUrl));
+    } else {
+      setHistory(existing);
+    }
+  }, [libraryKind, album.id, album.cover_image_url]);
+
+  // Recent crops for the currently pinned URL — surfaced as
+  // clickable presets next to the crop preview inside CoverCropper.
+  const recentCrops = useMemo(() => {
+    if (!album.cover_image_url) return [];
+    const entry = history.find((e) => e.url === album.cover_image_url);
+    return entry?.crops ?? [];
+  }, [history, album.cover_image_url]);
 
   // Esc closes the preview overlay (matches photo lightbox UX).
   useEffect(() => {
@@ -143,6 +163,8 @@ export function AlbumPageAdmin({
 
   // Commit a crop from the CoverCropper; refresh so the card on the
   // /photos library page reflects the change without a full reload.
+  // Also push the crop into local history so it surfaces as a recent
+  // preset next time admin opens the cropper for this same URL.
   async function commitCrop(crop: {
     x: number;
     y: number;
@@ -152,6 +174,16 @@ export function AlbumPageAdmin({
     setError(null);
     const res = await onSetCoverCrop(album.id, crop);
     if (res.ok) {
+      if (album.cover_image_url) {
+        setHistory(
+          addCropToCoverHistory(
+            libraryKind,
+            album.id,
+            album.cover_image_url,
+            crop
+          )
+        );
+      }
       router.refresh();
       return { ok: true };
     }
@@ -326,6 +358,7 @@ export function AlbumPageAdmin({
                   w: album.cover_crop_w,
                   h: album.cover_crop_h,
                 }}
+                recentCrops={recentCrops}
                 onCommit={commitCrop}
               />
             </div>
@@ -337,11 +370,11 @@ export function AlbumPageAdmin({
                 recent · click to pin
               </p>
               <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
-                {history.map((url) => {
-                  const selected = album.cover_image_url === url;
+                {history.map((entry) => {
+                  const selected = album.cover_image_url === entry.url;
                   return (
                     <div
-                      key={url}
+                      key={entry.url}
                       className={
                         "relative aspect-square rounded-md overflow-hidden border-2 transition group " +
                         (selected
@@ -351,14 +384,14 @@ export function AlbumPageAdmin({
                     >
                       <button
                         type="button"
-                        onClick={() => pickCover(url)}
+                        onClick={() => pickCover(entry.url)}
                         disabled={pending}
                         title={selected ? "current cover" : "pin again"}
                         className="absolute inset-0 disabled:opacity-60"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={url}
+                          src={entry.url}
                           alt=""
                           loading="lazy"
                           referrerPolicy="no-referrer"
@@ -367,18 +400,23 @@ export function AlbumPageAdmin({
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setHistory(
                             removeFromCoverHistory(
                               libraryKind,
                               album.id,
-                              url
+                              entry.url
                             )
-                          )
-                        }
+                          );
+                        }}
                         title="forget this URL"
                         aria-label="remove from recent"
-                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white/90 hover:bg-white text-pink-700 border border-pink-200 flex items-center justify-center text-[9px] font-semibold leading-none opacity-0 group-hover:opacity-100 transition shadow-soft"
+                        // Hidden on mobile entirely so a fingertip
+                        // near the thumbnail corner can't accidentally
+                        // forget the entry; on desktop it stays
+                        // hover-only.
+                        className="hidden md:flex absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white/90 hover:bg-white text-pink-700 border border-pink-200 items-center justify-center text-[9px] font-semibold leading-none opacity-0 group-hover:opacity-100 transition shadow-soft"
                       >
                         ✕
                       </button>
