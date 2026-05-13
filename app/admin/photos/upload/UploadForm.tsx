@@ -50,6 +50,8 @@ export function UploadForm({
     src: string;
     caption: string;
     hidden: boolean;
+    width: number | null;
+    height: number | null;
   } | null>(null);
 
   function setFile(file: File | null) {
@@ -141,6 +143,8 @@ export function UploadForm({
         src: sign.publicUrl || previewUrl || "",
         caption: captionText,
         hidden,
+        width: dims?.width ?? null,
+        height: dims?.height ?? null,
       });
       router.refresh();
     } catch (err) {
@@ -166,6 +170,14 @@ export function UploadForm({
   // form with a thumbnail + caption + "upload another" CTA so admin
   // can confirm the result without leaving the page.
   if (justUploaded) {
+    const haveDims =
+      justUploaded.width &&
+      justUploaded.height &&
+      justUploaded.width > 0 &&
+      justUploaded.height > 0;
+    const aspect = haveDims
+      ? `${justUploaded.width} / ${justUploaded.height}`
+      : undefined;
     return (
       <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
@@ -178,13 +190,32 @@ export function UploadForm({
             </span>
           ) : null}
         </div>
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={justUploaded.src}
-            alt={justUploaded.caption || "uploaded photo"}
-            className="block w-full sm:w-48 max-h-56 sm:max-h-48 object-cover rounded-md border border-pink-100"
-          />
+        {/* Center vertically on desktop so the text column doesn't
+            float at the top when the thumbnail is short, and the
+            thumbnail itself sizes to the photo's natural aspect (via
+            stored dims) so vertical / square / wide photos all show
+            their full content instead of getting square-cropped. */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div
+            className="shrink-0 mx-auto sm:mx-0 rounded-md border border-pink-100 overflow-hidden bg-pink-50/40"
+            style={{
+              aspectRatio: aspect,
+              width: haveDims ? "auto" : "100%",
+              maxWidth: "min(100%, 240px)",
+              maxHeight: "220px",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={justUploaded.src}
+              alt={justUploaded.caption || "uploaded photo"}
+              className={
+                haveDims
+                  ? "block w-full h-full object-cover"
+                  : "block max-w-full max-h-[220px] object-contain mx-auto"
+              }
+            />
+          </div>
           <div className="flex-1 flex flex-col gap-2 min-w-0">
             {justUploaded.caption ? (
               <p className="text-sm text-ink/85">{justUploaded.caption}</p>
