@@ -114,14 +114,7 @@ export function Lightbox({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative flex-1 min-h-0 w-full max-w-[1100px] flex items-center justify-center">
-          <button
-            type="button"
-            onClick={goPrev}
-            aria-label="previous"
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20 flex items-center justify-center text-lg"
-          >
-            ‹
-          </button>
+          <NavArrow direction="prev" onClick={goPrev} />
 
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -135,14 +128,7 @@ export function Lightbox({
             className="max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform"
           />
 
-          <button
-            type="button"
-            onClick={goNext}
-            aria-label="next"
-            className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20 flex items-center justify-center text-lg"
-          >
-            ›
-          </button>
+          <NavArrow direction="next" onClick={goNext} />
         </div>
 
         <div className="w-full max-w-[680px] rounded-md bg-cream/5 border border-cream/10 px-5 py-4 text-cream">
@@ -248,6 +234,53 @@ function ActionBtn({
       }
     >
       {children}
+    </button>
+  );
+}
+
+// Big, soft prev/next button for the lightbox. SVG chevron (not the
+// thin "‹/›" text glyphs, which render inconsistently across mobile
+// fonts), backdrop-blurred dark fill so it reads on any photo, and a
+// 44–48px hit area that feels right under a fingertip.
+function NavArrow({
+  direction,
+  onClick,
+}: {
+  direction: "prev" | "next";
+  onClick: () => void;
+}) {
+  const isPrev = direction === "prev";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={isPrev ? "previous" : "next"}
+      className={
+        "absolute top-1/2 -translate-y-1/2 z-10 " +
+        "w-11 h-11 sm:w-12 sm:h-12 rounded-full " +
+        "bg-skynavy-900/55 hover:bg-skynavy-900/80 active:bg-skynavy-900/90 " +
+        "text-cream border border-cream/30 hover:border-cream/55 " +
+        "shadow-[0_4px_14px_rgba(0,0,0,0.35)] backdrop-blur-sm " +
+        "flex items-center justify-center transition " +
+        (isPrev ? "left-2 sm:left-3" : "right-2 sm:right-3")
+      }
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.25}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="w-5 h-5 sm:w-[22px] sm:h-[22px]"
+        aria-hidden
+      >
+        {isPrev ? (
+          <polyline points="15 5 8 12 15 19" />
+        ) : (
+          <polyline points="9 5 16 12 9 19" />
+        )}
+      </svg>
     </button>
   );
 }

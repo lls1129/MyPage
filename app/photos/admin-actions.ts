@@ -239,6 +239,29 @@ export async function deletePhotoAlbum(id: string) {
   return { ok: true as const };
 }
 
+// Replace a photo album's cover_history. The client computes the
+// next array using the helpers in lib/cover-history.ts and ships
+// the whole thing — keeps the server side trivially correct, and
+// dragging a crop on one device shows up as a recent on another.
+export async function setPhotoAlbumCoverHistory(
+  id: string,
+  entries: unknown
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (!Array.isArray(entries))
+    return { ok: false as const, error: "history must be an array" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ cover_history: entries })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Assign a photo to an album (or null to make it uncategorized).
 export async function setPhotoAlbum(
   photoId: string,

@@ -3,14 +3,12 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import type { Album } from "@/lib/supabase/albums";
+import type { Album, CoverHistoryEntry } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
 import {
-  addCropToCoverHistory,
-  addToCoverHistory,
-  getCoverHistory,
-  removeFromCoverHistory,
-  type HistoryEntry,
+  pushCrop,
+  pushUrl,
+  removeUrl,
   type LibraryKind,
 } from "@/lib/cover-history";
 
@@ -32,12 +30,13 @@ export function AlbumPageAdmin({
   onSetCover,
   onSetHidden,
   onSetCoverCrop,
+  onSetCoverHistory,
 }: {
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
   parentHref: string;
-  /** Which library this album belongs to — used to namespace the
-   *  per-browser "recent covers" history in localStorage. */
+  /** Which library this album belongs to (reserved for future
+   *  per-library settings — history itself is per-album in the DB). */
   libraryKind: LibraryKind;
   /** Photos in this album the admin can pin as the cover. */
   coverCandidates: CoverCandidate[];
@@ -49,7 +48,15 @@ export function AlbumPageAdmin({
     id: string,
     crop: { x: number; y: number; w: number; h: number }
   ) => Promise<ActionResult>;
+  onSetCoverHistory: (
+    id: string,
+    entries: CoverHistoryEntry[]
+  ) => Promise<ActionResult>;
 }) {
+  // libraryKind isn't used directly here yet; kept on the signature
+  // so callers don't have to thread it through later when we wire
+  // per-library shape settings.
+  void libraryKind;
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -59,22 +66,29 @@ export function AlbumPageAdmin({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  // Per-browser recently-pinned covers for this album, loaded from
-  // localStorage. Each entry tracks the URL plus any crops admin
-  // has applied to it. Hydrate after mount to avoid SSR/CSR mismatch.
-  // Also auto-fold the server's current cover into local history if
-  // it isn't already there — this is how a URL set from a different
-  // device starts showing up in the "recent" row.
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // Recently-pinned covers for this album, persisted in the DB on
+  // the album row so the list syncs across devices. Local state
+  // mirrors album.cover_history; we update optimistically and let
+  // router.refresh() reconcile after the server action returns.
+  const [history, setHistory] = useState<CoverHistoryEntry[]>(
+    album.cover_history
+  );
+  // Keep local state in sync if the prop changes (e.g., after a
+  // router.refresh following an action on this device, or after a
+  // server-data revalidation triggered from another).
   useEffect(() => {
-    const existing = getCoverHistory(libraryKind, album.id);
-    const currentUrl = album.cover_image_url;
-    if (currentUrl && !existing.some((e) => e.url === currentUrl)) {
-      setHistory(addToCoverHistory(libraryKind, album.id, currentUrl));
-    } else {
-      setHistory(existing);
-    }
-  }, [libraryKind, album.id, album.cover_image_url]);
+    setHistory(album.cover_history);
+  }, [album.cover_history]);
+
+  // Persist a new history array to the server. Fire-and-forget from
+  // the caller's POV — local state has already been updated
+  // optimistically, and we just log the error in the shared error
+  // strip if the write fails.
+  function persistHistory(next: CoverHistoryEntry[]) {
+    onSetCoverHistory(album.id, next).then((res) => {
+      if (!res.ok) setError(res.error);
+    });
+  }
 
   // Recent crops for the currently pinned URL — surfaced as
   // clickable presets next to the crop preview inside CoverCropper.
@@ -144,9 +158,14 @@ export function AlbumPageAdmin({
           // Leave the picker open so admin can keep auditioning covers.
           // Clear the URL draft only when that's how it was set.
           if (url === null || url === urlDraft.trim()) setUrlDraft("");
-          // Track successful pins in localStorage so admin can re-pin
-          // a URL with one click later. Skip the "clear cover" case.
-          if (url) setHistory(addToCoverHistory(libraryKind, album.id, url));
+          // Track successful pins on the album row so admin sees the
+          // same recent list on every device. Skip the "clear cover"
+          // case (url is null). Optimistic: update local + persist.
+          if (url) {
+            const next = pushUrl(history, url);
+            setHistory(next);
+            persistHistory(next);
+          }
           router.refresh();
         }
       } catch (e) {
@@ -175,14 +194,11 @@ export function AlbumPageAdmin({
     const res = await onSetCoverCrop(album.id, crop);
     if (res.ok) {
       if (album.cover_image_url) {
-        setHistory(
-          addCropToCoverHistory(
-            libraryKind,
-            album.id,
-            album.cover_image_url,
-            crop
-          )
-        );
+        const next = pushCrop(history, album.cover_image_url, crop);
+        if (next !== history) {
+          setHistory(next);
+          persistHistory(next);
+        }
       }
       router.refresh();
       return { ok: true };
@@ -402,13 +418,9 @@ export function AlbumPageAdmin({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setHistory(
-                            removeFromCoverHistory(
-                              libraryKind,
-                              album.id,
-                              entry.url
-                            )
-                          );
+                          const next = removeUrl(history, entry.url);
+                          setHistory(next);
+                          persistHistory(next);
                         }}
                         title="forget this URL"
                         aria-label="remove from recent"

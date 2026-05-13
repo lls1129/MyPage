@@ -125,6 +125,27 @@ export async function deleteAstrophotoAlbum(id: string) {
   return { ok: true as const };
 }
 
+// Replace an astrophoto album's cover_history. Client-computed, see
+// the photos twin above for the design rationale.
+export async function setAstrophotoAlbumCoverHistory(
+  id: string,
+  entries: unknown
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (!Array.isArray(entries))
+    return { ok: false as const, error: "history must be an array" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ cover_history: entries })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Assign an astrophoto to an album (or null to make it uncategorized).
 export async function setAstrophotoAlbum(
   astrophotoId: string,

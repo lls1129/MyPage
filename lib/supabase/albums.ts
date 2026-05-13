@@ -13,6 +13,30 @@ function coerceCrop(v: unknown, fallback: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
+function isCrop(v: unknown): v is CoverCrop {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.x === "number" &&
+    typeof o.y === "number" &&
+    typeof o.w === "number" &&
+    typeof o.h === "number"
+  );
+}
+
+function coerceHistory(raw: unknown): CoverHistoryEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item): CoverHistoryEntry | null => {
+      if (!item || typeof item !== "object") return null;
+      const o = item as Record<string, unknown>;
+      if (typeof o.url !== "string" || o.url.length === 0) return null;
+      const crops = Array.isArray(o.crops) ? o.crops.filter(isCrop) : [];
+      return { url: o.url, crops };
+    })
+    .filter((x): x is CoverHistoryEntry => x !== null);
+}
+
 function normalizeAlbum(row: Record<string, unknown>): Album {
   return {
     id: row.id as string,
@@ -24,6 +48,7 @@ function normalizeAlbum(row: Record<string, unknown>): Album {
     cover_crop_y: coerceCrop(row.cover_crop_y, 0),
     cover_crop_w: coerceCrop(row.cover_crop_w, 1),
     cover_crop_h: coerceCrop(row.cover_crop_h, 1),
+    cover_history: coerceHistory(row.cover_history),
     hidden: Boolean(row.hidden),
     created_at: row.created_at as string,
   };
@@ -46,6 +71,10 @@ export function isTrivialCrop(a: {
   );
 }
 
+export type CoverCrop = { x: number; y: number; w: number; h: number };
+
+export type CoverHistoryEntry = { url: string; crops: CoverCrop[] };
+
 export type Album = {
   id: string;
   name: string;
@@ -61,6 +90,10 @@ export type Album = {
   cover_crop_y: number;
   cover_crop_w: number;
   cover_crop_h: number;
+  // Recently-pinned cover URLs (and their applied crops) for this
+  // album. Persisted in the DB so admin sees the same list on any
+  // device. App-level cap is 12 URLs × 6 crops each.
+  cover_history: CoverHistoryEntry[];
   hidden: boolean;
   created_at: string;
 };

@@ -6,6 +6,7 @@ import {
   deletePhotoAlbum,
   setPhotoAlbumCover,
   setPhotoAlbumCoverCrop,
+  setPhotoAlbumCoverHistory,
   setPhotoAlbumHidden,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
@@ -36,6 +37,9 @@ export function PhotoAlbumPageAdminWrapper({
       onSetCover={(id, url) => normalize(setPhotoAlbumCover(id, url))}
       onSetCoverCrop={(id, crop) =>
         normalize(setPhotoAlbumCoverCrop(id, crop))
+      }
+      onSetCoverHistory={(id, entries) =>
+        normalize(setPhotoAlbumCoverHistory(id, entries))
       }
       onSetHidden={(id, hidden) => normalize(setPhotoAlbumHidden(id, hidden))}
     />
