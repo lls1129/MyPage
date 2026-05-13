@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
@@ -10,6 +11,7 @@ import {
   extension,
 } from "@/lib/upload-utils";
 import { signPhotoUpload, insertPhotoRow } from "./actions";
+import { updatePhotoMeta } from "@/app/photos/admin-actions";
 import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
@@ -47,8 +49,11 @@ export function UploadForm({
   // Success state for the inline preview card. When set, the form is
   // hidden and the admin can pick "upload another" to reset.
   const [justUploaded, setJustUploaded] = useState<{
+    id: string;
     src: string;
     caption: string;
+    tags: string[];
+    albumId: string | null;
     hidden: boolean;
     width: number | null;
     height: number | null;
@@ -122,11 +127,12 @@ export function UploadForm({
           : null;
       const hidden = formData.get("hidden") === "on";
       const captionText = String(formData.get("caption") ?? "").trim();
+      const tagsArr = parseTagsCsv(String(formData.get("tags") ?? ""));
       const result = await insertPhotoRow({
         storagePath: sign.path,
         imageUrl: sign.publicUrl,
         caption: captionText,
-        tags: parseTagsCsv(String(formData.get("tags") ?? "")),
+        tags: tagsArr,
         takenAt: exif.takenAt,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
@@ -140,8 +146,11 @@ export function UploadForm({
       // public; we keep the local previewUrl alive too just in case
       // the CDN is slow on first hit.
       setJustUploaded({
+        id: result.id,
         src: sign.publicUrl || previewUrl || "",
         caption: captionText,
+        tags: tagsArr,
+        albumId,
         hidden,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
@@ -167,81 +176,17 @@ export function UploadForm({
   }
 
   // Inline success card after a successful upload — replaces the
-  // form with a thumbnail + caption + "upload another" CTA so admin
-  // can confirm the result without leaving the page.
+  // form with a thumbnail + edit panel + "upload another" CTA so
+  // admin can confirm + tweak the result without leaving the page.
   if (justUploaded) {
-    const haveDims =
-      justUploaded.width &&
-      justUploaded.height &&
-      justUploaded.width > 0 &&
-      justUploaded.height > 0;
-    const aspect = haveDims
-      ? `${justUploaded.width} / ${justUploaded.height}`
-      : undefined;
     return (
-      <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6">
-        <div className="flex items-baseline justify-between gap-3 flex-wrap">
-          <p className="font-script text-pink-600 text-2xl leading-tight">
-            uploaded ✿
-          </p>
-          {justUploaded.hidden ? (
-            <span className="rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 text-[10px] font-semibold border border-lavender-200">
-              hidden — only visible to you
-            </span>
-          ) : null}
-        </div>
-        {/* Center vertically on desktop so the text column doesn't
-            float at the top when the thumbnail is short, and the
-            thumbnail itself sizes to the photo's natural aspect (via
-            stored dims) so vertical / square / wide photos all show
-            their full content instead of getting square-cropped. */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div
-            className="shrink-0 mx-auto sm:mx-0 rounded-md border border-pink-100 overflow-hidden bg-pink-50/40"
-            style={{
-              aspectRatio: aspect,
-              width: haveDims ? "auto" : "100%",
-              maxWidth: "min(100%, 240px)",
-              maxHeight: "220px",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={justUploaded.src}
-              alt={justUploaded.caption || "uploaded photo"}
-              className={
-                haveDims
-                  ? "block w-full h-full object-cover"
-                  : "block max-w-full max-h-[220px] object-contain mx-auto"
-              }
-            />
-          </div>
-          <div className="flex-1 flex flex-col gap-2 min-w-0">
-            {justUploaded.caption ? (
-              <p className="text-sm text-ink/85">{justUploaded.caption}</p>
-            ) : (
-              <p className="text-xs text-lavender-600 font-semibold">
-                no caption — add one anytime via /photos.
-              </p>
-            )}
-            <div className="flex items-center gap-2 flex-wrap pt-2">
-              <button
-                type="button"
-                onClick={resetForAnother}
-                className="lift rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-4 py-2 text-sm font-semibold"
-              >
-                + upload another
-              </button>
-              <Link
-                href="/photos"
-                className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
-              >
-                view /photos
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+      <UploadSuccessCard
+        item={justUploaded}
+        albums={albums}
+        existingTags={existingTags}
+        onUpdate={(next) => setJustUploaded(next)}
+        onResetForAnother={resetForAnother}
+      />
     );
   }
 
@@ -561,5 +506,379 @@ function TagSuggestions({
         );
       })}
     </div>
+  );
+}
+
+// Success card shown after a successful upload. Replaces the form
+// in-place. Desktop layout: top-row CTAs (upload another / view
+// photos) above a row with the thumbnail on the left and an inline
+// edit panel (caption / tags / album) on the right. Mobile stacks
+// the same content vertically. Clicking the thumbnail opens an
+// in-page preview overlay that also offers an album-deep link.
+type SuccessItem = {
+  id: string;
+  src: string;
+  caption: string;
+  tags: string[];
+  albumId: string | null;
+  hidden: boolean;
+  width: number | null;
+  height: number | null;
+};
+
+function UploadSuccessCard({
+  item,
+  albums,
+  existingTags,
+  onUpdate,
+  onResetForAnother,
+}: {
+  item: SuccessItem;
+  albums: Album[];
+  existingTags: string[];
+  onUpdate: (next: SuccessItem) => void;
+  onResetForAnother: () => void;
+}) {
+  const haveDims =
+    item.width && item.height && item.width > 0 && item.height > 0;
+  const aspect = haveDims ? `${item.width} / ${item.height}` : undefined;
+  // Edit panel local state. Initialized from the just-uploaded row
+  // and synced back via onUpdate after a successful save so the
+  // thumbnail's caption / album-link stay correct.
+  const [caption, setCaption] = useState(item.caption);
+  const [tagList, setTagList] = useState<string[]>(item.tags);
+  const [tagDraft, setTagDraft] = useState("");
+  const [albumId, setAlbumId] = useState<string>(item.albumId ?? "");
+  const [savePending, startSave] = useTransition();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveOk, setSaveOk] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Stable copy of "where is this photo right now" so the album-deep
+  // link in the preview modal reflects the saved value, not the
+  // in-progress draft.
+  const currentAlbum = albums.find((a) => a.id === item.albumId) ?? null;
+
+  function save() {
+    setSaveError(null);
+    setSaveOk(false);
+    startSave(async () => {
+      try {
+        const fd = new FormData();
+        fd.set("id", item.id);
+        fd.set("caption", caption);
+        // updatePhotoMeta accepts comma-separated tags.
+        fd.set(
+          "tags",
+          joinTags(tagList, tagDraft.trim().toLowerCase())
+        );
+        fd.set("album_id", albumId);
+        const res = await updatePhotoMeta(fd);
+        if (!res.ok) {
+          setSaveError(res.error ?? "save failed.");
+          return;
+        }
+        // Commit any pending draft into the saved chip list so the
+        // displayed state matches what's in the DB.
+        const finalTags = (() => {
+          const d = tagDraft.trim().toLowerCase();
+          if (!d || tagList.includes(d)) return tagList;
+          return [...tagList, d];
+        })();
+        setTagList(finalTags);
+        setTagDraft("");
+        onUpdate({
+          ...item,
+          caption: caption.trim(),
+          tags: finalTags,
+          albumId: albumId || null,
+        });
+        setSaveOk(true);
+      } catch (e) {
+        setSaveError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
+
+  const albumLinkHref =
+    currentAlbum ? `/photos/album/${encodeURIComponent(currentAlbum.slug)}` : "/photos";
+  const albumLinkLabel = currentAlbum
+    ? `view in “${currentAlbum.name}”`
+    : "view photos";
+
+  return (
+    <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-4 sm:p-6">
+      {/* Top row: header + CTAs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <p className="font-script text-pink-600 text-2xl leading-tight">
+            uploaded ✿
+          </p>
+          {item.hidden ? (
+            <span className="rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 text-[10px] font-semibold border border-lavender-200">
+              hidden
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={onResetForAnother}
+            className="lift rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-4 py-2 text-sm font-semibold"
+          >
+            + upload another
+          </button>
+          <Link
+            href="/photos"
+            className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
+          >
+            view photos
+          </Link>
+        </div>
+      </div>
+
+      {/* Photo + edit panel */}
+      <div className="flex flex-col md:flex-row md:items-start gap-4">
+        <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          aria-label="open larger preview"
+          className="shrink-0 mx-auto md:mx-0 rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors"
+          style={{
+            aspectRatio: aspect,
+            width: haveDims ? "auto" : "100%",
+            maxWidth: "min(100%, 260px)",
+            maxHeight: "240px",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={item.src}
+            alt={item.caption || "uploaded photo"}
+            className={
+              haveDims
+                ? "block w-full h-full object-cover"
+                : "block max-w-full max-h-[240px] object-contain mx-auto"
+            }
+          />
+        </button>
+
+        {/* Inline edit panel — fills the right side on desktop,
+            stacks below the thumbnail on mobile. Lets admin tidy
+            caption / tags / album without leaving the page. */}
+        <div className="flex-1 flex flex-col gap-3 min-w-0">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="success-caption"
+              className="label text-pink-600"
+            >
+              caption
+            </label>
+            <input
+              id="success-caption"
+              type="text"
+              value={caption}
+              onChange={(e) => {
+                setCaption(e.target.value);
+                setSaveOk(false);
+              }}
+              maxLength={240}
+              placeholder="a sentence or two…"
+              className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink placeholder:text-pink-400 focus:outline-none focus:border-pink-200"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="label text-pink-600">tags</span>
+            <TagChipInput
+              tags={tagList}
+              draft={tagDraft}
+              setTags={(next) => {
+                setTagList(next);
+                setSaveOk(false);
+              }}
+              setDraft={(next) => {
+                setTagDraft(next);
+                setSaveOk(false);
+              }}
+            />
+            {existingTags.length > 0 ? (
+              <TagSuggestions
+                available={existingTags}
+                current={tagList}
+                onPick={(t) => {
+                  if (!tagList.includes(t)) setTagList([...tagList, t]);
+                  setSaveOk(false);
+                }}
+              />
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="success-album"
+              className="label text-pink-600"
+            >
+              album
+            </label>
+            <select
+              id="success-album"
+              value={albumId}
+              onChange={(e) => {
+                setAlbumId(e.target.value);
+                setSaveOk(false);
+              }}
+              className="bg-pink-50 border border-pink-100 rounded-sm px-3 py-2 text-sm text-ink focus:outline-none focus:border-pink-200"
+            >
+              <option value="">— uncategorized —</option>
+              {albums.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {saveError ? (
+            <p className="text-xs text-pink-600 font-semibold">{saveError}</p>
+          ) : null}
+
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <button
+              type="button"
+              onClick={save}
+              disabled={savePending}
+              className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+            >
+              {savePending ? "saving…" : "save changes"}
+            </button>
+            {saveOk && !savePending ? (
+              <span className="text-xs text-lavender-600 font-semibold">
+                ✓ saved
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {previewOpen ? (
+        <PreviewOverlay
+          src={item.src}
+          aspect={aspect}
+          caption={item.caption}
+          albumLinkHref={albumLinkHref}
+          albumLinkLabel={albumLinkLabel}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Minimal in-page preview overlay — portaled to body so it sits
+// above the upload form, click-outside or escape to dismiss, with
+// a button that deep-links to the photo's album (or /photos when
+// the photo is uncategorized).
+function PreviewOverlay({
+  src,
+  aspect,
+  caption,
+  albumLinkHref,
+  albumLinkLabel,
+  onClose,
+}: {
+  src: string;
+  aspect?: string;
+  caption: string;
+  albumLinkHref: string;
+  albumLinkLabel: string;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  if (!mounted) return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] bg-skynavy-900/90 backdrop-blur-sm flex flex-col"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+      onClick={onClose}
+    >
+      <div className="flex items-center justify-between px-3 sm:px-4 py-3 text-cream/80 gap-2 shrink-0">
+        <span className="font-script text-cream/70 text-xl select-none">
+          ✿
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="close preview"
+          className="rounded-full w-11 h-11 sm:w-auto sm:h-auto sm:rounded-pill sm:px-3 sm:py-2 inline-flex items-center justify-center text-base sm:text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
+        >
+          <span aria-hidden className="sm:hidden text-lg leading-none">
+            ✕
+          </span>
+          <span aria-hidden className="hidden sm:inline">
+            ✕ close
+          </span>
+        </button>
+      </div>
+
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="min-h-full flex flex-col items-center justify-center px-4 pb-6 gap-4">
+          <div
+            className="relative"
+            style={{
+              aspectRatio: aspect,
+              maxWidth: "100%",
+              maxHeight: "calc(100vh - 220px)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={caption || "uploaded photo"}
+              className={
+                aspect
+                  ? "block w-full h-full object-contain rounded-md shadow-soft"
+                  : "block max-h-[calc(100vh-220px)] max-w-full object-contain rounded-md shadow-soft"
+              }
+            />
+          </div>
+          <div className="w-full max-w-[680px] rounded-md bg-cream/5 border border-cream/10 px-5 py-3 text-cream flex items-center justify-between gap-3 flex-wrap">
+            <p className="font-script text-cream text-lg leading-tight truncate">
+              {caption || "untitled"}
+            </p>
+            <Link
+              href={albumLinkHref}
+              className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
+            >
+              {albumLinkLabel} →
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }

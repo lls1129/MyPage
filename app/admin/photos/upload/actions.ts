@@ -44,24 +44,33 @@ export type PhotoMetadata = {
 
 export async function insertPhotoRow(
   meta: PhotoMetadata
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; id: string } | { ok: false; error: string }
+> {
   await requireAdmin();
   const admin = createAdminClient();
-  const { error } = await admin.from("photos").insert({
-    image_url: meta.imageUrl,
-    caption: meta.caption?.trim() ?? "",
-    tags: meta.tags ?? [],
-    taken_at: meta.takenAt,
-    width: meta.width,
-    height: meta.height,
-    album_id: meta.albumId,
-    hidden: meta.hidden ?? false,
-  });
-  if (error) {
+  const { data, error } = await admin
+    .from("photos")
+    .insert({
+      image_url: meta.imageUrl,
+      caption: meta.caption?.trim() ?? "",
+      tags: meta.tags ?? [],
+      taken_at: meta.takenAt,
+      width: meta.width,
+      height: meta.height,
+      album_id: meta.albumId,
+      hidden: meta.hidden ?? false,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
     await admin.storage.from(BUCKET).remove([meta.storagePath]);
-    return { ok: false, error: error.message };
+    return {
+      ok: false,
+      error: error?.message ?? "insert returned no row",
+    };
   }
   revalidatePath("/photos");
   if (meta.albumId) revalidatePath(`/photos/album/[slug]`, "page");
-  return { ok: true };
+  return { ok: true, id: data.id as string };
 }
