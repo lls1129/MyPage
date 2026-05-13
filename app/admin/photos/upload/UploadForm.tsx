@@ -44,6 +44,13 @@ export function UploadForm({
   const [pending, setPending] = useState(false);
   const [stageNote, setStageNote] = useState<string>("");
   const [error, setError] = useState<string | null>(initialError ?? null);
+  // Success state for the inline preview card. When set, the form is
+  // hidden and the admin can pick "upload another" to reset.
+  const [justUploaded, setJustUploaded] = useState<{
+    src: string;
+    caption: string;
+    hidden: boolean;
+  } | null>(null);
 
   function setFile(file: File | null) {
     if (!file) {
@@ -111,25 +118,100 @@ export function UploadForm({
         typeof albumIdRaw === "string" && albumIdRaw !== ""
           ? albumIdRaw
           : null;
+      const hidden = formData.get("hidden") === "on";
+      const captionText = String(formData.get("caption") ?? "").trim();
       const result = await insertPhotoRow({
         storagePath: sign.path,
         imageUrl: sign.publicUrl,
-        caption: String(formData.get("caption") ?? "").trim(),
+        caption: captionText,
         tags: parseTagsCsv(String(formData.get("tags") ?? "")),
         takenAt: exif.takenAt,
         width: dims?.width ?? null,
         height: dims?.height ?? null,
         albumId,
+        hidden,
       });
       if (!result.ok) throw new Error(result.error);
 
-      router.push("/admin/photos/upload?status=ok");
+      // Show the inline success preview instead of navigating away.
+      // The Storage URL works for the thumbnail since the file is
+      // public; we keep the local previewUrl alive too just in case
+      // the CDN is slow on first hit.
+      setJustUploaded({
+        src: sign.publicUrl || previewUrl || "",
+        caption: captionText,
+        hidden,
+      });
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setPending(false);
       setStageNote("");
     }
+  }
+
+  function resetForAnother() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFileName("");
+    setPreviewUrl(null);
+    setTagList([]);
+    setTagDraft("");
+    setError(null);
+    setJustUploaded(null);
+    if (fileInput.current) fileInput.current.value = "";
+  }
+
+  // Inline success card after a successful upload — replaces the
+  // form with a thumbnail + caption + "upload another" CTA so admin
+  // can confirm the result without leaving the page.
+  if (justUploaded) {
+    return (
+      <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <p className="font-script text-pink-600 text-2xl leading-tight">
+            uploaded ✿
+          </p>
+          {justUploaded.hidden ? (
+            <span className="rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 text-[10px] font-semibold border border-lavender-200">
+              hidden — only visible to you
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={justUploaded.src}
+            alt={justUploaded.caption || "uploaded photo"}
+            className="block w-full sm:w-48 max-h-56 sm:max-h-48 object-cover rounded-md border border-pink-100"
+          />
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            {justUploaded.caption ? (
+              <p className="text-sm text-ink/85">{justUploaded.caption}</p>
+            ) : (
+              <p className="text-xs text-lavender-600 font-semibold">
+                no caption — add one anytime via /photos.
+              </p>
+            )}
+            <div className="flex items-center gap-2 flex-wrap pt-2">
+              <button
+                type="button"
+                onClick={resetForAnother}
+                className="lift rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-4 py-2 text-sm font-semibold"
+              >
+                + upload another
+              </button>
+              <Link
+                href="/photos"
+                className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
+              >
+                view /photos
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -257,6 +339,18 @@ export function UploadForm({
         ) : null}
       </div>
 
+      <label className="flex items-center gap-2 text-sm text-ink/85 font-semibold cursor-pointer select-none">
+        <input
+          type="checkbox"
+          name="hidden"
+          className="accent-pink-400 w-4 h-4"
+        />
+        upload as hidden
+        <span className="text-[11px] text-lavender-600 font-normal">
+          (only you can see it until you unhide on /photos)
+        </span>
+      </label>
+
       {error ? (
         <p className="text-xs text-pink-600 font-semibold">{error}</p>
       ) : null}
@@ -341,12 +435,27 @@ function TagChipInput({
       <input
         type="text"
         value={draft}
+        // enterKeyHint nudges most mobile keyboards to show a "Done"
+        // or "Return" key; some still don't fire onKeyDown with
+        // key="Enter" though, so we also detect a literal "\n" in
+        // the value below (which is what the return key inserts on
+        // a single-line input on iOS Safari & some Android keyboards
+        // when autocorrect is involved).
+        enterKeyHint="done"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
         onChange={(e) => {
           const v = e.target.value;
-          // If user pastes/types text with a comma, split it into
-          // chips immediately instead of leaving the comma in the draft.
-          if (v.includes(",")) {
-            const parts = v.split(",").map((p) => p.trim().toLowerCase()).filter(Boolean);
+          // Split on comma OR newline so mobile keyboards that insert
+          // \n on return-key still capsule the tag without the user
+          // having to tap an extra button. Desktop comma flow still
+          // works the same way.
+          if (/[,\n]/.test(v)) {
+            const parts = v
+              .split(/[,\n]/)
+              .map((p) => p.trim().toLowerCase())
+              .filter(Boolean);
             const next = [...tags];
             for (const p of parts) if (!next.includes(p)) next.push(p);
             setTags(next);
@@ -367,6 +476,19 @@ function TagChipInput({
         placeholder={tags.length === 0 ? "travel, nature…" : ""}
         className="bg-transparent flex-1 min-w-[100px] text-sm text-ink placeholder:text-pink-400 focus:outline-none px-1 py-0.5"
       />
+      {/* Tap-friendly "add" pill — guarantees there's always a
+          visible commit affordance on mobile, even if the keyboard
+          omits the return key. */}
+      {draft.trim() ? (
+        <button
+          type="button"
+          onClick={commitDraft}
+          className="rounded-pill bg-pink-200 text-white border border-pink-200 px-2 py-0.5 text-[11px] font-semibold leading-none"
+          aria-label="add tag"
+        >
+          + add
+        </button>
+      ) : null}
     </div>
   );
 }

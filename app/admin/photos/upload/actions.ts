@@ -37,6 +37,9 @@ export type PhotoMetadata = {
   width: number | null;
   height: number | null;
   albumId: string | null;
+  /** When true, photo is created hidden — admin can unhide later
+   *  from /photos. Defaults to false (visible) when omitted. */
+  hidden?: boolean;
 };
 
 export async function insertPhotoRow(
@@ -52,6 +55,7 @@ export async function insertPhotoRow(
     width: meta.width,
     height: meta.height,
     album_id: meta.albumId,
+    hidden: meta.hidden ?? false,
   });
   if (error) {
     await admin.storage.from(BUCKET).remove([meta.storagePath]);
