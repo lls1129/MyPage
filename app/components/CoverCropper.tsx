@@ -108,25 +108,35 @@ export function CoverCropper({
     }
   }, [imageUrl]);
 
-  // Convert initial normalized crop → box in source pixels, once we
-  // know the natural dimensions.
+  // Latest initialCrop kept in a ref so we can re-seed the box when
+  // the image (re)loads without making the seed-effect re-fire every
+  // time a parent re-render produces a fresh initialCrop reference.
+  // Re-firing was the cause of the "box snaps after every commit"
+  // bug — numeric(6,4) round-trips through the server return slightly
+  // shifted values that nudged the box mid-edit.
+  const initialCropRef = useRef(initialCrop);
+  useEffect(() => {
+    initialCropRef.current = initialCrop;
+  }, [initialCrop]);
+
+  // Seed the box from initialCrop only when natural dimensions change
+  // (i.e., the image just loaded or admin pinned a different cover).
+  // Subsequent prop updates from server commits leave the draft alone.
   useEffect(() => {
     if (!natural) return;
-    if (isTrivial(initialCrop)) {
+    const ic = initialCropRef.current;
+    if (isTrivial(ic)) {
       setBox(defaultBox(natural.w, natural.h));
       return;
     }
     setBox({
-      x: initialCrop.x * natural.w,
-      y: initialCrop.y * natural.h,
+      x: ic.x * natural.w,
+      y: ic.y * natural.h,
       // Width and height should be equal in source pixels (UI enforces
       // it). Use the smaller of the two as a defensive measure.
-      size: Math.min(
-        initialCrop.w * natural.w,
-        initialCrop.h * natural.h
-      ),
+      size: Math.min(ic.w * natural.w, ic.h * natural.h),
     });
-  }, [natural, initialCrop]);
+  }, [natural]);
 
   function commitCrop(crop: CoverCrop) {
     setError(null);
@@ -141,32 +151,38 @@ export function CoverCropper({
       .finally(() => setPending(false));
   }
 
-  function commitBox(b: Box) {
-    if (!natural) return;
-    commitCrop({
+  // The current draft as a normalized CoverCrop. Used both for the
+  // dirty check and for the save handler.
+  function boxToCrop(b: Box): CoverCrop {
+    if (!natural) return trivial();
+    return {
       x: b.x / natural.w,
       y: b.y / natural.h,
       w: b.size / natural.w,
       h: b.size / natural.h,
-    });
+    };
+  }
+
+  function save() {
+    if (!box || !natural) return;
+    commitCrop(boxToCrop(box));
   }
 
   function reset() {
     if (!natural) return;
+    // Draft only — admin still has to confirm with save.
     setBox(defaultBox(natural.w, natural.h));
-    // Trivial crop is the sentinel for "no crop set" — renderer falls
-    // back to object-cover, which is what admins expect after a reset.
-    commitCrop(trivial());
   }
 
   function applyRecent(c: CoverCrop) {
     if (!natural) return;
+    // Draft only — clicking a recent crop sets the box but doesn't
+    // commit until save. This matches the rule for drags/resizes.
     setBox({
       x: c.x * natural.w,
       y: c.y * natural.h,
       size: Math.min(c.w * natural.w, c.h * natural.h),
     });
-    commitCrop(c);
   }
 
   function startDrag(
@@ -257,7 +273,9 @@ export function CoverCropper({
     if (!dragRef.current || !box) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     dragRef.current = null;
-    commitBox(box);
+    // No auto-commit — admin must hit save explicitly. This stops
+    // every micro-adjustment from polluting recent crops and prevents
+    // the box from snapping after each release.
   }
 
   // Display coords of the box (source pixels * displayScale).
@@ -279,6 +297,17 @@ export function CoverCropper({
           h: box.size / natural.h,
         }
       : trivial();
+
+  // Has the admin's draft drifted from the saved crop? Tolerance is
+  // 0.001 (0.1%) per axis to swallow FP noise from drag + numeric
+  // (6,4) DB round-trip.
+  const dirty =
+    !!box &&
+    !!natural &&
+    (Math.abs(previewCrop.x - initialCrop.x) > 0.001 ||
+      Math.abs(previewCrop.y - initialCrop.y) > 0.001 ||
+      Math.abs(previewCrop.w - initialCrop.w) > 0.001 ||
+      Math.abs(previewCrop.h - initialCrop.h) > 0.001);
 
   // Centering math for the stage. The image is letterboxed so we know
   // exactly where it lives within the stage container.
@@ -304,6 +333,10 @@ export function CoverCropper({
             <span className="text-[10px] text-pink-600 font-semibold">
               saving…
             </span>
+          ) : dirty ? (
+            <span className="text-[10px] text-amber-600 font-semibold">
+              unsaved
+            </span>
           ) : null}
           <button
             type="button"
@@ -312,6 +345,19 @@ export function CoverCropper({
             className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
           >
             ↺ reset
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending || !natural || !dirty}
+            className={
+              "rounded-pill border px-3 py-0.5 text-[11px] font-semibold disabled:opacity-50 " +
+              (dirty
+                ? "bg-pink-300 text-white border-pink-300 hover:bg-pink-400 hover:border-pink-400"
+                : "bg-white text-pink-800 border-pink-200")
+            }
+          >
+            {pending ? "saving…" : dirty ? "✓ save crop" : "saved"}
           </button>
         </div>
       </div>
