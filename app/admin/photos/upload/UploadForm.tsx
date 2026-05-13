@@ -11,7 +11,10 @@ import {
   extension,
 } from "@/lib/upload-utils";
 import { signPhotoUpload, insertPhotoRow } from "./actions";
-import { updatePhotoMeta } from "@/app/photos/admin-actions";
+import {
+  togglePhotoHidden,
+  updatePhotoMeta,
+} from "@/app/photos/admin-actions";
 import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
@@ -285,7 +288,11 @@ export function UploadForm({
             available={existingTags}
             current={tagList}
             onPick={(t) => {
-              if (!tagList.includes(t)) setTagList([...tagList, t]);
+              setTagList(
+                tagList.includes(t)
+                  ? tagList.filter((x) => x !== t)
+                  : [...tagList, t]
+              );
             }}
           />
         ) : null}
@@ -492,12 +499,17 @@ function TagSuggestions({
           <button
             key={t}
             type="button"
+            // Toggle behavior: caller decides what to do based on
+            // whether the tag is currently picked. Clicking a picked
+            // chip now removes the tag — matches the × on the
+            // committed capsule, so admin has two equivalent ways
+            // to undo a tag pick.
             onClick={() => onPick(t)}
-            disabled={picked}
+            title={picked ? "click to remove" : "click to add"}
             className={
               "rounded-pill px-2 py-0.5 text-[11px] font-semibold border transition-colors " +
               (picked
-                ? "bg-pink-100 text-pink-400 border-pink-100 cursor-default"
+                ? "bg-pink-200 text-white border-pink-200 hover:bg-pink-100 hover:text-pink-800 hover:border-pink-300"
                 : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
             }
           >
@@ -553,6 +565,26 @@ function UploadSuccessCard({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [hidePending, startHide] = useTransition();
+
+  function toggleHidden() {
+    const next = !item.hidden;
+    setSaveError(null);
+    startHide(async () => {
+      try {
+        const res = await togglePhotoHidden(item.id, next);
+        if (!res.ok) {
+          setSaveError(res.error ?? "couldn’t change visibility.");
+          return;
+        }
+        onUpdate({ ...item, hidden: next });
+      } catch (e) {
+        setSaveError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
 
   // Stable copy of "where is this photo right now" so the album-deep
   // link in the preview modal reflects the saved value, not the
@@ -709,7 +741,11 @@ function UploadSuccessCard({
                 available={existingTags}
                 current={tagList}
                 onPick={(t) => {
-                  if (!tagList.includes(t)) setTagList([...tagList, t]);
+                  setTagList(
+                    tagList.includes(t)
+                      ? tagList.filter((x) => x !== t)
+                      : [...tagList, t]
+                  );
                   setSaveOk(false);
                 }}
               />
@@ -749,10 +785,23 @@ function UploadSuccessCard({
             <button
               type="button"
               onClick={save}
-              disabled={savePending}
+              disabled={savePending || hidePending}
               className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
             >
               {savePending ? "saving…" : "save changes"}
+            </button>
+            <button
+              type="button"
+              onClick={toggleHidden}
+              disabled={savePending || hidePending}
+              title={item.hidden ? "unhide on /photos" : "hide from public"}
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+            >
+              {hidePending
+                ? "…"
+                : item.hidden
+                ? "◉ unhide"
+                : "○ hide"}
             </button>
             {saveOk && !savePending ? (
               <span className="text-xs text-lavender-600 font-semibold">
