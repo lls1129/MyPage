@@ -172,12 +172,16 @@ export function Lightbox({
         </div>
       </div>
 
-      {/* Photo + meta — stop click bubbling so clicks inside don't dismiss */}
+      {/* Photo + meta — stop click bubbling so clicks inside don't
+          dismiss. Outer wrapper scrolls so admin can always reach
+          the meta + decoration controls on tall portrait photos
+          where photo + controls don't fit the viewport together. */}
       <div
-        className="flex-1 flex flex-col items-center justify-center px-4 pb-6 gap-4 min-h-0"
+        className="flex-1 min-h-0 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative flex-1 min-h-0 w-full max-w-[1100px] flex items-center justify-center">
+        <div className="min-h-full flex flex-col items-center justify-center px-4 pb-6 gap-4">
+        <div className="relative w-full max-w-[1100px] flex items-center justify-center min-h-[40vh] flex-1">
           <NavArrow direction="prev" onClick={goPrev} />
 
           {(() => {
@@ -337,6 +341,7 @@ export function Lightbox({
             {index + 1} of {photos.length} · arrow keys to browse · esc to close
           </p>
         </div>
+        </div>
       </div>
     </div>,
     document.body
@@ -376,6 +381,16 @@ function DecorationChipRow({
         disabled={disabled}
       >
         {inheritLabel}
+      </ChipBtn>
+      {/* Explicit "no decoration" override — distinct from "follow
+          album" because admin may want to suppress an album-level
+          frame/filter on a specific photo. */}
+      <ChipBtn
+        active={currentId === ""}
+        onClick={() => onPick("")}
+        disabled={disabled}
+      >
+        none
       </ChipBtn>
       {options.map((opt) => {
         const selected = currentId === opt.id;

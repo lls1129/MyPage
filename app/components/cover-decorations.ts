@@ -100,18 +100,27 @@ export const FILTERS: FilterPreset[] = [
   },
 ];
 
-// Compute the effective frame/filter for a photo: the photo's own
-// override wins; otherwise inherit the album's setting; otherwise
-// null (no decoration). Lives here (not in lib/supabase/photos.ts)
-// so client components can import it without pulling in the
-// server-only Supabase clients from that file.
+// Compute the effective frame/filter for a photo. Three states per
+// column on the photo row:
+//   null  → inherit (fall back to album's value, else nothing)
+//   ""    → explicit no decoration (override an album default off)
+//   id    → explicit preset override
+// Lives here (not in lib/supabase/photos.ts) so client components
+// can import it without pulling in the server-only Supabase clients
+// from that file.
+function resolveOne(photoValue: string | null, albumValue: string | null) {
+  if (photoValue === null) return albumValue ?? null; // inherit
+  if (photoValue === "") return null; // explicit none
+  return photoValue;
+}
+
 export function resolveDecoration(
   photo: { cover_frame: string | null; cover_filter: string | null },
   album: { cover_frame: string | null; cover_filter: string | null } | null
 ): { frame: string | null; filter: string | null } {
   return {
-    frame: photo.cover_frame ?? album?.cover_frame ?? null,
-    filter: photo.cover_filter ?? album?.cover_filter ?? null,
+    frame: resolveOne(photo.cover_frame, album?.cover_frame ?? null),
+    filter: resolveOne(photo.cover_filter, album?.cover_filter ?? null),
   };
 }
 

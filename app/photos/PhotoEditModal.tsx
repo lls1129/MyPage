@@ -235,6 +235,20 @@ function DecorationRow({
       >
         {inheritLabel}
       </button>
+      <button
+        type="button"
+        onClick={() => onPick("")}
+        disabled={disabled}
+        title="suppress any decoration on this photo"
+        className={
+          "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+          (currentId === ""
+            ? "bg-pink-300 text-white border-pink-300"
+            : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+        }
+      >
+        none
+      </button>
       {options.map((opt) => {
         const selected = currentId === opt.id;
         return (
