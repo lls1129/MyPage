@@ -318,60 +318,47 @@ export async function deleteAstrophoto(id: string) {
     .maybeSingle();
   if (fetchErr) return { ok: false as const, error: fetchErr.message };
 
-  let clearedCovers: string[] = [];
+  let stillCoverFor: string[] = [];
+  let autoShiftedFor: string[] = [];
 
   if (row?.image_url) {
-    const ref = storageRefFromUrl(row.image_url);
-    if (ref) {
-      // Read bucket from URL — converted rows may live in a different one.
-      await admin.storage.from(ref.bucket).remove([ref.key]);
-    }
-    // Cover-orphan cleanup mirrors the photos side — any album
-    // using this URL as a cover loses the pin, and any
-    // cover_history entry for it is removed. Pinned-cover album
-    // names are returned for admin notification.
+    // Pinned cover detection. We preserve cover_image_url so the
+    // pinned cover keeps rendering after the row is gone.
     try {
       const { data: pinned } = await admin
         .from("albums")
-        .select("id, name")
+        .select("name")
         .eq("cover_image_url", row.image_url);
       if (Array.isArray(pinned)) {
-        for (const a of pinned) clearedCovers.push(a.name as string);
+        for (const a of pinned) stillCoverFor.push(a.name as string);
       }
-      await admin
-        .from("albums")
-        .update({
-          cover_image_url: null,
-          cover_crop_x: 0,
-          cover_crop_y: 0,
-          cover_crop_w: 1,
-          cover_crop_h: 1,
-        })
-        .eq("cover_image_url", row.image_url);
+    } catch {
+      // Best-effort.
+    }
 
+    // cover_history detection — preserved as-is, just informs the
+    // storage-keep decision.
+    let inHistory = false;
+    try {
       const { data: allAlbums } = await admin
         .from("albums")
-        .select("id, cover_history");
-      if (Array.isArray(allAlbums)) {
-        for (const r of allAlbums) {
-          const history = Array.isArray(r.cover_history)
-            ? (r.cover_history as { url: string }[])
-            : [];
-          const next = history.filter((e) => e?.url !== row.image_url);
-          if (next.length !== history.length) {
-            await admin
-              .from("albums")
-              .update({ cover_history: next })
-              .eq("id", r.id);
-          }
-        }
-      }
+        .select("cover_history");
+      inHistory = Array.isArray(allAlbums)
+        ? allAlbums.some((r) => {
+            const h = Array.isArray(r.cover_history)
+              ? (r.cover_history as { url: string }[])
+              : [];
+            return h.some((e) => e?.url === row.image_url);
+          })
+        : false;
+    } catch {
+      // Best-effort.
+    }
 
-      // Auto-pick impact: when an astrophoto album has no pinned
-      // cover and this astrophoto was the latest non-hidden one,
-      // deleting it shifts the visible cover even though there's
-      // no DB record to clean up.
-      if (row.album_id && !row.hidden) {
+    // Auto-pick impact: only matters for notice text — the row is
+    // about to be deleted anyway, so auto-pick naturally shifts.
+    if (row.album_id && !row.hidden) {
+      try {
         const { data: album } = await admin
           .from("albums")
           .select("name, cover_image_url")
@@ -386,16 +373,23 @@ export async function deleteAstrophoto(id: string) {
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
-          if (
-            latest?.id === id &&
-            !clearedCovers.includes(album.name as string)
-          ) {
-            clearedCovers.push(album.name as string);
+          if (latest?.id === id) {
+            autoShiftedFor.push(album.name as string);
           }
         }
+      } catch {
+        // Best-effort.
       }
-    } catch {
-      // Best-effort: don't block the delete on a cleanup hiccup.
+    }
+
+    // Storage policy mirrors deletePhoto: only purge the file when
+    // nothing references the URL.
+    const referenced = stillCoverFor.length > 0 || inHistory;
+    if (!referenced) {
+      const ref = storageRefFromUrl(row.image_url);
+      if (ref) {
+        await admin.storage.from(ref.bucket).remove([ref.key]);
+      }
     }
   }
 
@@ -404,7 +398,7 @@ export async function deleteAstrophoto(id: string) {
 
   revalidatePath("/astronomy");
   revalidatePath(`/astronomy/album/[slug]`, "page");
-  return { ok: true as const, clearedCovers };
+  return { ok: true as const, stillCoverFor, autoShiftedFor };
 }
 
 // Move an astrophoto row from `astrophotos` into `photos`. The file in

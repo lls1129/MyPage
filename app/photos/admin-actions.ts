@@ -111,8 +111,11 @@ export async function deletePhoto(id: string) {
 
   const admin = createAdminClient();
 
-  // Look up the storage path + album link so we can clean up the
-  // file AND detect any cover impact (pinned or auto-picked).
+  // Look up the storage path + album link so we can detect cover
+  // impact (pinned, auto-picked, in history) without touching the
+  // file yet — we keep the storage file around when the URL is
+  // still referenced anywhere so pinned covers + history entries
+  // keep working after the row is deleted.
   const { data: row, error: fetchError } = await admin
     .from("photos")
     .select("image_url, album_id, hidden")
@@ -121,31 +124,45 @@ export async function deletePhoto(id: string) {
   if (fetchError)
     return { ok: false as const, error: fetchError.message };
 
-  // Names of albums whose pinned cover gets cleared during this
-  // delete, OR whose auto-picked cover changes because this photo
-  // was the latest non-hidden member. Returned to the caller so
-  // admin can be notified either way.
-  let clearedCovers: string[] = [];
+  // Two distinct cover-impact lists for the notice:
+  //   stillCoverFor — albums where this URL is the pinned cover.
+  //     Storage file is preserved so the pinned cover keeps
+  //     rendering even after the row is gone; admin can change it
+  //     manually on the album page.
+  //   autoShiftedFor — albums where this photo was the auto-picked
+  //     cover (no pin, latest non-hidden member). After the row is
+  //     deleted, auto-pick falls back to the next photo so the
+  //     visible cover changes.
+  let stillCoverFor: string[] = [];
+  let autoShiftedFor: string[] = [];
 
   if (row?.image_url) {
-    const ref = storageRefFromUrl(row.image_url);
-    if (ref) {
-      // Read bucket from URL so converted rows (where the file may live in
-      // a different bucket) still get cleaned up correctly.
-      await admin.storage.from(ref.bucket).remove([ref.key]);
+    // Detect pinned cover usage.
+    const { data: pinned } = await admin
+      .from("albums")
+      .select("name")
+      .eq("cover_image_url", row.image_url);
+    if (Array.isArray(pinned)) {
+      for (const a of pinned) stillCoverFor.push(a.name as string);
     }
-    // Cover-orphan cleanup: any album currently pinning this URL as
-    // its cover loses the pin (falls back to auto-pick / gradient),
-    // and any cover_history entry for this URL is dropped so the
-    // dead URL can't be re-pinned with one click later. Best-effort
-    // — failures here don't block the photo delete.
-    clearedCovers = await cleanupCoverReferences(admin, row.image_url);
 
-    // Also surface auto-pick changes: when a photos-kind album has
-    // no pinned cover and this photo was the latest non-hidden
-    // member, deleting it shifts the auto-pick to the previous
-    // photo. There's nothing to clean up in the DB (auto-pick is
-    // computed at read time) but admin should still know.
+    // Detect cover_history usage (any album row whose history
+    // includes this URL). Fetch all rows + filter client-side —
+    // small table on this site and reliable across jsonb shapes.
+    const { data: allAlbums } = await admin
+      .from("albums")
+      .select("cover_history");
+    const inHistory = Array.isArray(allAlbums)
+      ? allAlbums.some((r) => {
+          const h = Array.isArray(r.cover_history)
+            ? (r.cover_history as { url: string }[])
+            : [];
+          return h.some((e) => e?.url === row.image_url);
+        })
+      : false;
+
+    // Detect auto-pick: photo's album has no pin and this is the
+    // latest non-hidden member.
     if (row.album_id && !row.hidden) {
       const autoName = await detectAutoPickImpact(
         admin,
@@ -153,8 +170,17 @@ export async function deletePhoto(id: string) {
         id,
         "photos"
       );
-      if (autoName && !clearedCovers.includes(autoName)) {
-        clearedCovers.push(autoName);
+      if (autoName) autoShiftedFor.push(autoName);
+    }
+
+    // Storage policy: keep the file around as long as anything
+    // references the URL — preserves pinned covers and history
+    // re-pin clicks. Otherwise delete normally to avoid orphans.
+    const referenced = stillCoverFor.length > 0 || inHistory;
+    if (!referenced) {
+      const ref = storageRefFromUrl(row.image_url);
+      if (ref) {
+        await admin.storage.from(ref.bucket).remove([ref.key]);
       }
     }
   }
@@ -168,7 +194,11 @@ export async function deletePhoto(id: string) {
 
   revalidatePath("/photos");
   revalidatePath(`/photos/album/[slug]`, "page");
-  return { ok: true as const, clearedCovers };
+  return {
+    ok: true as const,
+    stillCoverFor,
+    autoShiftedFor,
+  };
 }
 
 // Returns the album's name if the about-to-be-deleted photo is its
@@ -208,71 +238,6 @@ async function detectAutoPickImpact(
   } catch {
     return null;
   }
-}
-
-// Strip a URL from every album row that references it — both as
-// the pinned cover and as a recent-history entry. Run from the
-// service-role client so RLS doesn't filter rows out. Returns the
-// names of albums whose pinned cover was cleared (used for the
-// "deleted photo was the cover for X" notification). Best-effort:
-// errors are swallowed (the delete shouldn't fail because of a
-// cleanup hiccup).
-async function cleanupCoverReferences(
-  admin: ReturnType<typeof createAdminClient>,
-  url: string
-): Promise<string[]> {
-  const clearedNames: string[] = [];
-  try {
-    // First pass: find albums currently using this URL as a pinned
-    // cover so we can report them back to the caller.
-    const { data: pinned } = await admin
-      .from("albums")
-      .select("id, name")
-      .eq("cover_image_url", url);
-    if (Array.isArray(pinned)) {
-      for (const a of pinned) clearedNames.push(a.name as string);
-    }
-
-    // Clear cover_image_url on any album using this URL. The reset
-    // also restores crop fields so the next pinned cover starts
-    // fresh.
-    await admin
-      .from("albums")
-      .update({
-        cover_image_url: null,
-        cover_crop_x: 0,
-        cover_crop_y: 0,
-        cover_crop_w: 1,
-        cover_crop_h: 1,
-      })
-      .eq("cover_image_url", url);
-
-    // cover_history is jsonb — fetch all rows and filter
-    // client-side. Cheaper than getting the `contains` query right
-    // for objects-with-extra-fields, and the albums table is small
-    // on this site. Write back only when an entry was actually
-    // removed to keep this a no-op when there's nothing to do.
-    const { data: allAlbums } = await admin
-      .from("albums")
-      .select("id, cover_history");
-    if (Array.isArray(allAlbums)) {
-      for (const row of allAlbums) {
-        const history = Array.isArray(row.cover_history)
-          ? (row.cover_history as { url: string }[])
-          : [];
-        const next = history.filter((e) => e?.url !== url);
-        if (next.length !== history.length) {
-          await admin
-            .from("albums")
-            .update({ cover_history: next })
-            .eq("id", row.id);
-        }
-      }
-    }
-  } catch {
-    // Swallow — the photo delete itself succeeded, cleanup is a nicety.
-  }
-  return clearedNames;
 }
 
 // Create a new album in the "photos" library. Returns the new row so

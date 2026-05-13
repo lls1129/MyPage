@@ -73,7 +73,8 @@ export function UploadForm({
   // manually or replaced by a new delete.
   const [deleteNotice, setDeleteNotice] = useState<{
     photoCaption: string;
-    clearedCovers: string[];
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
   } | null>(null);
 
   function setFiles(files: File[]) {
@@ -672,14 +673,19 @@ function UploadSuccessCard({
   item: SuccessItem;
   albums: Album[];
   existingTags: string[];
-  notice: { photoCaption: string; clearedCovers: string[] } | null;
+  notice: {
+    photoCaption: string;
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
+  } | null;
   onUpdate: (next: SuccessItem) => void;
   onDismissNotice: () => void;
-  /** Called after a successful delete with cover-cleanup info — the
+  /** Called after a successful delete with cover-impact info — the
    *  parent resets the form and surfaces the notice. */
   onDeleted: (info: {
     photoCaption: string;
-    clearedCovers: string[];
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
   }) => void;
   onResetForAnother: () => void;
 }) {
@@ -731,7 +737,8 @@ function UploadSuccessCard({
         }
         onDeleted({
           photoCaption: item.caption || "untitled",
-          clearedCovers: res.clearedCovers,
+          stillCoverFor: res.stillCoverFor,
+          autoShiftedFor: res.autoShiftedFor,
         });
       } catch (e) {
         setSaveError(
@@ -971,57 +978,66 @@ function UploadSuccessCard({
             </div>
           ) : null}
 
-          {/* Action row: left side has the hide/save pair; right
-              side groups the destructive + nav-away controls
-              (delete next to view-in-album so admin's "I'm done
-              with this photo" actions cluster together). */}
-          <div className="flex items-center gap-2 flex-wrap pt-1">
-            <button
-              type="button"
-              onClick={toggleHidden}
-              disabled={savePending || hidePending || deletePending}
-              title={item.hidden ? "unhide on /photos" : "hide from public"}
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
-            >
-              {hidePending
-                ? "…"
-                : item.hidden
-                ? "◉ unhide"
-                : "○ hide"}
-            </button>
-            <button
-              type="button"
-              onClick={save}
-              disabled={savePending || hidePending || deletePending}
-              className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
-            >
-              {savePending ? "saving…" : "save changes"}
-            </button>
-            {saveOk && !savePending ? (
-              <span className="text-xs text-lavender-600 font-semibold">
-                ✓ saved
-              </span>
-            ) : null}
-            <span className="flex-1" />
-            <button
-              type="button"
-              onClick={() => setConfirmingDelete(true)}
-              disabled={
-                savePending || hidePending || deletePending || confirmingDelete
-              }
-              title="delete this photo"
-              className="rounded-pill bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 hover:border-pink-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ✕ delete
-            </button>
-            {currentAlbum ? (
-              <Link
-                href={albumLinkHref}
-                className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold"
+          {/* Action row laid out as two adjacent groups so the
+              hide/save pair and the delete + view-in-album pair
+              wrap together as a unit. Without this, toggling the
+              hide button's text ("○ hide" vs "◉ unhide") changes
+              its width enough to shift the wrap point on narrow
+              widths; min-w on the hide button stops that even
+              before the wrap. */}
+          <div className="flex flex-wrap items-center gap-2 justify-between pt-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleHidden}
+                disabled={savePending || hidePending || deletePending}
+                title={item.hidden ? "unhide on /photos" : "hide from public"}
+                className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait min-w-[5.5rem] text-center"
               >
-                {albumLinkLabel} →
-              </Link>
-            ) : null}
+                {hidePending
+                  ? "…"
+                  : item.hidden
+                  ? "◉ unhide"
+                  : "○ hide"}
+              </button>
+              <button
+                type="button"
+                onClick={save}
+                disabled={savePending || hidePending || deletePending}
+                className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+              >
+                {savePending ? "saving…" : "save changes"}
+              </button>
+              {saveOk && !savePending ? (
+                <span className="text-xs text-lavender-600 font-semibold">
+                  ✓ saved
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={
+                  savePending ||
+                  hidePending ||
+                  deletePending ||
+                  confirmingDelete
+                }
+                title="delete this photo"
+                className="rounded-pill bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 hover:border-pink-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ✕ delete
+              </button>
+              {currentAlbum ? (
+                <Link
+                  href={albumLinkHref}
+                  className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold"
+                >
+                  {albumLinkLabel} →
+                </Link>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -1202,6 +1218,16 @@ function BatchNavArrow({
   );
 }
 
+// "A", "A and B", "A, B, and C" — small helper for prose-style
+// album lists in the delete notice.
+function formatNameList(names: string[]): string {
+  const quoted = names.map((n) => `“${n}”`);
+  if (quoted.length === 0) return "";
+  if (quoted.length === 1) return quoted[0];
+  if (quoted.length === 2) return `${quoted[0]} and ${quoted[1]}`;
+  return `${quoted.slice(0, -1).join(", ")}, and ${quoted[quoted.length - 1]}`;
+}
+
 // Compact banner that surfaces what got cleaned up after a photo
 // delete. Reused by both the single-photo card and the batch grid
 // (and the form view, so a deletion from the single editor is
@@ -1211,10 +1237,15 @@ function DeleteNoticeBanner({
   notice,
   onDismiss,
 }: {
-  notice: { photoCaption: string; clearedCovers: string[] };
+  notice: {
+    photoCaption: string;
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
+  };
   onDismiss: () => void;
 }) {
-  const hasCleared = notice.clearedCovers.length > 0;
+  const pinnedList = formatNameList(notice.stillCoverFor);
+  const shiftedList = formatNameList(notice.autoShiftedFor);
   return (
     <div
       role="status"
@@ -1224,14 +1255,17 @@ function DeleteNoticeBanner({
         <p className="font-semibold">
           deleted “{notice.photoCaption}”.
         </p>
-        {hasCleared ? (
+        {notice.stillCoverFor.length > 0 ? (
           <p className="text-[11px] mt-0.5">
-            it was the cover for{" "}
-            {notice.clearedCovers
-              .map((n) => `"${n}"`)
-              .join(", ")}
-            . the album{notice.clearedCovers.length === 1 ? "" : "s"} will
-            auto-pick a new cover from remaining photos.
+            it’s still set as the cover for {pinnedList} — the photo is
+            kept in storage so the cover keeps rendering. change it on
+            the album page if you’d like to remove it.
+          </p>
+        ) : null}
+        {notice.autoShiftedFor.length > 0 ? (
+          <p className="text-[11px] mt-0.5">
+            it was the auto-picked cover for {shiftedList}; the next
+            photo there becomes the cover.
           </p>
         ) : null}
       </div>
@@ -1352,12 +1386,17 @@ function UploadSuccessGrid({
   items: SuccessItem[];
   albums: Album[];
   existingTags: string[];
-  notice: { photoCaption: string; clearedCovers: string[] } | null;
+  notice: {
+    photoCaption: string;
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
+  } | null;
   onUpdate: (next: SuccessItem[]) => void;
   onDismissNotice: () => void;
   onSetNotice: (info: {
     photoCaption: string;
-    clearedCovers: string[];
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
   }) => void;
   onResetForAnother: () => void;
 }) {
@@ -1375,7 +1414,11 @@ function UploadSuccessGrid({
   // which albums lost a pinned cover.
   function removeAt(
     idx: number,
-    info: { photoCaption: string; clearedCovers: string[] }
+    info: {
+      photoCaption: string;
+      stillCoverFor: string[];
+      autoShiftedFor: string[];
+    }
   ) {
     const next = items.filter((_, i) => i !== idx);
     onUpdate(next);
@@ -1497,7 +1540,8 @@ function BatchItemEditor({
    *  the cover-cleanup result so the parent can surface a notice. */
   onRemove: (info: {
     photoCaption: string;
-    clearedCovers: string[];
+    stillCoverFor: string[];
+    autoShiftedFor: string[];
   }) => void;
   /** Move to the next/prev photo in the batch. The editor saves
    *  current edits first so the arrow feels like "save & next". */
@@ -1601,7 +1645,8 @@ function BatchItemEditor({
         // got cleared during the cleanup.
         onRemove({
           photoCaption: item.caption || "untitled",
-          clearedCovers: res.clearedCovers,
+          stillCoverFor: res.stillCoverFor,
+          autoShiftedFor: res.autoShiftedFor,
         });
       } catch (e) {
         setErr(
