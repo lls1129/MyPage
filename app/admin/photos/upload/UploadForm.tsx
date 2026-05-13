@@ -1473,6 +1473,18 @@ function BatchItemEditor({
                   </option>
                 ))}
               </select>
+              {/* Contextual deep-link: lives with the album select so
+                  it doesn't compete with save / hide for action-row
+                  space (and so a save & next button appearing or
+                  disappearing can't push it to a second row on
+                  mobile). Reflects the *saved* album, not the draft —
+                  the link target only changes after admin saves. */}
+              <Link
+                href={albumLinkHref}
+                className="self-start text-[11px] text-cream/80 hover:text-cream underline-offset-2 hover:underline mt-0.5"
+              >
+                {albumLinkLabel} →
+              </Link>
             </div>
 
             {err ? (
@@ -1506,13 +1518,6 @@ function BatchItemEditor({
               >
                 {hidePending ? "…" : hidden ? "◉ unhide" : "○ hide"}
               </button>
-              <span className="flex-1" />
-              <Link
-                href={albumLinkHref}
-                className="rounded-pill px-3 py-2 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
-              >
-                {albumLinkLabel} →
-              </Link>
             </div>
           </div>
         </div>
