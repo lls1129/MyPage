@@ -234,6 +234,30 @@ export async function updateAstrophotoMeta(formData: FormData) {
   return { ok: true };
 }
 
+// Override an astrophoto's frame/filter. NULL = inherit album setting.
+// See resolveDecoration() in lib/supabase/photos.ts for the rule.
+export async function setAstrophotoDecorations(
+  id: string,
+  patch: { frame?: string | null; filter?: string | null }
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing astrophoto id" };
+  const updates: Record<string, string | null> = {};
+  if ("frame" in patch) updates.cover_frame = patch.frame ?? null;
+  if ("filter" in patch) updates.cover_filter = patch.filter ?? null;
+  if (Object.keys(updates).length === 0) return { ok: true as const };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("astrophotos")
+    .update(updates)
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  revalidatePath(`/astronomy/photo/${id}`);
+  return { ok: true as const };
+}
+
 export async function toggleAstrophotoHidden(id: string, nextHidden: boolean) {
   await requireAdmin();
   if (!id) return { ok: false, error: "Missing id." };

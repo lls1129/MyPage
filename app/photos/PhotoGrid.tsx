@@ -5,6 +5,11 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
+import {
+  filterCssFor,
+  frameOverlayFor,
+  resolveDecoration,
+} from "../components/cover-decorations";
 import { Lightbox } from "./Lightbox";
 import { PhotoEditModal } from "./PhotoEditModal";
 import {
@@ -54,6 +59,13 @@ export function PhotoGrid({
   const filtered = useMemo(
     () => (tag === "all" ? visible : visible.filter((p) => p.tags.includes(tag))),
     [visible, tag]
+  );
+
+  // Lookup map for resolving per-photo decoration fallback to the
+  // photo's album. Computed once per `albums` change.
+  const albumMap = useMemo(
+    () => new Map(albums.map((a) => [a.id, a])),
+    [albums]
   );
 
   const hiddenCount = useMemo(
@@ -186,6 +198,7 @@ export function PhotoGrid({
       ) : (
         <MasonryGrid
           photos={filtered}
+          albumMap={albumMap}
           isAdmin={isAdmin}
           onOpen={(i) => setOpenIdx(i)}
           onEdit={onEdit}
@@ -200,6 +213,7 @@ export function PhotoGrid({
       {openIdx !== null ? (
         <Lightbox
           photos={filtered}
+          albums={albums}
           index={openIdx}
           isAdmin={isAdmin}
           onClose={() => setOpenIdx(null)}
@@ -252,6 +266,7 @@ function useColumnCount(): number {
 // (1 column) every photo stacks in a single column.
 function MasonryGrid({
   photos,
+  albumMap,
   isAdmin,
   onOpen,
   onEdit,
@@ -262,6 +277,7 @@ function MasonryGrid({
   busy,
 }: {
   photos: Photo[];
+  albumMap: Map<string, Album>;
   isAdmin: boolean;
   onOpen: (i: number) => void;
   onEdit: (p: Photo) => void;
@@ -290,21 +306,29 @@ function MasonryGrid({
     >
       {buckets.map((bucket, ci) => (
         <div key={ci} className="flex flex-col gap-4 min-w-0">
-          {bucket.map(({ photo, globalIndex }) => (
-            <PhotoTile
-              key={photo.id}
-              photo={photo}
-              isAdmin={isAdmin}
-              eager={globalIndex < 6}
-              onOpen={() => onOpen(globalIndex)}
-              onEdit={() => onEdit(photo)}
-              onToggleHidden={() => onToggleHidden(photo)}
-              onRotateLeft={() => onRotateLeft(photo)}
-              onRotateRight={() => onRotateRight(photo)}
-              onDelete={() => onDelete(photo)}
-              busy={busy}
-            />
-          ))}
+          {bucket.map(({ photo, globalIndex }) => {
+            const album = photo.album_id
+              ? albumMap.get(photo.album_id) ?? null
+              : null;
+            const decor = resolveDecoration(photo, album);
+            return (
+              <PhotoTile
+                key={photo.id}
+                photo={photo}
+                frame={decor.frame}
+                filter={decor.filter}
+                isAdmin={isAdmin}
+                eager={globalIndex < 6}
+                onOpen={() => onOpen(globalIndex)}
+                onEdit={() => onEdit(photo)}
+                onToggleHidden={() => onToggleHidden(photo)}
+                onRotateLeft={() => onRotateLeft(photo)}
+                onRotateRight={() => onRotateRight(photo)}
+                onDelete={() => onDelete(photo)}
+                busy={busy}
+              />
+            );
+          })}
         </div>
       ))}
     </div>
@@ -313,6 +337,8 @@ function MasonryGrid({
 
 function PhotoTile({
   photo,
+  frame,
+  filter,
   isAdmin,
   eager,
   onOpen,
@@ -324,6 +350,8 @@ function PhotoTile({
   busy,
 }: {
   photo: Photo;
+  frame: string | null;
+  filter: string | null;
   isAdmin: boolean;
   eager: boolean;
   onOpen: () => void;
@@ -334,6 +362,8 @@ function PhotoTile({
   onDelete: () => void;
   busy: boolean;
 }) {
+  const filterCss = filterCssFor(filter);
+  const frameClass = frameOverlayFor(frame);
   return (
     <div
       className={
@@ -357,13 +387,25 @@ function PhotoTile({
           height={photo.height ?? undefined}
           loading={eager ? "eager" : "lazy"}
           decoding="async"
-          style={rotationStyle(photo.rotation)}
+          style={{
+            ...(rotationStyle(photo.rotation) ?? {}),
+            filter: filterCss || undefined,
+          }}
           className={
             "block w-full h-auto transition-transform " +
             (photo.hidden ? "opacity-60" : "")
           }
         />
       </button>
+
+      {/* Frame overlay — sits above the image, intercepts no clicks
+          so the open-photo button below still receives them. */}
+      {frameClass ? (
+        <div
+          className={"absolute inset-0 pointer-events-none " + frameClass}
+          aria-hidden
+        />
+      ) : null}
 
       {photo.hidden ? (
         <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide font-bold rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 border border-lavender-200">

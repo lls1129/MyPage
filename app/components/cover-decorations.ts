@@ -100,6 +100,21 @@ export const FILTERS: FilterPreset[] = [
   },
 ];
 
+// Compute the effective frame/filter for a photo: the photo's own
+// override wins; otherwise inherit the album's setting; otherwise
+// null (no decoration). Lives here (not in lib/supabase/photos.ts)
+// so client components can import it without pulling in the
+// server-only Supabase clients from that file.
+export function resolveDecoration(
+  photo: { cover_frame: string | null; cover_filter: string | null },
+  album: { cover_frame: string | null; cover_filter: string | null } | null
+): { frame: string | null; filter: string | null } {
+  return {
+    frame: photo.cover_frame ?? album?.cover_frame ?? null,
+    filter: photo.cover_filter ?? album?.cover_filter ?? null,
+  };
+}
+
 // Lookup helpers — return empty string for unknown ids so renderer
 // treats stale/typo'd values as "no decoration" instead of throwing.
 export function frameOverlayFor(id: string | null | undefined): string {

@@ -20,6 +20,11 @@ export type Astrophoto = {
   location: string | null;
   created_at: string;
   album_id: string | null;
+  // Per-photo decoration overrides. NULL = inherit album setting.
+  // See resolveDecoration() in lib/supabase/photos.ts for the
+  // shared fallback rule.
+  cover_frame: string | null;
+  cover_filter: string | null;
 };
 
 export type AstrophotosResult =

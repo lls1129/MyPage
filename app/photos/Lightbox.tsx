@@ -1,12 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Photo } from "@/lib/supabase/photos";
+import type { Album } from "@/lib/supabase/albums";
+import {
+  filterCssFor,
+  frameOverlayFor,
+  resolveDecoration,
+} from "../components/cover-decorations";
 
 export function Lightbox({
   photos,
+  albums = [],
   index,
   isAdmin,
   onClose,
@@ -21,6 +28,10 @@ export function Lightbox({
   albumLink,
 }: {
   photos: Photo[];
+  /** Used to resolve per-photo decoration inheritance — if a photo
+   *  has cover_frame/cover_filter set to null, we fall back to its
+   *  album's value (looked up here via album_id). */
+  albums?: Album[];
   index: number;
   isAdmin?: boolean;
   onClose: () => void;
@@ -34,6 +45,10 @@ export function Lightbox({
   busy?: boolean;
   albumLink?: { href: string; label: string };
 }) {
+  const albumMap = useMemo(
+    () => new Map(albums.map((a) => [a.id, a])),
+    [albums]
+  );
   const photo = photos[index];
 
   // Render into document.body so the fixed-position backdrop can't get
@@ -65,6 +80,11 @@ export function Lightbox({
   }, [onClose, goPrev, goNext]);
 
   if (!photo || !mounted) return null;
+
+  const album = photo.album_id ? albumMap.get(photo.album_id) ?? null : null;
+  const decor = resolveDecoration(photo, album);
+  const filterCss = filterCssFor(decor.filter);
+  const frameClass = frameOverlayFor(decor.frame);
 
   const date = photo.taken_at ?? photo.created_at;
   const dateLabel = date
@@ -116,17 +136,28 @@ export function Lightbox({
         <div className="relative flex-1 min-h-0 w-full max-w-[1100px] flex items-center justify-center">
           <NavArrow direction="prev" onClick={goPrev} />
 
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={photo.image_url}
-            alt={photo.caption || ""}
-            style={
-              photo.rotation
-                ? { transform: `rotate(${photo.rotation}deg)` }
-                : undefined
-            }
-            className="max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform"
-          />
+          <div className="relative max-h-full max-w-full inline-flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photo.image_url}
+              alt={photo.caption || ""}
+              style={{
+                transform: photo.rotation
+                  ? `rotate(${photo.rotation}deg)`
+                  : undefined,
+                filter: filterCss || undefined,
+              }}
+              className="max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform block"
+            />
+            {/* Frame overlay matched to the img's actual rendered
+                box so the decoration hugs the photo edges. */}
+            {frameClass ? (
+              <span
+                aria-hidden
+                className={"absolute inset-0 pointer-events-none " + frameClass}
+              />
+            ) : null}
+          </div>
 
           <NavArrow direction="next" onClick={goNext} />
         </div>

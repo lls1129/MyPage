@@ -14,7 +14,15 @@ export type Photo = {
   taken_at: string | null;
   created_at: string;
   album_id: string | null;
+  // Per-photo decoration overrides. NULL means "inherit the album
+  // setting" — use resolveDecoration() to compute the effective value.
+  cover_frame: string | null;
+  cover_filter: string | null;
 };
+
+// resolveDecoration lives in app/components/cover-decorations.ts —
+// kept there (instead of here) so client components can import it
+// without pulling in this file's server-only Supabase clients.
 
 export type PhotosResult =
   | { kind: "ok"; photos: Photo[] }
