@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { filterCssFor, frameOverlayFor } from "./cover-decorations";
 
 export type CoverCrop = { x: number; y: number; w: number; h: number };
 
@@ -46,11 +47,17 @@ export function CoverCropper({
   imageUrl,
   initialCrop,
   recentCrops = [],
+  frame = null,
+  filter = null,
   onCommit,
 }: {
   imageUrl: string;
   initialCrop: CoverCrop;
   recentCrops?: CoverCrop[];
+  /** Decoration preset ids — applied to the preview tile only, so the
+   *  preview matches what the actual card on /photos will render. */
+  frame?: string | null;
+  filter?: string | null;
   onCommit: (crop: CoverCrop) => Promise<ActionResult>;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -516,34 +523,47 @@ export function CoverCropper({
             <p className="label text-pink-600">card preview</p>
             <div className="w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft">
               {natural ? (
-                <div
-                  className="absolute inset-0"
-                  style={
-                    isTrivial(previewCrop)
-                      ? {
-                          backgroundImage: `url("${imageUrl}")`,
-                          backgroundRepeat: "no-repeat",
-                          backgroundSize: "cover",
-                          backgroundPosition: "center",
-                        }
-                      : {
-                          backgroundImage: `url("${imageUrl}")`,
-                          backgroundRepeat: "no-repeat",
-                          backgroundSize: `${100 / previewCrop.w}% ${
-                            100 / previewCrop.h
-                          }%`,
-                          backgroundPosition: `${
-                            previewCrop.w >= 1
-                              ? 0
-                              : (previewCrop.x * 100) / (1 - previewCrop.w)
-                          }% ${
-                            previewCrop.h >= 1
-                              ? 0
-                              : (previewCrop.y * 100) / (1 - previewCrop.h)
-                          }%`,
-                        }
-                  }
-                />
+                <>
+                  <div
+                    className="absolute inset-0"
+                    style={
+                      isTrivial(previewCrop)
+                        ? {
+                            backgroundImage: `url("${imageUrl}")`,
+                            backgroundRepeat: "no-repeat",
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                            filter: filterCssFor(filter) || undefined,
+                          }
+                        : {
+                            backgroundImage: `url("${imageUrl}")`,
+                            backgroundRepeat: "no-repeat",
+                            backgroundSize: `${100 / previewCrop.w}% ${
+                              100 / previewCrop.h
+                            }%`,
+                            backgroundPosition: `${
+                              previewCrop.w >= 1
+                                ? 0
+                                : (previewCrop.x * 100) / (1 - previewCrop.w)
+                            }% ${
+                              previewCrop.h >= 1
+                                ? 0
+                                : (previewCrop.y * 100) / (1 - previewCrop.h)
+                            }%`,
+                            filter: filterCssFor(filter) || undefined,
+                          }
+                    }
+                  />
+                  {frame ? (
+                    <div
+                      className={
+                        "absolute inset-0 pointer-events-none " +
+                        frameOverlayFor(frame)
+                      }
+                      aria-hidden
+                    />
+                  ) : null}
+                </>
               ) : null}
             </div>
           </div>

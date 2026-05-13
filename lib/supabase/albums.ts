@@ -49,6 +49,14 @@ function normalizeAlbum(row: Record<string, unknown>): Album {
     cover_crop_w: coerceCrop(row.cover_crop_w, 1),
     cover_crop_h: coerceCrop(row.cover_crop_h, 1),
     cover_history: coerceHistory(row.cover_history),
+    cover_frame:
+      typeof row.cover_frame === "string" && row.cover_frame.length > 0
+        ? row.cover_frame
+        : null,
+    cover_filter:
+      typeof row.cover_filter === "string" && row.cover_filter.length > 0
+        ? row.cover_filter
+        : null,
     hidden: Boolean(row.hidden),
     created_at: row.created_at as string,
   };
@@ -94,6 +102,11 @@ export type Album = {
   // album. Persisted in the DB so admin sees the same list on any
   // device. App-level cap is 12 URLs × 6 crops each.
   cover_history: CoverHistoryEntry[];
+  // Decoration presets applied to the cover render. IDs live in
+  // app/components/cover-decorations.ts; the renderer maps them to
+  // Tailwind classes and CSS filter strings. Null = none.
+  cover_frame: string | null;
+  cover_filter: string | null;
   hidden: boolean;
   created_at: string;
 };

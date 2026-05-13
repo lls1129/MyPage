@@ -6,6 +6,7 @@ import {
   deleteAstrophotoAlbum,
   setAstrophotoAlbumCover,
   setAstrophotoAlbumCoverCrop,
+  setAstrophotoAlbumCoverDecorations,
   setAstrophotoAlbumCoverHistory,
   setAstrophotoAlbumHidden,
 } from "../../admin-actions";
@@ -43,6 +44,9 @@ export function AstrophotoAlbumPageAdminWrapper({
       }
       onSetCoverHistory={(id, entries) =>
         normalize(setAstrophotoAlbumCoverHistory(id, entries))
+      }
+      onSetCoverDecorations={(id, patch) =>
+        normalize(setAstrophotoAlbumCoverDecorations(id, patch))
       }
       onSetHidden={(id, hidden) =>
         normalize(setAstrophotoAlbumHidden(id, hidden))

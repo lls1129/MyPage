@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { AlbumWithCover } from "@/lib/supabase/albums";
 import { isTrivialCrop } from "@/lib/supabase/albums";
+import { filterCssFor, frameOverlayFor } from "./cover-decorations";
 
 // Pastel gradient palette used for empty-album covers. We pick one
 // deterministically from the album id so each empty album has a stable
@@ -52,52 +53,57 @@ export function AlbumCardGrid({
           >
             <div className="aspect-square bg-pink-50 relative overflow-hidden">
               {a.cover_image_url ? (
-                // Render the cover as a background-image so the crop
-                // is purely CSS-driven. Avoids the timing window where
-                // an <img> with `height: auto` waits for the natural
-                // aspect to compute before settling its layout — which
-                // intermittently left the card blank on first paint.
-                <div
-                  className={
-                    "absolute inset-0 " + (a.hidden ? "opacity-70" : "")
-                  }
-                  style={
-                    isTrivialCrop(a)
-                      ? {
-                          backgroundImage: `url("${a.cover_image_url}")`,
-                          backgroundRepeat: "no-repeat",
-                          backgroundSize: "cover",
-                          backgroundPosition: "center",
-                        }
-                      : {
-                          backgroundImage: `url("${a.cover_image_url}")`,
-                          backgroundRepeat: "no-repeat",
-                          // bg width/height are independent percentages
-                          // of the container; the cropper UI keeps the
-                          // crop square in source pixels so this
-                          // doesn't distort.
-                          backgroundSize: `${100 / a.cover_crop_w}% ${
-                            100 / a.cover_crop_h
-                          }%`,
-                          // Position formula: P% places the image's P%
-                          // point at the container's P% point. To pin
-                          // the crop's top-left at (0,0) we need
-                          // P = crop / (1 - crop_size) * 100 for each
-                          // axis.
-                          backgroundPosition: `${
-                            a.cover_crop_w >= 1
-                              ? 0
-                              : (a.cover_crop_x * 100) / (1 - a.cover_crop_w)
-                          }% ${
-                            a.cover_crop_h >= 1
-                              ? 0
-                              : (a.cover_crop_y * 100) / (1 - a.cover_crop_h)
-                          }%`,
-                        }
-                  }
-                  role="img"
-                  aria-label={a.name}
-                />
+                <>
+                  {/* Cover image rendered as a background-image so
+                      the crop is purely CSS-driven. Filter is
+                      applied here so frame overlay sits on top
+                      un-filtered. */}
+                  <div
+                    className={
+                      "absolute inset-0 " + (a.hidden ? "opacity-70" : "")
+                    }
+                    style={
+                      isTrivialCrop(a)
+                        ? {
+                            backgroundImage: `url("${a.cover_image_url}")`,
+                            backgroundRepeat: "no-repeat",
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                            filter: filterCssFor(a.cover_filter) || undefined,
+                          }
+                        : {
+                            backgroundImage: `url("${a.cover_image_url}")`,
+                            backgroundRepeat: "no-repeat",
+                            backgroundSize: `${100 / a.cover_crop_w}% ${
+                              100 / a.cover_crop_h
+                            }%`,
+                            backgroundPosition: `${
+                              a.cover_crop_w >= 1
+                                ? 0
+                                : (a.cover_crop_x * 100) / (1 - a.cover_crop_w)
+                            }% ${
+                              a.cover_crop_h >= 1
+                                ? 0
+                                : (a.cover_crop_y * 100) / (1 - a.cover_crop_h)
+                            }%`,
+                            filter: filterCssFor(a.cover_filter) || undefined,
+                          }
+                    }
+                    role="img"
+                    aria-label={a.name}
+                  />
+                  {/* Frame overlay — purely decorative, doesn't
+                      shift the cover layout or intercept clicks. */}
+                  {a.cover_frame ? (
+                    <div
+                      className={
+                        "absolute inset-0 pointer-events-none " +
+                        frameOverlayFor(a.cover_frame)
+                      }
+                      aria-hidden
+                    />
+                  ) : null}
+                </>
               ) : (
                 <div
                   className={

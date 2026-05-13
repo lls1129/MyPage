@@ -239,6 +239,28 @@ export async function deletePhotoAlbum(id: string) {
   return { ok: true as const };
 }
 
+// Set decoration presets (frame, filter) on a photo album cover.
+// Partial: only fields present in the patch are updated, so the UI
+// can change one knob without touching the other. Pass `null` to
+// clear a field.
+export async function setPhotoAlbumCoverDecorations(
+  id: string,
+  patch: { frame?: string | null; filter?: string | null }
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const updates: Record<string, string | null> = {};
+  if ("frame" in patch) updates.cover_frame = patch.frame ?? null;
+  if ("filter" in patch) updates.cover_filter = patch.filter ?? null;
+  if (Object.keys(updates).length === 0) return { ok: true as const };
+  const admin = createAdminClient();
+  const { error } = await admin.from("albums").update(updates).eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace a photo album's cover_history. The client computes the
 // next array using the helpers in lib/cover-history.ts and ships
 // the whole thing — keeps the server side trivially correct, and

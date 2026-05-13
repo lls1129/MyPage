@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Album, CoverHistoryEntry } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
 import { CoverUploader } from "./CoverUploader";
+import { FILTERS, FRAMES } from "./cover-decorations";
 import {
   getCropsForUrl,
   pushCrop,
@@ -34,6 +35,7 @@ export function AlbumPageAdmin({
   onSetHidden,
   onSetCoverCrop,
   onSetCoverHistory,
+  onSetCoverDecorations,
 }: {
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
@@ -57,6 +59,10 @@ export function AlbumPageAdmin({
   onSetCoverHistory: (
     id: string,
     entries: CoverHistoryEntry[]
+  ) => Promise<ActionResult>;
+  onSetCoverDecorations: (
+    id: string,
+    patch: { frame?: string | null; filter?: string | null }
   ) => Promise<ActionResult>;
 }) {
   // libraryKind isn't used directly here yet; kept on the signature
@@ -221,6 +227,19 @@ export function AlbumPageAdmin({
     }
     setError(res.error);
     return res;
+  }
+
+  function applyDecoration(patch: { frame?: string | null; filter?: string | null }) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await onSetCoverDecorations(album.id, patch);
+        if (!res.ok) setError(res.error);
+        else router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "couldn’t reach the server.");
+      }
+    });
   }
 
   function toggleHidden() {
@@ -391,8 +410,31 @@ export function AlbumPageAdmin({
                   h: album.cover_crop_h,
                 }}
                 recentCrops={recentCrops}
+                frame={album.cover_frame}
+                filter={album.cover_filter}
                 onCommit={commitCrop}
               />
+
+              {/* Decorations — frame + filter chip rows. Click any
+                  chip to apply (or click an already-selected one to
+                  clear). Persisted immediately, no confirm needed
+                  since these aren't continuous adjustments. */}
+              <div className="flex flex-col gap-2 rounded-md bg-white border border-pink-100 p-2.5">
+                <DecorationRow
+                  label="frame"
+                  options={FRAMES.map((f) => ({ id: f.id, label: f.label }))}
+                  currentId={album.cover_frame}
+                  onPick={(id) => applyDecoration({ frame: id })}
+                  disabled={pending}
+                />
+                <DecorationRow
+                  label="filter"
+                  options={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
+                  currentId={album.cover_filter}
+                  onPick={(id) => applyDecoration({ filter: id })}
+                  disabled={pending}
+                />
+              </div>
             </div>
           ) : null}
 
@@ -641,6 +683,62 @@ function AdminPill({
       </span>
       <span>{label}</span>
     </button>
+  );
+}
+
+// One row of the decoration picker — a label + a wrap of chip
+// buttons. Clicking a chip applies it; clicking the already-active
+// chip clears the field (toggles off). `currentId === null` means
+// "none" — none chip is rendered first.
+function DecorationRow({
+  label,
+  options,
+  currentId,
+  onPick,
+  disabled,
+}: {
+  label: string;
+  options: { id: string; label: string }[];
+  currentId: string | null;
+  onPick: (id: string | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <p className="label text-pink-600 shrink-0 w-12">{label}</p>
+      <button
+        type="button"
+        onClick={() => onPick(null)}
+        disabled={disabled}
+        className={
+          "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+          (currentId === null
+            ? "bg-pink-300 text-white border-pink-300"
+            : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+        }
+      >
+        none
+      </button>
+      {options.map((opt) => {
+        const selected = currentId === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onPick(selected ? null : opt.id)}
+            disabled={disabled}
+            className={
+              "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+              (selected
+                ? "bg-pink-300 text-white border-pink-300"
+                : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

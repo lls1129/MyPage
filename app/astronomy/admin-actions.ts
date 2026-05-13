@@ -125,6 +125,26 @@ export async function deleteAstrophotoAlbum(id: string) {
   return { ok: true as const };
 }
 
+// Set decoration presets (frame, filter) on an astrophoto album.
+// Partial-patch shape, see the photos twin for design rationale.
+export async function setAstrophotoAlbumCoverDecorations(
+  id: string,
+  patch: { frame?: string | null; filter?: string | null }
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const updates: Record<string, string | null> = {};
+  if ("frame" in patch) updates.cover_frame = patch.frame ?? null;
+  if ("filter" in patch) updates.cover_filter = patch.filter ?? null;
+  if (Object.keys(updates).length === 0) return { ok: true as const };
+  const admin = createAdminClient();
+  const { error } = await admin.from("albums").update(updates).eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace an astrophoto album's cover_history. Client-computed, see
 // the photos twin above for the design rationale.
 export async function setAstrophotoAlbumCoverHistory(
