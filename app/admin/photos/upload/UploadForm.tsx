@@ -64,6 +64,17 @@ export function UploadForm({
   const [justUploadedList, setJustUploadedList] = useState<
     SuccessItem[]
   >([]);
+  // Sticky once we've started a batch: when admin deletes items
+  // down to a single remaining one, we keep showing the batch
+  // grid view rather than reverting to the single-photo card.
+  const [uploadedAsBatch, setUploadedAsBatch] = useState(false);
+  // Notice shown after a successful delete — surfaces any albums
+  // whose pinned cover was reset as part of the cleanup. Dismissed
+  // manually or replaced by a new delete.
+  const [deleteNotice, setDeleteNotice] = useState<{
+    photoCaption: string;
+    clearedCovers: string[];
+  } | null>(null);
 
   function setFiles(files: File[]) {
     setSelectedFiles((prev) => {
@@ -192,6 +203,7 @@ export function UploadForm({
       }
       if (uploaded.length > 0) {
         setJustUploadedList(uploaded);
+        setUploadedAsBatch(selectedFiles.length > 1);
         router.refresh();
       }
       if (uploaded.length === 0 && failed > 0 && !error) {
@@ -212,30 +224,42 @@ export function UploadForm({
     setTagDraft("");
     setError(null);
     setJustUploadedList([]);
+    setUploadedAsBatch(false);
     if (fileInput.current) fileInput.current.value = "";
   }
 
-  // Inline success card after a successful upload. Single-file
-  // uploads keep the existing thumbnail-plus-edit-panel layout; a
-  // batch upload renders the items as a grid where clicking a
-  // thumbnail opens the editor in an overlay.
-  if (justUploadedList.length === 1) {
+  // Inline success card / grid after a successful upload. Single-
+  // file uploads keep the existing thumbnail-plus-edit-panel
+  // layout; batch uploads render the items as a grid. Once admin
+  // has chosen the batch path we keep them in the grid even if
+  // they delete photos down to a single remaining item — flipping
+  // back to the single-card layout mid-edit would feel jarring.
+  if (justUploadedList.length === 1 && !uploadedAsBatch) {
     return (
       <UploadSuccessCard
         item={justUploadedList[0]}
         albums={albums}
         existingTags={existingTags}
+        notice={deleteNotice}
+        onDismissNotice={() => setDeleteNotice(null)}
         onUpdate={(next) => setJustUploadedList([next])}
+        onDeleted={(info) => {
+          setDeleteNotice(info);
+          resetForAnother();
+        }}
         onResetForAnother={resetForAnother}
       />
     );
   }
-  if (justUploadedList.length > 1) {
+  if (justUploadedList.length > 0) {
     return (
       <UploadSuccessGrid
         items={justUploadedList}
         albums={albums}
         existingTags={existingTags}
+        notice={deleteNotice}
+        onDismissNotice={() => setDeleteNotice(null)}
+        onSetNotice={(info) => setDeleteNotice(info)}
         onUpdate={(next) => setJustUploadedList(next)}
         onResetForAnother={resetForAnother}
       />
@@ -243,10 +267,20 @@ export function UploadForm({
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="flex flex-col gap-5 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6"
-    >
+    <>
+      {/* Surface any deletion notice above the upload form too, so
+          admin landing here via the single-photo card's delete path
+          still sees what was cleaned up. */}
+      {deleteNotice ? (
+        <DeleteNoticeBanner
+          notice={deleteNotice}
+          onDismiss={() => setDeleteNotice(null)}
+        />
+      ) : null}
+      <form
+        onSubmit={onSubmit}
+        className="flex flex-col gap-5 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-6"
+      >
       <label
         htmlFor="file"
         onDragEnter={() => setDragActive(true)}
@@ -443,7 +477,8 @@ export function UploadForm({
           </span>
         ) : null}
       </div>
-    </form>
+      </form>
+    </>
   );
 }
 
@@ -628,13 +663,24 @@ function UploadSuccessCard({
   item,
   albums,
   existingTags,
+  notice,
   onUpdate,
+  onDismissNotice,
+  onDeleted,
   onResetForAnother,
 }: {
   item: SuccessItem;
   albums: Album[];
   existingTags: string[];
+  notice: { photoCaption: string; clearedCovers: string[] } | null;
   onUpdate: (next: SuccessItem) => void;
+  onDismissNotice: () => void;
+  /** Called after a successful delete with cover-cleanup info — the
+   *  parent resets the form and surfaces the notice. */
+  onDeleted: (info: {
+    photoCaption: string;
+    clearedCovers: string[];
+  }) => void;
   onResetForAnother: () => void;
 }) {
   const haveDims =
@@ -652,6 +698,8 @@ function UploadSuccessCard({
   const [saveOk, setSaveOk] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [hidePending, startHide] = useTransition();
+  const [deletePending, startDelete] = useTransition();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   function toggleHidden() {
     const next = !item.hidden;
@@ -664,6 +712,27 @@ function UploadSuccessCard({
           return;
         }
         onUpdate({ ...item, hidden: next });
+      } catch (e) {
+        setSaveError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
+
+  function doDelete() {
+    setSaveError(null);
+    startDelete(async () => {
+      try {
+        const res = await deletePhoto(item.id);
+        if (!res.ok) {
+          setSaveError(res.error ?? "couldn’t delete.");
+          return;
+        }
+        onDeleted({
+          photoCaption: item.caption || "untitled",
+          clearedCovers: res.clearedCovers,
+        });
       } catch (e) {
         setSaveError(
           e instanceof Error ? e.message : "couldn’t reach the server."
@@ -728,6 +797,16 @@ function UploadSuccessCard({
 
   return (
     <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-4 sm:p-6">
+      {/* Delete-cleanup notice — appears after a previous delete
+          touched album covers. Auto-dismissable via the × on the
+          banner; doesn't block any other interaction. */}
+      {notice ? (
+        <DeleteNoticeBanner
+          notice={notice}
+          onDismiss={onDismissNotice}
+        />
+      ) : null}
+
       {/* Top row: header + CTAs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-baseline gap-2 flex-wrap">
@@ -748,6 +827,17 @@ function UploadSuccessCard({
           >
             + upload another
           </button>
+          {/* Album-specific deep link, shown when the photo lives
+              in an album. Sits next to "view photos" so admin has
+              both options. */}
+          {currentAlbum ? (
+            <Link
+              href={albumLinkHref}
+              className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
+            >
+              {albumLinkLabel}
+            </Link>
+          ) : null}
           <Link
             href="/photos"
             className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
@@ -867,11 +957,36 @@ function UploadSuccessCard({
             <p className="text-xs text-pink-600 font-semibold">{saveError}</p>
           ) : null}
 
+          {confirmingDelete ? (
+            <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-100/70 border border-pink-200 px-3 py-2 text-[12px] text-pink-800">
+              <span className="font-semibold">
+                delete this photo? this can’t be undone.
+              </span>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={doDelete}
+                disabled={deletePending}
+                className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+              >
+                {deletePending ? "deleting…" : "yes, delete"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deletePending}
+                className="rounded-pill bg-white text-pink-800 border border-pink-200 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+              >
+                cancel
+              </button>
+            </div>
+          ) : null}
+
           <div className="flex items-center gap-2 flex-wrap pt-1">
             <button
               type="button"
               onClick={save}
-              disabled={savePending || hidePending}
+              disabled={savePending || hidePending || deletePending}
               className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
             >
               {savePending ? "saving…" : "save changes"}
@@ -879,7 +994,7 @@ function UploadSuccessCard({
             <button
               type="button"
               onClick={toggleHidden}
-              disabled={savePending || hidePending}
+              disabled={savePending || hidePending || deletePending}
               title={item.hidden ? "unhide on /photos" : "hide from public"}
               className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
             >
@@ -894,6 +1009,18 @@ function UploadSuccessCard({
                 ✓ saved
               </span>
             ) : null}
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={
+                savePending || hidePending || deletePending || confirmingDelete
+              }
+              title="delete this photo"
+              className="rounded-pill bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 hover:border-pink-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ✕ delete
+            </button>
           </div>
         </div>
       </div>
@@ -1001,7 +1128,10 @@ function PreviewOverlay({
             />
           </div>
           <div className="w-full max-w-[680px] rounded-md bg-cream/5 border border-cream/10 px-5 py-3 text-cream flex items-center justify-between gap-3 flex-wrap">
-            <p className="font-script text-cream text-lg leading-tight truncate">
+            {/* pr-1 reserves a slim gutter for the script font's
+                italic terminal — without it the trailing "d" in
+                "untitled" gets clipped by truncate's overflow. */}
+            <p className="font-script text-cream text-lg leading-tight truncate pr-1">
               {caption || "untitled"}
             </p>
             <Link
@@ -1068,6 +1198,51 @@ function BatchNavArrow({
         )}
       </svg>
     </button>
+  );
+}
+
+// Compact banner that surfaces what got cleaned up after a photo
+// delete. Reused by both the single-photo card and the batch grid
+// (and the form view, so a deletion from the single editor is
+// still visible after the form resets). The "× dismiss" tucks it
+// away when admin is done reading.
+function DeleteNoticeBanner({
+  notice,
+  onDismiss,
+}: {
+  notice: { photoCaption: string; clearedCovers: string[] };
+  onDismiss: () => void;
+}) {
+  const hasCleared = notice.clearedCovers.length > 0;
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-md bg-amber-100/60 border border-amber-200 px-3 py-2 text-[12px] text-amber-900 mt-4"
+    >
+      <div className="flex-1">
+        <p className="font-semibold">
+          deleted “{notice.photoCaption}”.
+        </p>
+        {hasCleared ? (
+          <p className="text-[11px] mt-0.5">
+            it was the cover for{" "}
+            {notice.clearedCovers
+              .map((n) => `"${n}"`)
+              .join(", ")}
+            . the album{notice.clearedCovers.length === 1 ? "" : "s"} will
+            auto-pick a new cover from remaining photos.
+          </p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="dismiss"
+        className="rounded-full w-6 h-6 inline-flex items-center justify-center text-amber-900 hover:bg-amber-200/60"
+      >
+        ✕
+      </button>
+    </div>
   );
 }
 
@@ -1167,13 +1342,22 @@ function UploadSuccessGrid({
   items,
   albums,
   existingTags,
+  notice,
   onUpdate,
+  onDismissNotice,
+  onSetNotice,
   onResetForAnother,
 }: {
   items: SuccessItem[];
   albums: Album[];
   existingTags: string[];
+  notice: { photoCaption: string; clearedCovers: string[] } | null;
   onUpdate: (next: SuccessItem[]) => void;
+  onDismissNotice: () => void;
+  onSetNotice: (info: {
+    photoCaption: string;
+    clearedCovers: string[];
+  }) => void;
   onResetForAnother: () => void;
 }) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -1185,10 +1369,16 @@ function UploadSuccessGrid({
   // Remove an item from the batch (after a successful server-side
   // delete). Closes the editor if the batch is now empty; otherwise
   // stays at the same index (which now points to what was the next
-  // photo, or the new last photo if we deleted the tail).
-  function removeAt(idx: number) {
+  // photo, or the new last photo if we deleted the tail). Also
+  // bubbles up the cover-cleanup info so a notice banner can show
+  // which albums lost a pinned cover.
+  function removeAt(
+    idx: number,
+    info: { photoCaption: string; clearedCovers: string[] }
+  ) {
     const next = items.filter((_, i) => i !== idx);
     onUpdate(next);
+    onSetNotice(info);
     if (next.length === 0) {
       setEditingIndex(null);
     } else {
@@ -1220,6 +1410,9 @@ function UploadSuccessGrid({
           </Link>
         </div>
       </div>
+      {notice ? (
+        <DeleteNoticeBanner notice={notice} onDismiss={onDismissNotice} />
+      ) : null}
       <p className="text-[11px] text-lavender-600 font-semibold">
         tap a photo to edit caption / tags / album / visibility.
       </p>
@@ -1261,7 +1454,7 @@ function UploadSuccessGrid({
           existingTags={existingTags}
           onClose={() => setEditingIndex(null)}
           onSaved={(next) => updateAt(editingIndex, next)}
-          onRemove={() => removeAt(editingIndex)}
+          onRemove={(info) => removeAt(editingIndex, info)}
           onNavigate={(direction) => {
             const nextIdx = editingIndex + direction;
             if (nextIdx >= 0 && nextIdx < items.length) {
@@ -1299,8 +1492,12 @@ function BatchItemEditor({
   onClose: () => void;
   onSaved: (next: SuccessItem) => void;
   /** Called after a successful server-side delete so the parent can
-   *  strip the item from the batch list. */
-  onRemove: () => void;
+   *  strip the item from the batch list. The info payload carries
+   *  the cover-cleanup result so the parent can surface a notice. */
+  onRemove: (info: {
+    photoCaption: string;
+    clearedCovers: string[];
+  }) => void;
   /** Move to the next/prev photo in the batch. The editor saves
    *  current edits first so the arrow feels like "save & next". */
   onNavigate: (direction: -1 | 1) => void;
@@ -1398,8 +1595,13 @@ function BatchItemEditor({
           setErr(res.error ?? "couldn’t delete.");
           return;
         }
-        // Parent will close or advance based on remaining items.
-        onRemove();
+        // Parent will close or advance based on remaining items
+        // and show a notice listing any albums whose pinned cover
+        // got cleared during the cleanup.
+        onRemove({
+          photoCaption: item.caption || "untitled",
+          clearedCovers: res.clearedCovers,
+        });
       } catch (e) {
         setErr(
           e instanceof Error ? e.message : "couldn’t reach the server."

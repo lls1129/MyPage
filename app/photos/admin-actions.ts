@@ -107,7 +107,7 @@ export async function rotatePhoto(id: string, direction: "left" | "right") {
 
 export async function deletePhoto(id: string) {
   await requireAdmin();
-  if (!id) return { ok: false, error: "Missing id." };
+  if (!id) return { ok: false as const, error: "Missing id." };
 
   const admin = createAdminClient();
 
@@ -117,7 +117,12 @@ export async function deletePhoto(id: string) {
     .select("image_url")
     .eq("id", id)
     .maybeSingle();
-  if (fetchError) return { ok: false, error: fetchError.message };
+  if (fetchError)
+    return { ok: false as const, error: fetchError.message };
+
+  // Names of albums whose pinned cover gets cleared during this
+  // delete. Returned to the caller so admin can be notified.
+  let clearedCovers: string[] = [];
 
   if (row?.image_url) {
     const ref = storageRefFromUrl(row.image_url);
@@ -131,30 +136,44 @@ export async function deletePhoto(id: string) {
     // and any cover_history entry for this URL is dropped so the
     // dead URL can't be re-pinned with one click later. Best-effort
     // — failures here don't block the photo delete.
-    await cleanupCoverReferences(admin, row.image_url);
+    clearedCovers = await cleanupCoverReferences(admin, row.image_url);
   }
 
   const { error: deleteError } = await admin
     .from("photos")
     .delete()
     .eq("id", id);
-  if (deleteError) return { ok: false, error: deleteError.message };
+  if (deleteError)
+    return { ok: false as const, error: deleteError.message };
 
   revalidatePath("/photos");
   revalidatePath(`/photos/album/[slug]`, "page");
-  return { ok: true };
+  return { ok: true as const, clearedCovers };
 }
 
 // Strip a URL from every album row that references it — both as
 // the pinned cover and as a recent-history entry. Run from the
-// service-role client so RLS doesn't filter rows out. Best-effort:
+// service-role client so RLS doesn't filter rows out. Returns the
+// names of albums whose pinned cover was cleared (used for the
+// "deleted photo was the cover for X" notification). Best-effort:
 // errors are swallowed (the delete shouldn't fail because of a
 // cleanup hiccup).
 async function cleanupCoverReferences(
   admin: ReturnType<typeof createAdminClient>,
   url: string
-) {
+): Promise<string[]> {
+  const clearedNames: string[] = [];
   try {
+    // First pass: find albums currently using this URL as a pinned
+    // cover so we can report them back to the caller.
+    const { data: pinned } = await admin
+      .from("albums")
+      .select("id, name")
+      .eq("cover_image_url", url);
+    if (Array.isArray(pinned)) {
+      for (const a of pinned) clearedNames.push(a.name as string);
+    }
+
     // Clear cover_image_url on any album using this URL. The reset
     // also restores crop fields so the next pinned cover starts
     // fresh.
@@ -169,19 +188,20 @@ async function cleanupCoverReferences(
       })
       .eq("cover_image_url", url);
 
-    // cover_history is jsonb — pull all rows whose history contains
-    // this URL, filter the array client-side, write back. Tiny
-    // table for this site so the read isn't a concern.
-    const { data: affected } = await admin
+    // cover_history is jsonb — fetch all rows and filter
+    // client-side. Cheaper than getting the `contains` query right
+    // for objects-with-extra-fields, and the albums table is small
+    // on this site. Write back only when an entry was actually
+    // removed to keep this a no-op when there's nothing to do.
+    const { data: allAlbums } = await admin
       .from("albums")
-      .select("id, cover_history")
-      .contains("cover_history", [{ url }]);
-    if (Array.isArray(affected)) {
-      for (const row of affected) {
+      .select("id, cover_history");
+    if (Array.isArray(allAlbums)) {
+      for (const row of allAlbums) {
         const history = Array.isArray(row.cover_history)
           ? (row.cover_history as { url: string }[])
           : [];
-        const next = history.filter((e) => e.url !== url);
+        const next = history.filter((e) => e?.url !== url);
         if (next.length !== history.length) {
           await admin
             .from("albums")
@@ -193,6 +213,7 @@ async function cleanupCoverReferences(
   } catch {
     // Swallow — the photo delete itself succeeded, cleanup is a nicety.
   }
+  return clearedNames;
 }
 
 // Create a new album in the "photos" library. Returns the new row so

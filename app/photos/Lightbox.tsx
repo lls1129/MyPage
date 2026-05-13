@@ -254,7 +254,10 @@ export function Lightbox({
 
         <div className="w-full max-w-[680px] rounded-md bg-cream/5 border border-cream/10 px-5 py-4 text-cream">
           <div className="flex items-baseline justify-between gap-4 flex-wrap">
-            <p className="font-script text-cream text-2xl leading-tight">
+            {/* pr-1 reserves a slim gutter so the script font's
+                italic "d" doesn't get visually clipped against the
+                neighboring date column. */}
+            <p className="font-script text-cream text-2xl leading-tight pr-1">
               {photo.caption || "untitled"}
             </p>
             {dateLabel ? (
