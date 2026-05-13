@@ -5,6 +5,12 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Album } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
+import {
+  addToCoverHistory,
+  getCoverHistory,
+  removeFromCoverHistory,
+  type LibraryKind,
+} from "@/lib/cover-history";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -17,6 +23,7 @@ type CoverCandidate = { id: string; image_url: string };
 export function AlbumPageAdmin({
   album,
   parentHref,
+  libraryKind,
   coverCandidates,
   onRename,
   onDelete,
@@ -27,6 +34,9 @@ export function AlbumPageAdmin({
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
   parentHref: string;
+  /** Which library this album belongs to — used to namespace the
+   *  per-browser "recent covers" history in localStorage. */
+  libraryKind: LibraryKind;
   /** Photos in this album the admin can pin as the cover. */
   coverCandidates: CoverCandidate[];
   onRename: (id: string, newName: string) => Promise<ActionResult>;
@@ -47,6 +57,12 @@ export function AlbumPageAdmin({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Per-browser recently-pinned cover URLs for this album, loaded
+  // from localStorage. Hydrate after mount to avoid SSR/CSR mismatch.
+  const [history, setHistory] = useState<string[]>([]);
+  useEffect(() => {
+    setHistory(getCoverHistory(libraryKind, album.id));
+  }, [libraryKind, album.id]);
 
   // Esc closes the preview overlay (matches photo lightbox UX).
   useEffect(() => {
@@ -108,6 +124,9 @@ export function AlbumPageAdmin({
           // Leave the picker open so admin can keep auditioning covers.
           // Clear the URL draft only when that's how it was set.
           if (url === null || url === urlDraft.trim()) setUrlDraft("");
+          // Track successful pins in localStorage so admin can re-pin
+          // a URL with one click later. Skip the "clear cover" case.
+          if (url) setHistory(addToCoverHistory(libraryKind, album.id, url));
           router.refresh();
         }
       } catch (e) {
@@ -309,6 +328,69 @@ export function AlbumPageAdmin({
                 }}
                 onCommit={commitCrop}
               />
+            </div>
+          ) : null}
+
+          {history.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[10px] text-pink-800 font-semibold">
+                recent · click to pin
+              </p>
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
+                {history.map((url) => {
+                  const selected = album.cover_image_url === url;
+                  return (
+                    <div
+                      key={url}
+                      className={
+                        "relative aspect-square rounded-md overflow-hidden border-2 transition group " +
+                        (selected
+                          ? "border-pink-400 ring-2 ring-pink-200"
+                          : "border-pink-100 hover:border-pink-300")
+                      }
+                    >
+                      <button
+                        type="button"
+                        onClick={() => pickCover(url)}
+                        disabled={pending}
+                        title={selected ? "current cover" : "pin again"}
+                        className="absolute inset-0 disabled:opacity-60"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt=""
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setHistory(
+                            removeFromCoverHistory(
+                              libraryKind,
+                              album.id,
+                              url
+                            )
+                          )
+                        }
+                        title="forget this URL"
+                        aria-label="remove from recent"
+                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white/90 hover:bg-white text-pink-700 border border-pink-200 flex items-center justify-center text-[9px] font-semibold leading-none opacity-0 group-hover:opacity-100 transition shadow-soft"
+                      >
+                        ✕
+                      </button>
+                      {selected ? (
+                        <span className="absolute inset-x-0 bottom-0 bg-pink-400/85 text-white text-[9px] font-semibold leading-tight py-0.5 text-center pointer-events-none">
+                          current
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
 

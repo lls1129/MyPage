@@ -29,6 +29,7 @@ export function AstrophotoAlbumPageAdminWrapper({
     <AlbumPageAdmin
       album={album}
       parentHref="/astronomy"
+      libraryKind="astrophotos"
       coverCandidates={coverCandidates}
       onRename={(id, name) => normalize(renameAstrophotoAlbum(id, name))}
       onDelete={(id) => normalize(deleteAstrophotoAlbum(id))}

@@ -29,6 +29,7 @@ export function PhotoAlbumPageAdminWrapper({
     <AlbumPageAdmin
       album={album}
       parentHref="/photos"
+      libraryKind="photos"
       coverCandidates={coverCandidates}
       onRename={(id, name) => normalize(renamePhotoAlbum(id, name))}
       onDelete={(id) => normalize(deletePhotoAlbum(id))}
