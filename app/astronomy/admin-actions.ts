@@ -308,15 +308,17 @@ export async function rotateAstrophoto(id: string, direction: "left" | "right") 
 
 export async function deleteAstrophoto(id: string) {
   await requireAdmin();
-  if (!id) return { ok: false, error: "Missing id." };
+  if (!id) return { ok: false as const, error: "Missing id." };
 
   const admin = createAdminClient();
   const { data: row, error: fetchErr } = await admin
     .from("astrophotos")
-    .select("image_url")
+    .select("image_url, album_id, hidden")
     .eq("id", id)
     .maybeSingle();
-  if (fetchErr) return { ok: false, error: fetchErr.message };
+  if (fetchErr) return { ok: false as const, error: fetchErr.message };
+
+  let clearedCovers: string[] = [];
 
   if (row?.image_url) {
     const ref = storageRefFromUrl(row.image_url);
@@ -326,8 +328,16 @@ export async function deleteAstrophoto(id: string) {
     }
     // Cover-orphan cleanup mirrors the photos side — any album
     // using this URL as a cover loses the pin, and any
-    // cover_history entry for it is removed.
+    // cover_history entry for it is removed. Pinned-cover album
+    // names are returned for admin notification.
     try {
+      const { data: pinned } = await admin
+        .from("albums")
+        .select("id, name")
+        .eq("cover_image_url", row.image_url);
+      if (Array.isArray(pinned)) {
+        for (const a of pinned) clearedCovers.push(a.name as string);
+      }
       await admin
         .from("albums")
         .update({
@@ -338,21 +348,49 @@ export async function deleteAstrophoto(id: string) {
           cover_crop_h: 1,
         })
         .eq("cover_image_url", row.image_url);
-      const { data: affected } = await admin
+
+      const { data: allAlbums } = await admin
         .from("albums")
-        .select("id, cover_history")
-        .contains("cover_history", [{ url: row.image_url }]);
-      if (Array.isArray(affected)) {
-        for (const r of affected) {
+        .select("id, cover_history");
+      if (Array.isArray(allAlbums)) {
+        for (const r of allAlbums) {
           const history = Array.isArray(r.cover_history)
             ? (r.cover_history as { url: string }[])
             : [];
-          const next = history.filter((e) => e.url !== row.image_url);
+          const next = history.filter((e) => e?.url !== row.image_url);
           if (next.length !== history.length) {
             await admin
               .from("albums")
               .update({ cover_history: next })
               .eq("id", r.id);
+          }
+        }
+      }
+
+      // Auto-pick impact: when an astrophoto album has no pinned
+      // cover and this astrophoto was the latest non-hidden one,
+      // deleting it shifts the visible cover even though there's
+      // no DB record to clean up.
+      if (row.album_id && !row.hidden) {
+        const { data: album } = await admin
+          .from("albums")
+          .select("name, cover_image_url")
+          .eq("id", row.album_id)
+          .maybeSingle();
+        if (album && !album.cover_image_url) {
+          const { data: latest } = await admin
+            .from("astrophotos")
+            .select("id")
+            .eq("album_id", row.album_id)
+            .eq("hidden", false)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (
+            latest?.id === id &&
+            !clearedCovers.includes(album.name as string)
+          ) {
+            clearedCovers.push(album.name as string);
           }
         }
       }
@@ -362,11 +400,11 @@ export async function deleteAstrophoto(id: string) {
   }
 
   const { error } = await admin.from("astrophotos").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false as const, error: error.message };
 
   revalidatePath("/astronomy");
   revalidatePath(`/astronomy/album/[slug]`, "page");
-  return { ok: true };
+  return { ok: true as const, clearedCovers };
 }
 
 // Move an astrophoto row from `astrophotos` into `photos`. The file in

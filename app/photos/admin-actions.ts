@@ -111,17 +111,20 @@ export async function deletePhoto(id: string) {
 
   const admin = createAdminClient();
 
-  // Look up the storage path so we can clean up the file too.
+  // Look up the storage path + album link so we can clean up the
+  // file AND detect any cover impact (pinned or auto-picked).
   const { data: row, error: fetchError } = await admin
     .from("photos")
-    .select("image_url")
+    .select("image_url, album_id, hidden")
     .eq("id", id)
     .maybeSingle();
   if (fetchError)
     return { ok: false as const, error: fetchError.message };
 
   // Names of albums whose pinned cover gets cleared during this
-  // delete. Returned to the caller so admin can be notified.
+  // delete, OR whose auto-picked cover changes because this photo
+  // was the latest non-hidden member. Returned to the caller so
+  // admin can be notified either way.
   let clearedCovers: string[] = [];
 
   if (row?.image_url) {
@@ -137,6 +140,23 @@ export async function deletePhoto(id: string) {
     // dead URL can't be re-pinned with one click later. Best-effort
     // — failures here don't block the photo delete.
     clearedCovers = await cleanupCoverReferences(admin, row.image_url);
+
+    // Also surface auto-pick changes: when a photos-kind album has
+    // no pinned cover and this photo was the latest non-hidden
+    // member, deleting it shifts the auto-pick to the previous
+    // photo. There's nothing to clean up in the DB (auto-pick is
+    // computed at read time) but admin should still know.
+    if (row.album_id && !row.hidden) {
+      const autoName = await detectAutoPickImpact(
+        admin,
+        row.album_id as string,
+        id,
+        "photos"
+      );
+      if (autoName && !clearedCovers.includes(autoName)) {
+        clearedCovers.push(autoName);
+      }
+    }
   }
 
   const { error: deleteError } = await admin
@@ -149,6 +169,45 @@ export async function deletePhoto(id: string) {
   revalidatePath("/photos");
   revalidatePath(`/photos/album/[slug]`, "page");
   return { ok: true as const, clearedCovers };
+}
+
+// Returns the album's name if the about-to-be-deleted photo is its
+// current auto-picked cover (album has no pinned cover_image_url AND
+// this photo is the latest non-hidden member). Used by the delete
+// flow to notify admin when the visual cover will change even
+// though no DB cleanup was needed. table is "photos" or
+// "astrophotos" depending on the caller.
+async function detectAutoPickImpact(
+  admin: ReturnType<typeof createAdminClient>,
+  albumId: string,
+  photoId: string,
+  table: "photos" | "astrophotos"
+): Promise<string | null> {
+  try {
+    // Only matters when the album has no pinned cover; otherwise
+    // the auto-pick isn't what visitors are seeing anyway.
+    const { data: album } = await admin
+      .from("albums")
+      .select("name, cover_image_url")
+      .eq("id", albumId)
+      .maybeSingle();
+    if (!album || album.cover_image_url) return null;
+
+    const { data: latest } = await admin
+      .from(table)
+      .select("id")
+      .eq("album_id", albumId)
+      .eq("hidden", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest?.id === photoId) {
+      return album.name as string;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // Strip a URL from every album row that references it — both as

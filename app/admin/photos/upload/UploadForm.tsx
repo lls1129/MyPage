@@ -827,17 +827,6 @@ function UploadSuccessCard({
           >
             + upload another
           </button>
-          {/* Album-specific deep link, shown when the photo lives
-              in an album. Sits next to "view photos" so admin has
-              both options. */}
-          {currentAlbum ? (
-            <Link
-              href={albumLinkHref}
-              className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
-            >
-              {albumLinkLabel}
-            </Link>
-          ) : null}
           <Link
             href="/photos"
             className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
@@ -982,15 +971,11 @@ function UploadSuccessCard({
             </div>
           ) : null}
 
+          {/* Action row: left side has the hide/save pair; right
+              side groups the destructive + nav-away controls
+              (delete next to view-in-album so admin's "I'm done
+              with this photo" actions cluster together). */}
           <div className="flex items-center gap-2 flex-wrap pt-1">
-            <button
-              type="button"
-              onClick={save}
-              disabled={savePending || hidePending || deletePending}
-              className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
-            >
-              {savePending ? "saving…" : "save changes"}
-            </button>
             <button
               type="button"
               onClick={toggleHidden}
@@ -1003,6 +988,14 @@ function UploadSuccessCard({
                 : item.hidden
                 ? "◉ unhide"
                 : "○ hide"}
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={savePending || hidePending || deletePending}
+              className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+            >
+              {savePending ? "saving…" : "save changes"}
             </button>
             {saveOk && !savePending ? (
               <span className="text-xs text-lavender-600 font-semibold">
@@ -1021,6 +1014,14 @@ function UploadSuccessCard({
             >
               ✕ delete
             </button>
+            {currentAlbum ? (
+              <Link
+                href={albumLinkHref}
+                className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold"
+              >
+                {albumLinkLabel} →
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>
