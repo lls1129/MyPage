@@ -1343,9 +1343,20 @@ function BatchItemEditor({
       onClick={onClose}
     >
       <div className="flex items-center justify-between px-3 sm:px-4 py-3 text-cream/80 gap-2 shrink-0">
-        <span className="font-script text-cream/70 text-xl select-none">
-          ✿ edit · {index + 1} of {total}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-script text-cream/70 text-xl select-none">
+            ✿ edit · {index + 1} of {total}
+          </span>
+          {/* Dirty marker lives in the header rather than the action
+              row — keeping it out of that row prevents the "view in
+              album" button from being pushed onto a second line on
+              narrow phones when the badge appears. */}
+          {dirty && !savePending && !navPending ? (
+            <span className="rounded-pill bg-amber-200/90 text-amber-900 px-1.5 py-0.5 text-[10px] font-semibold border border-amber-300/80">
+              unsaved
+            </span>
+          ) : null}
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -1495,11 +1506,6 @@ function BatchItemEditor({
               >
                 {hidePending ? "…" : hidden ? "◉ unhide" : "○ hide"}
               </button>
-              {dirty && !savePending && !navPending ? (
-                <span className="text-[11px] text-amber-200 font-semibold">
-                  unsaved
-                </span>
-              ) : null}
               <span className="flex-1" />
               <Link
                 href={albumLinkHref}
