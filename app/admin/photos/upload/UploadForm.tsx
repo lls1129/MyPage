@@ -12,9 +12,15 @@ import {
 } from "@/lib/upload-utils";
 import { signPhotoUpload, insertPhotoRow } from "./actions";
 import {
+  deletePhoto,
+  setPhotoDecorations,
   togglePhotoHidden,
   updatePhotoMeta,
 } from "@/app/photos/admin-actions";
+import {
+  FILTERS,
+  FRAMES,
+} from "@/app/components/cover-decorations";
 import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
@@ -164,6 +170,11 @@ export function UploadForm({
             hidden: sharedHidden,
             width: dims?.width ?? null,
             height: dims?.height ?? null,
+            // No per-photo override at upload time — photo inherits
+            // its album's decoration. Admin can override later via
+            // the batch editor or PhotoEditModal.
+            cover_frame: null,
+            cover_filter: null,
           });
         } catch (err) {
           failed += 1;
@@ -606,6 +617,11 @@ type SuccessItem = {
   hidden: boolean;
   width: number | null;
   height: number | null;
+  // Per-photo decoration overrides. null = inherit album,
+  // "" = explicit none, id = preset override. Same semantics as
+  // PhotoEditModal — see app/components/cover-decorations.ts.
+  cover_frame: string | null;
+  cover_filter: string | null;
 };
 
 function UploadSuccessCard({
@@ -1055,6 +1071,93 @@ function BatchNavArrow({
   );
 }
 
+// Dark-themed decoration chip row for the batch editor. Same
+// "follow album · {label}" / "none" / preset triad as the
+// equivalent in PhotoEditModal — null = inherit, "" = explicit
+// none, id = preset override.
+function BatchDecorationRow({
+  label,
+  options,
+  currentId,
+  albumValue,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  options: { id: string; label: string }[];
+  currentId: string | null;
+  albumValue: string | null;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+}) {
+  const inheritLabel =
+    albumValue && options.find((o) => o.id === albumValue)
+      ? `follow album · ${options.find((o) => o.id === albumValue)?.label}`
+      : "follow album";
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-[10px] uppercase tracking-wide font-bold text-cream/55 mr-1 w-12 shrink-0">
+        {label}
+      </span>
+      <BatchChip
+        active={currentId === null}
+        disabled={disabled}
+        onClick={() => onPick(null)}
+      >
+        {inheritLabel}
+      </BatchChip>
+      <BatchChip
+        active={currentId === ""}
+        disabled={disabled}
+        onClick={() => onPick("")}
+      >
+        none
+      </BatchChip>
+      {options.map((opt) => {
+        const selected = currentId === opt.id;
+        return (
+          <BatchChip
+            key={opt.id}
+            active={selected}
+            disabled={disabled}
+            onClick={() => onPick(selected ? null : opt.id)}
+          >
+            {opt.label}
+          </BatchChip>
+        );
+      })}
+    </div>
+  );
+}
+
+function BatchChip({
+  children,
+  active,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "rounded-pill px-2.5 py-1 text-[11px] font-semibold border transition disabled:opacity-50 " +
+        (active
+          ? "bg-pink-300 text-white border-pink-300"
+          : "bg-cream/10 text-cream border-cream/20 hover:bg-cream/20")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 // Success view for a batch upload (>1 file). Renders a compact grid
 // of thumbnails; clicking any one opens an edit overlay where admin
 // can tweak that specific photo's caption / tags / album / hidden.
@@ -1077,6 +1180,20 @@ function UploadSuccessGrid({
 
   function updateAt(idx: number, next: SuccessItem) {
     onUpdate(items.map((it, i) => (i === idx ? next : it)));
+  }
+
+  // Remove an item from the batch (after a successful server-side
+  // delete). Closes the editor if the batch is now empty; otherwise
+  // stays at the same index (which now points to what was the next
+  // photo, or the new last photo if we deleted the tail).
+  function removeAt(idx: number) {
+    const next = items.filter((_, i) => i !== idx);
+    onUpdate(next);
+    if (next.length === 0) {
+      setEditingIndex(null);
+    } else {
+      setEditingIndex(Math.min(idx, next.length - 1));
+    }
   }
 
   const editingItem = editingIndex !== null ? items[editingIndex] : null;
@@ -1144,6 +1261,7 @@ function UploadSuccessGrid({
           existingTags={existingTags}
           onClose={() => setEditingIndex(null)}
           onSaved={(next) => updateAt(editingIndex, next)}
+          onRemove={() => removeAt(editingIndex)}
           onNavigate={(direction) => {
             const nextIdx = editingIndex + direction;
             if (nextIdx >= 0 && nextIdx < items.length) {
@@ -1168,6 +1286,7 @@ function BatchItemEditor({
   existingTags,
   onClose,
   onSaved,
+  onRemove,
   onNavigate,
 }: {
   item: SuccessItem;
@@ -1179,6 +1298,9 @@ function BatchItemEditor({
   existingTags: string[];
   onClose: () => void;
   onSaved: (next: SuccessItem) => void;
+  /** Called after a successful server-side delete so the parent can
+   *  strip the item from the batch list. */
+  onRemove: () => void;
   /** Move to the next/prev photo in the batch. The editor saves
    *  current edits first so the arrow feels like "save & next". */
   onNavigate: (direction: -1 | 1) => void;
@@ -1235,7 +1357,56 @@ function BatchItemEditor({
   const [savePending, startSave] = useTransition();
   const [hidePending, startHide] = useTransition();
   const [navPending, startNav] = useTransition();
+  const [decorPending, startDecor] = useTransition();
+  const [deletePending, startDelete] = useTransition();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  function applyDecoration(patch: {
+    frame?: string | null;
+    filter?: string | null;
+  }) {
+    setErr(null);
+    // Optimistic-ish: bubble the new value to the parent so the
+    // grid thumbnail re-renders right away while the server call
+    // is in flight.
+    onSaved({
+      ...item,
+      cover_frame:
+        "frame" in patch ? patch.frame ?? null : item.cover_frame,
+      cover_filter:
+        "filter" in patch ? patch.filter ?? null : item.cover_filter,
+    });
+    startDecor(async () => {
+      try {
+        const res = await setPhotoDecorations(item.id, patch);
+        if (!res.ok) setErr(res.error ?? "couldn’t save decoration.");
+      } catch (e) {
+        setErr(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
+
+  function doDelete() {
+    setErr(null);
+    startDelete(async () => {
+      try {
+        const res = await deletePhoto(item.id);
+        if (!res.ok) {
+          setErr(res.error ?? "couldn’t delete.");
+          return;
+        }
+        // Parent will close or advance based on remaining items.
+        onRemove();
+      } catch (e) {
+        setErr(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
 
   const canPrev = index > 0;
   const canNext = index < total - 1;
@@ -1479,6 +1650,52 @@ function BatchItemEditor({
               </select>
             </div>
 
+            {/* Per-photo decoration overrides — same semantics as in
+                PhotoEditModal. null = follow album, "" = explicit
+                none, id = preset override. Chips fire immediately
+                via setPhotoDecorations (no form-save needed). */}
+            <BatchDecorationRow
+              label="frame"
+              options={FRAMES}
+              currentId={item.cover_frame}
+              albumValue={currentAlbum?.cover_frame ?? null}
+              disabled={decorPending || deletePending}
+              onPick={(id) => applyDecoration({ frame: id })}
+            />
+            <BatchDecorationRow
+              label="filter"
+              options={FILTERS}
+              currentId={item.cover_filter}
+              albumValue={currentAlbum?.cover_filter ?? null}
+              disabled={decorPending || deletePending}
+              onPick={(id) => applyDecoration({ filter: id })}
+            />
+
+            {confirmingDelete ? (
+              <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-400/15 border border-pink-300/50 px-3 py-2 text-[12px] text-cream">
+                <span className="font-semibold">
+                  delete this photo? this can’t be undone.
+                </span>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  onClick={doDelete}
+                  disabled={deletePending}
+                  className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+                >
+                  {deletePending ? "deleting…" : "yes, delete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deletePending}
+                  className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+                >
+                  cancel
+                </button>
+              </div>
+            ) : null}
+
             {err ? (
               <p className="text-xs text-pink-200 font-semibold">{err}</p>
             ) : null}
@@ -1517,6 +1734,21 @@ function BatchItemEditor({
                 {navPending ? "saving…" : "save & next →"}
               </button>
               <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={
+                  savePending ||
+                  hidePending ||
+                  navPending ||
+                  deletePending ||
+                  confirmingDelete
+                }
+                title="delete this photo"
+                className="rounded-pill bg-pink-400/15 text-pink-100 border border-pink-300/50 hover:bg-pink-400/30 hover:text-white px-3 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ✕ delete
+              </button>
               <Link
                 href={albumLinkHref}
                 className="rounded-pill px-3 py-2 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
