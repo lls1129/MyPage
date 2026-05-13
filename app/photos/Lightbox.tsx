@@ -173,15 +173,17 @@ export function Lightbox({
       </div>
 
       {/* Photo + meta — stop click bubbling so clicks inside don't
-          dismiss. Outer wrapper scrolls so admin can always reach
-          the meta + decoration controls on tall portrait photos
-          where photo + controls don't fit the viewport together. */}
+          dismiss. Outer wrapper scrolls only as a fallback for tall
+          portrait photos where photo + controls genuinely don't fit
+          the viewport together; in the common case the photo is
+          capped by viewport units so meta panel stays visible
+          without any scroll needed. */}
       <div
         className="flex-1 min-h-0 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="min-h-full flex flex-col items-center justify-center px-4 pb-6 gap-4">
-        <div className="relative w-full max-w-[1100px] flex items-center justify-center min-h-[40vh] flex-1">
+        <div className="relative w-full max-w-[1100px] flex items-center justify-center">
           <NavArrow direction="prev" onClick={goPrev} />
 
           {(() => {
@@ -204,7 +206,14 @@ export function Lightbox({
                 style={{
                   aspectRatio: aspect,
                   maxWidth: "100%",
-                  maxHeight: "100%",
+                  // Hard viewport cap so tall portrait photos don't
+                  // balloon the layout. ~260px reserves room for top
+                  // bar + a typical meta panel (caption + admin
+                  // actions + the two decoration chip rows) so they
+                  // stay reachable without scrolling on most
+                  // screens. Larger meta panels still fit thanks to
+                  // the outer overflow-y-auto.
+                  maxHeight: "calc(100vh - 260px)",
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -216,11 +225,16 @@ export function Lightbox({
                       ? `rotate(${photo.rotation}deg)`
                       : undefined,
                     filter: filterCss || undefined,
+                    // No-dimensions fallback needs the same vh cap
+                    // as the aspect-ratio'd wrapper so it doesn't
+                    // grow unbounded.
+                    maxHeight: haveDims ? undefined : "calc(100vh - 260px)",
+                    maxWidth: "100%",
                   }}
                   className={
                     haveDims
                       ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
-                      : "max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform block"
+                      : "object-contain rounded-md shadow-soft transition-transform block"
                   }
                 />
                 {haveDims && frameClass ? (
