@@ -4,6 +4,8 @@ import type { Album } from "@/lib/supabase/albums";
 import {
   renamePhotoAlbum,
   deletePhotoAlbum,
+  setPhotoAlbumCover,
+  setPhotoAlbumHidden,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
 
@@ -15,13 +17,22 @@ function normalize(p: Promise<{ ok: boolean; error?: string }>) {
   );
 }
 
-export function PhotoAlbumPageAdminWrapper({ album }: { album: Album }) {
+export function PhotoAlbumPageAdminWrapper({
+  album,
+  coverCandidates,
+}: {
+  album: Album;
+  coverCandidates: { id: string; image_url: string }[];
+}) {
   return (
     <AlbumPageAdmin
       album={album}
       parentHref="/photos"
+      coverCandidates={coverCandidates}
       onRename={(id, name) => normalize(renamePhotoAlbum(id, name))}
       onDelete={(id) => normalize(deletePhotoAlbum(id))}
+      onSetCover={(id, url) => normalize(setPhotoAlbumCover(id, url))}
+      onSetHidden={(id, hidden) => normalize(setPhotoAlbumHidden(id, hidden))}
     />
   );
 }

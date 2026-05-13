@@ -21,7 +21,7 @@ export default async function PhotosPage() {
   const [result, albumsWithCovers, allAlbums] = await Promise.all([
     isAdmin ? listAllPhotosAsAdmin() : listPhotos(),
     listAlbumsWithCovers("photos", isAdmin),
-    listAlbums("photos"),
+    listAlbums("photos", isAdmin),
   ]);
   // Uncategorized = photos with no album_id. Album-assigned photos
   // render on their own /photos/album/[slug] pages.

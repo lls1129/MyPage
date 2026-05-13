@@ -22,14 +22,15 @@ export default async function AstrophotoAlbumPage(
 ) {
   const params = await props.params;
   const slug = params.slug;
-  const album = await getAlbumBySlug("astrophotos", slug);
-  if (!album) notFound();
-
   const admin = await getCurrentAdmin();
   const isAdmin = Boolean(admin);
+  // Admin still needs to load hidden albums so they can unhide them.
+  const album = await getAlbumBySlug("astrophotos", slug, isAdmin);
+  if (!album) notFound();
+
   const [result, allAlbums] = await Promise.all([
     isAdmin ? listAllAstrophotosAsAdmin() : listAstrophotos(),
-    listAlbums("astrophotos"),
+    listAlbums("astrophotos", isAdmin),
   ]);
   const astrophotos =
     result.kind === "ok"
@@ -54,7 +55,15 @@ export default async function AstrophotoAlbumPage(
         </p>
       </header>
 
-      {isAdmin ? <AstrophotoAlbumPageAdminWrapper album={album} /> : null}
+      {isAdmin ? (
+        <AstrophotoAlbumPageAdminWrapper
+          album={album}
+          coverCandidates={astrophotos.map((a) => ({
+            id: a.id,
+            image_url: a.image_url,
+          }))}
+        />
+      ) : null}
 
       {astrophotos.length > 0 ? (
         <AstrophotoGrid

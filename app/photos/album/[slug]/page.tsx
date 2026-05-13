@@ -22,14 +22,15 @@ export default async function PhotoAlbumPage(
 ) {
   const params = await props.params;
   const slug = params.slug;
-  const album = await getAlbumBySlug("photos", slug);
-  if (!album) notFound();
-
   const admin = await getCurrentAdmin();
   const isAdmin = Boolean(admin);
+  // Admin still needs to load hidden albums so they can unhide them.
+  const album = await getAlbumBySlug("photos", slug, isAdmin);
+  if (!album) notFound();
+
   const [result, allAlbums] = await Promise.all([
     isAdmin ? listAllPhotosAsAdmin() : listPhotos(),
-    listAlbums("photos"),
+    listAlbums("photos", isAdmin),
   ]);
   const photos =
     result.kind === "ok"
@@ -53,7 +54,15 @@ export default async function PhotoAlbumPage(
         </p>
       </header>
 
-      {isAdmin ? <PhotoAlbumPageAdminWrapper album={album} /> : null}
+      {isAdmin ? (
+        <PhotoAlbumPageAdminWrapper
+          album={album}
+          coverCandidates={photos.map((p) => ({
+            id: p.id,
+            image_url: p.image_url,
+          }))}
+        />
+      ) : null}
 
       {photos.length > 0 ? (
         <PhotoGrid

@@ -6,6 +6,7 @@ import {
   createAstrophotoAlbum,
   renameAstrophotoAlbum,
   deleteAstrophotoAlbum,
+  setAstrophotoAlbumHidden,
 } from "../admin-actions";
 
 function normalize(p: Promise<{ ok: boolean; error?: string }>) {
@@ -23,6 +24,9 @@ export function AstrophotoAlbumAdmin({ existing }: { existing: Album[] }) {
       onCreate={(name) => normalize(createAstrophotoAlbum(name))}
       onRename={(id, name) => normalize(renameAstrophotoAlbum(id, name))}
       onDelete={(id) => normalize(deleteAstrophotoAlbum(id))}
+      onSetHidden={(id, hidden) =>
+        normalize(setAstrophotoAlbumHidden(id, hidden))
+      }
     />
   );
 }

@@ -6,6 +6,7 @@ import {
   createPhotoAlbum,
   renamePhotoAlbum,
   deletePhotoAlbum,
+  setPhotoAlbumHidden,
 } from "./admin-actions";
 
 // Server actions return { ok, error?: string } variants; the AlbumManager
@@ -26,6 +27,7 @@ export function AlbumAdmin({ existing }: { existing: Album[] }) {
       onCreate={(name) => normalize(createPhotoAlbum(name))}
       onRename={(id, name) => normalize(renamePhotoAlbum(id, name))}
       onDelete={(id) => normalize(deletePhotoAlbum(id))}
+      onSetHidden={(id, hidden) => normalize(setPhotoAlbumHidden(id, hidden))}
     />
   );
 }

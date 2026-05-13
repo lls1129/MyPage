@@ -156,6 +156,41 @@ export async function renamePhotoAlbum(id: string, newName: string) {
   return { ok: true as const };
 }
 
+// Set or clear the cover image URL for a photo album. Pass null to
+// clear (cover falls back to auto-picked most-recent photo).
+export async function setPhotoAlbumCover(
+  id: string,
+  coverUrl: string | null
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ cover_image_url: coverUrl })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
+// Hide or unhide a photo album. Hidden albums vanish from public
+// listings but stay visible to admin with a "hidden" badge.
+export async function setPhotoAlbumHidden(id: string, hidden: boolean) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ hidden })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Delete a photo album. Photos in the album fall back to uncategorized
 // via the album_id FK's ON DELETE SET NULL.
 export async function deletePhotoAlbum(id: string) {

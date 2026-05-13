@@ -13,6 +13,7 @@ export function AlbumManager({
   onCreate,
   onRename,
   onDelete,
+  onSetHidden,
 }: {
   existing: Album[];
   /** "album" | "astrophoto album" — used in copy. */
@@ -21,6 +22,7 @@ export function AlbumManager({
   onCreate: (name: string) => Promise<ActionResult>;
   onRename: (id: string, newName: string) => Promise<ActionResult>;
   onDelete: (id: string) => Promise<ActionResult>;
+  onSetHidden: (id: string, hidden: boolean) => Promise<ActionResult>;
 }) {
   const [name, setName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export function AlbumManager({
               album={a}
               onRename={onRename}
               onDelete={onDelete}
+              onSetHidden={onSetHidden}
             />
           ))}
         </ul>
@@ -103,10 +106,12 @@ function AlbumRow({
   album,
   onRename,
   onDelete,
+  onSetHidden,
 }: {
   album: Album;
   onRename: (id: string, newName: string) => Promise<ActionResult>;
   onDelete: (id: string) => Promise<ActionResult>;
+  onSetHidden: (id: string, hidden: boolean) => Promise<ActionResult>;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -149,6 +154,19 @@ function AlbumRow({
     });
   }
 
+  function toggleHidden() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await onSetHidden(album.id, !album.hidden);
+        if (!res.ok) setError(res.error);
+        else router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "couldn’t reach the server.");
+      }
+    });
+  }
+
   return (
     <li className="flex flex-col gap-1">
       <div className="flex items-baseline gap-2 flex-wrap">
@@ -168,8 +186,20 @@ function AlbumRow({
             }}
           />
         ) : (
-          <span className="text-sm font-semibold text-pink-800 flex-1 min-w-[140px]">
-            {album.name}
+          <span className="flex items-center gap-1.5 flex-1 min-w-[140px]">
+            <span
+              className={
+                "text-sm font-semibold " +
+                (album.hidden ? "text-pink-800/55" : "text-pink-800")
+              }
+            >
+              {album.name}
+            </span>
+            {album.hidden ? (
+              <span className="rounded-pill bg-pink-200 text-white px-1.5 py-0.5 text-[9px] font-semibold">
+                hidden
+              </span>
+            ) : null}
           </span>
         )}
         {editing ? (
@@ -204,6 +234,15 @@ function AlbumRow({
               className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
             >
               ✎ rename
+            </button>
+            <button
+              type="button"
+              onClick={toggleHidden}
+              disabled={pending}
+              title={album.hidden ? "unhide album" : "hide album"}
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
+            >
+              {album.hidden ? "👁 unhide" : "🙈 hide"}
             </button>
             <button
               type="button"

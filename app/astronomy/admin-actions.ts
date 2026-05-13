@@ -43,6 +43,42 @@ export async function renameAstrophotoAlbum(id: string, newName: string) {
   return { ok: true as const };
 }
 
+// Set or clear the cover image URL for an astrophoto album.
+export async function setAstrophotoAlbumCover(
+  id: string,
+  coverUrl: string | null
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ cover_image_url: coverUrl })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
+// Hide or unhide an astrophoto album.
+export async function setAstrophotoAlbumHidden(
+  id: string,
+  hidden: boolean
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ hidden })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Delete an astrophoto album. Astrophotos fall back to uncategorized
 // via the FK's ON DELETE SET NULL.
 export async function deleteAstrophotoAlbum(id: string) {

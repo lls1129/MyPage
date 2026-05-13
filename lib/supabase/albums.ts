@@ -9,12 +9,14 @@ export type Album = {
   name: string;
   slug: string;
   kind: AlbumKind;
+  cover_image_url: string | null;
+  hidden: boolean;
   created_at: string;
 };
 
-// Cover photo metadata, picked at read time as the most recent
-// (non-hidden) photo in the album. Used by the library page to render
-// the album card.
+// Cover image + count of non-hidden photos for an album. Cover resolves
+// in priority order: explicit cover_image_url → most recent non-hidden
+// photo in the album → null (the card renders a gradient + initial).
 export type AlbumWithCover = Album & {
   cover_image_url: string | null;
   count: number;
@@ -32,13 +34,21 @@ export function slugify(name: string): string {
     .slice(0, 60);
 }
 
-// Public listing of albums for a given library. Sorted alphabetically.
-export async function listAlbums(kind: AlbumKind): Promise<Album[]> {
+// List albums for a given library. Public RLS already hides
+// hidden albums; pass `includeHidden=true` (admin context only) to
+// fetch them all via the service-role client.
+export async function listAlbums(
+  kind: AlbumKind,
+  includeHidden = false
+): Promise<Album[]> {
   const { configured } = readSupabaseEnv();
   if (!configured) return [];
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
+    const client =
+      includeHidden && isAdminConfigured()
+        ? createAdminClient()
+        : await createClient();
+    const { data, error } = await client
       .from("albums")
       .select("*")
       .eq("kind", kind)
@@ -50,28 +60,35 @@ export async function listAlbums(kind: AlbumKind): Promise<Album[]> {
   }
 }
 
-// Albums + auto-picked cover image for each (most recent non-hidden
-// photo in that album) + count of non-hidden photos. Empty albums get
-// cover_image_url=null but stay in the list so the admin can see them.
+// Albums + cover image for each. Cover resolves to:
+//   1. Album's explicit cover_image_url (admin pinned)
+//   2. Most recent non-hidden photo in the album (auto-pick)
+//   3. null (card falls back to gradient + initial)
+// `count` counts non-hidden photos. Hidden albums included only when
+// `isAdmin` is true.
 export async function listAlbumsWithCovers(
   kind: AlbumKind,
   isAdmin: boolean
 ): Promise<AlbumWithCover[]> {
-  const albums = await listAlbums(kind);
+  const albums = await listAlbums(kind, isAdmin);
   if (albums.length === 0) return [];
 
   const { configured } = readSupabaseEnv();
   if (!configured) {
-    return albums.map((a) => ({ ...a, cover_image_url: null, count: 0 }));
+    return albums.map((a) => ({
+      ...a,
+      cover_image_url: a.cover_image_url ?? null,
+      count: 0,
+    }));
   }
-  // Admin can see hidden rows; public RLS hides them already.
-  const supabase = isAdmin && isAdminConfigured()
-    ? createAdminClient()
-    : await createClient();
+  const supabase =
+    isAdmin && isAdminConfigured()
+      ? createAdminClient()
+      : await createClient();
   const table = kind === "photos" ? "photos" : "astrophotos";
 
   // Pull (album_id, image_url, created_at, hidden) for all rows in
-  // these albums, then group client-side. Cheaper than N round-trips.
+  // these albums, then group client-side.
   const ids = albums.map((a) => a.id);
   const { data, error } = await supabase
     .from(table)
@@ -79,7 +96,11 @@ export async function listAlbumsWithCovers(
     .in("album_id", ids)
     .order("created_at", { ascending: false });
   if (error || !data) {
-    return albums.map((a) => ({ ...a, cover_image_url: null, count: 0 }));
+    return albums.map((a) => ({
+      ...a,
+      cover_image_url: a.cover_image_url ?? null,
+      count: 0,
+    }));
   }
 
   type Row = {
@@ -99,19 +120,29 @@ export async function listAlbumsWithCovers(
   }
   return albums.map((a) => {
     const info = byAlbum.get(a.id) ?? { cover: null, count: 0 };
-    return { ...a, cover_image_url: info.cover, count: info.count };
+    return {
+      ...a,
+      // Explicit cover override wins. Otherwise auto-pick. Otherwise
+      // null → card falls back to gradient + initial.
+      cover_image_url: a.cover_image_url ?? info.cover,
+      count: info.count,
+    };
   });
 }
 
 export async function getAlbumBySlug(
   kind: AlbumKind,
-  slug: string
+  slug: string,
+  includeHidden = false
 ): Promise<Album | null> {
   const { configured } = readSupabaseEnv();
   if (!configured) return null;
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
+    const client =
+      includeHidden && isAdminConfigured()
+        ? createAdminClient()
+        : await createClient();
+    const { data, error } = await client
       .from("albums")
       .select("*")
       .eq("kind", kind)

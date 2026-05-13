@@ -154,7 +154,7 @@ export default async function AstronomyPage(
     await Promise.all([
       isAdmin ? listAllAstrophotosAsAdmin() : listAstrophotos(),
       listAlbumsWithCovers("astrophotos", isAdmin),
-      listAlbums("astrophotos"),
+      listAlbums("astrophotos", isAdmin),
     ]);
   const allAstrophotos =
     astrophotosResult.kind === "ok" ? astrophotosResult.astrophotos : [];

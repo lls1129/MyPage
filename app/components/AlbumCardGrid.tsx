@@ -44,7 +44,10 @@ export function AlbumCardGrid({
         <li key={a.id}>
           <Link
             href={`${basePath}/${encodeURIComponent(a.slug)}`}
-            className="lift block rounded-lg overflow-hidden bg-white border border-pink-100 shadow-soft"
+            className={
+              "lift block rounded-lg overflow-hidden bg-white border shadow-soft " +
+              (a.hidden ? "border-pink-300" : "border-pink-100")
+            }
           >
             <div className="aspect-square bg-pink-50 relative">
               {a.cover_image_url ? (
@@ -53,7 +56,10 @@ export function AlbumCardGrid({
                   src={a.cover_image_url}
                   alt={a.name}
                   loading="lazy"
-                  className="w-full h-full object-cover"
+                  className={
+                    "w-full h-full object-cover " +
+                    (a.hidden ? "opacity-70" : "")
+                  }
                 />
               ) : (
                 <div
@@ -68,6 +74,11 @@ export function AlbumCardGrid({
                   </span>
                 </div>
               )}
+              {a.hidden ? (
+                <span className="absolute top-1.5 left-1.5 rounded-pill bg-pink-200 text-white px-1.5 py-0.5 text-[10px] font-semibold shadow-soft">
+                  hidden
+                </span>
+              ) : null}
               <span className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-skynavy-900/80 to-transparent px-3 pt-6 pb-2">
                 <p className="font-script text-cream text-lg leading-tight">
                   {a.name}
