@@ -249,6 +249,45 @@ export function AlbumPageAdmin({
             </div>
           </div>
 
+          {album.cover_image_url ? (
+            <div className="flex items-center gap-2 rounded-md bg-pink-50 border border-pink-100 px-2 py-2">
+              <div className="relative w-14 h-14 shrink-0 rounded-md overflow-hidden border border-pink-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={album.cover_image_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1">
+                <p className="text-[11px] text-pink-800 font-semibold">
+                  current cover
+                </p>
+                <p className="text-[10px] text-ink/70 font-semibold">
+                  {coverCandidates.some(
+                    (c) => c.image_url === album.cover_image_url
+                  )
+                    ? "from this album"
+                    : "from URL"}
+                </p>
+                <p className="text-[10px] text-ink/55 font-mono truncate">
+                  {album.cover_image_url}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  album.cover_image_url && setPreviewUrl(album.cover_image_url)
+                }
+                className="rounded-full bg-white hover:bg-pink-50 text-pink-800 border border-pink-200 w-7 h-7 flex items-center justify-center text-[11px] font-semibold shrink-0"
+                title="view larger"
+                aria-label="view larger"
+              >
+                ⤢
+              </button>
+            </div>
+          ) : null}
+
           {coverCandidates.length > 0 ? (
             <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-2">
               {coverCandidates.map((c) => {
