@@ -35,9 +35,35 @@ export const FRAMES: FramePreset[] = [
     overlayClassName: "border-[3px] border-dashed border-pink-400 rounded-md",
   },
   {
+    id: "dotted",
+    label: "dotted",
+    overlayClassName: "border-[3px] border-dotted border-pink-400 rounded-md",
+  },
+  {
+    id: "double",
+    label: "double",
+    // Concentric pink–white–pink rings via stacked inset shadows.
+    overlayClassName:
+      "shadow-[inset_0_0_0_3px_#f9a8d4,inset_0_0_0_6px_#ffffff,inset_0_0_0_9px_#f9a8d4] rounded-md",
+  },
+  {
     id: "mat",
     label: "mat",
     overlayClassName: "border-[10px] border-cream rounded-md",
+  },
+  {
+    id: "polaroid",
+    // White border that's heavier on the bottom edge — classic polaroid
+    // photo look. The cover still occupies the whole tile; the border
+    // crops in on top.
+    label: "polaroid",
+    overlayClassName: "border-[6px] border-b-[18px] border-white",
+  },
+  {
+    id: "gilt",
+    label: "gilt",
+    overlayClassName:
+      "border-[4px] border-amber-200 shadow-[inset_0_0_0_2px_rgba(239,159,39,0.35)] rounded-md",
   },
   {
     id: "vignette",
@@ -55,6 +81,22 @@ export const FILTERS: FilterPreset[] = [
     id: "dreamy",
     label: "dreamy",
     css: "brightness(1.08) saturate(1.25) contrast(0.95)",
+  },
+  { id: "vivid", label: "vivid", css: "saturate(1.5) contrast(1.05)" },
+  {
+    id: "vintage",
+    label: "vintage",
+    css: "sepia(0.3) contrast(0.92) brightness(1.04) saturate(0.85)",
+  },
+  {
+    id: "pastel",
+    label: "pastel",
+    css: "saturate(0.7) brightness(1.08) sepia(0.15)",
+  },
+  {
+    id: "rosy",
+    label: "rosy",
+    css: "hue-rotate(-10deg) saturate(1.15) brightness(1.03)",
   },
 ];
 
