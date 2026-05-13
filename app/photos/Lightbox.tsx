@@ -1,15 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { createPortal } from "react-dom";
 import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
 import {
+  FILTERS,
+  FRAMES,
   filterCssFor,
   frameOverlayFor,
   resolveDecoration,
 } from "../components/cover-decorations";
+import { setPhotoDecorations } from "./admin-actions";
+import { useRouter } from "next/navigation";
 
 export function Lightbox({
   photos,
@@ -45,10 +55,31 @@ export function Lightbox({
   busy?: boolean;
   albumLink?: { href: string; label: string };
 }) {
+  const router = useRouter();
   const albumMap = useMemo(
     () => new Map(albums.map((a) => [a.id, a])),
     [albums]
   );
+  const [decorPending, startDecor] = useTransition();
+  const [decorError, setDecorError] = useState<string | null>(null);
+
+  function applyPhotoDecoration(
+    photoId: string,
+    patch: { frame?: string | null; filter?: string | null }
+  ) {
+    setDecorError(null);
+    startDecor(async () => {
+      try {
+        const res = await setPhotoDecorations(photoId, patch);
+        if (!res.ok) setDecorError(res.error ?? "couldn’t save decoration.");
+        else router.refresh();
+      } catch (e) {
+        setDecorError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
   const photo = photos[index];
 
   // Render into document.body so the fixed-position backdrop can't get
@@ -101,10 +132,18 @@ export function Lightbox({
       aria-modal="true"
       aria-label={photo.caption || "photo"}
       className="fixed inset-0 z-[100] bg-skynavy-900/95 backdrop-blur-sm flex flex-col"
+      style={{
+        // Honor iOS / Android safe areas so the top bar isn't trapped
+        // under the status notch or browser chrome on mobile.
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
       onClick={onClose}
     >
-      {/* Top bar */}
-      <div className="flex items-center justify-between p-4 text-cream/80 gap-2">
+      {/* Top bar — sticks to the top with a strong dark gradient so
+          the close button stays reachable even on tall portrait
+          phones where the photo would otherwise dominate. */}
+      <div className="flex items-center justify-between px-3 sm:px-4 py-3 text-cream/80 gap-2 shrink-0">
         <span className="font-script text-cream/70 text-xl select-none">
           {photo.hidden ? "○ hidden" : "✿"}
         </span>
@@ -112,7 +151,7 @@ export function Lightbox({
           {albumLink ? (
             <Link
               href={albumLink.href}
-              className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20"
+              className="rounded-pill px-3 py-2 text-sm font-semibold bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20"
             >
               {albumLink.label} →
             </Link>
@@ -121,9 +160,14 @@ export function Lightbox({
             type="button"
             onClick={onClose}
             aria-label="close"
-            className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/10 text-cream border border-cream/20 hover:bg-cream/20"
+            className="rounded-full w-11 h-11 sm:w-auto sm:h-auto sm:rounded-pill sm:px-3 sm:py-2 inline-flex items-center justify-center text-base sm:text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
           >
-            ✕ close
+            <span aria-hidden className="sm:hidden text-lg leading-none">
+              ✕
+            </span>
+            <span aria-hidden className="hidden sm:inline">
+              ✕ close
+            </span>
           </button>
         </div>
       </div>
@@ -136,28 +180,56 @@ export function Lightbox({
         <div className="relative flex-1 min-h-0 w-full max-w-[1100px] flex items-center justify-center">
           <NavArrow direction="prev" onClick={goPrev} />
 
-          <div className="relative max-h-full max-w-full inline-flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.image_url}
-              alt={photo.caption || ""}
-              style={{
-                transform: photo.rotation
-                  ? `rotate(${photo.rotation}deg)`
-                  : undefined,
-                filter: filterCss || undefined,
-              }}
-              className="max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform block"
-            />
-            {/* Frame overlay matched to the img's actual rendered
-                box so the decoration hugs the photo edges. */}
-            {frameClass ? (
-              <span
-                aria-hidden
-                className={"absolute inset-0 pointer-events-none " + frameClass}
-              />
-            ) : null}
-          </div>
+          {(() => {
+            // Size the wrapper to the photo's aspect-ratio so the
+            // frame overlay can hug the image's actual rendered
+            // edges (not the surrounding letterbox space). If the
+            // photo's dimensions aren't stored we skip the frame
+            // rather than render it misaligned.
+            const haveDims =
+              photo.width &&
+              photo.height &&
+              photo.width > 0 &&
+              photo.height > 0;
+            const aspect = haveDims
+              ? `${photo.width} / ${photo.height}`
+              : undefined;
+            return (
+              <div
+                className="relative"
+                style={{
+                  aspectRatio: aspect,
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.image_url}
+                  alt={photo.caption || ""}
+                  style={{
+                    transform: photo.rotation
+                      ? `rotate(${photo.rotation}deg)`
+                      : undefined,
+                    filter: filterCss || undefined,
+                  }}
+                  className={
+                    haveDims
+                      ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
+                      : "max-h-full max-w-full object-contain rounded-md shadow-soft transition-transform block"
+                  }
+                />
+                {haveDims && frameClass ? (
+                  <span
+                    aria-hidden
+                    className={
+                      "absolute inset-0 pointer-events-none " + frameClass
+                    }
+                  />
+                ) : null}
+              </div>
+            );
+          })()}
 
           <NavArrow direction="next" onClick={goNext} />
         </div>
@@ -231,6 +303,36 @@ export function Lightbox({
             </div>
           ) : null}
 
+          {isAdmin ? (
+            <div className="mt-3 flex flex-col gap-2">
+              <DecorationChipRow
+                label="frame"
+                options={FRAMES}
+                currentId={photo.cover_frame}
+                albumValue={album?.cover_frame ?? null}
+                disabled={decorPending}
+                onPick={(id) =>
+                  applyPhotoDecoration(photo.id, { frame: id })
+                }
+              />
+              <DecorationChipRow
+                label="filter"
+                options={FILTERS}
+                currentId={photo.cover_filter}
+                albumValue={album?.cover_filter ?? null}
+                disabled={decorPending}
+                onPick={(id) =>
+                  applyPhotoDecoration(photo.id, { filter: id })
+                }
+              />
+              {decorError ? (
+                <p className="text-[11px] text-pink-200 font-semibold">
+                  {decorError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <p className="text-[11px] text-cream/50 mt-3">
             {index + 1} of {photos.length} · arrow keys to browse · esc to close
           </p>
@@ -238,6 +340,85 @@ export function Lightbox({
       </div>
     </div>,
     document.body
+  );
+}
+
+// Dark-theme decoration chips for the lightbox meta panel. Same
+// click semantics as PhotoEditModal: null = follow album, preset
+// id = override; clicking a selected chip clears the override.
+function DecorationChipRow({
+  label,
+  options,
+  currentId,
+  albumValue,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  options: { id: string; label: string }[];
+  currentId: string | null;
+  albumValue: string | null;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+}) {
+  const inheritLabel =
+    albumValue && options.find((o) => o.id === albumValue)
+      ? `follow album · ${options.find((o) => o.id === albumValue)?.label}`
+      : "follow album";
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-[10px] uppercase tracking-wide font-bold text-cream/55 mr-1 w-12 shrink-0">
+        {label}
+      </span>
+      <ChipBtn
+        active={currentId === null}
+        onClick={() => onPick(null)}
+        disabled={disabled}
+      >
+        {inheritLabel}
+      </ChipBtn>
+      {options.map((opt) => {
+        const selected = currentId === opt.id;
+        return (
+          <ChipBtn
+            key={opt.id}
+            active={selected}
+            onClick={() => onPick(selected ? null : opt.id)}
+            disabled={disabled}
+          >
+            {opt.label}
+          </ChipBtn>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChipBtn({
+  children,
+  active,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "rounded-pill px-2.5 py-1 text-[11px] font-semibold border transition disabled:opacity-50 " +
+        (active
+          ? "bg-pink-300 text-white border-pink-300"
+          : "bg-cream/10 text-cream border-cream/20 hover:bg-cream/20")
+      }
+    >
+      {children}
+    </button>
   );
 }
 
