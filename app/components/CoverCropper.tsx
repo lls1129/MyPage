@@ -562,56 +562,99 @@ export function CoverCropper({
             </p>
           </div>
 
-          {/* Recent crops for this URL — fills the otherwise-empty
-              space below the preview on wide screens. Hidden on
-              mobile where the right column is already cramped. */}
+          {/* Desktop: recent crops fill the blank space below the
+              preview tile inside the right column. */}
           {natural && recentCrops.length > 0 ? (
-            <div className="hidden md:flex flex-col gap-1.5 pt-1">
-              <p className="label text-pink-600">recent crops</p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {recentCrops.map((c, i) => {
-                  const current =
-                    box &&
-                    Math.abs(c.x - previewCrop.x) < 0.001 &&
-                    Math.abs(c.y - previewCrop.y) < 0.001 &&
-                    Math.abs(c.w - previewCrop.w) < 0.001;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => applyRecent(c)}
-                      disabled={pending}
-                      title="apply this crop"
-                      className={
-                        "relative aspect-square rounded-md overflow-hidden border-2 transition disabled:opacity-60 " +
-                        (current
-                          ? "border-pink-400 ring-2 ring-pink-200"
-                          : "border-pink-100 hover:border-pink-300")
-                      }
-                    >
-                      <div
-                        className="absolute inset-0"
-                        style={{
-                          backgroundImage: `url("${imageUrl}")`,
-                          backgroundRepeat: "no-repeat",
-                          backgroundSize: `${100 / c.w}% ${100 / c.h}%`,
-                          backgroundPosition: `${
-                            c.w >= 1 ? 0 : (c.x * 100) / (1 - c.w)
-                          }% ${c.h >= 1 ? 0 : (c.y * 100) / (1 - c.h)}%`,
-                        }}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <RecentCropsGrid
+              wrapperClass="hidden md:flex flex-col gap-1.5 pt-1"
+              gridClass="grid grid-cols-3 gap-1.5"
+              recentCrops={recentCrops}
+              imageUrl={imageUrl}
+              previewCrop={previewCrop}
+              pending={pending}
+              onApply={applyRecent}
+            />
           ) : null}
         </div>
       </div>
 
+      {/* Mobile: a horizontal-style grid below the main row. Same
+          thumbnails as desktop, just placed where the layout has
+          room on small screens. */}
+      {natural && recentCrops.length > 0 ? (
+        <RecentCropsGrid
+          wrapperClass="md:hidden flex flex-col gap-1.5"
+          gridClass="grid grid-cols-6 gap-1.5"
+          recentCrops={recentCrops}
+          imageUrl={imageUrl}
+          previewCrop={previewCrop}
+          pending={pending}
+          onApply={applyRecent}
+        />
+      ) : null}
+
       {error ? (
         <p className="text-[11px] text-pink-600 font-semibold">{error}</p>
       ) : null}
+    </div>
+  );
+}
+
+function RecentCropsGrid({
+  wrapperClass,
+  gridClass,
+  recentCrops,
+  imageUrl,
+  previewCrop,
+  pending,
+  onApply,
+}: {
+  wrapperClass: string;
+  gridClass: string;
+  recentCrops: CoverCrop[];
+  imageUrl: string;
+  previewCrop: CoverCrop;
+  pending: boolean;
+  onApply: (c: CoverCrop) => void;
+}) {
+  return (
+    <div className={wrapperClass}>
+      <p className="label text-pink-600">recent crops</p>
+      <div className={gridClass}>
+        {recentCrops.map((c, i) => {
+          const current =
+            Math.abs(c.x - previewCrop.x) < 0.001 &&
+            Math.abs(c.y - previewCrop.y) < 0.001 &&
+            Math.abs(c.w - previewCrop.w) < 0.001;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onApply(c)}
+              disabled={pending}
+              title="apply this crop"
+              className={
+                "relative aspect-square rounded-md overflow-hidden border-2 transition disabled:opacity-60 " +
+                (current
+                  ? "border-pink-400 ring-2 ring-pink-200"
+                  : "border-pink-100 hover:border-pink-300")
+              }
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `url("${imageUrl}")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundSize: `${100 / c.w}% ${100 / c.h}%`,
+                  backgroundPosition: `${
+                    c.w >= 1 ? 0 : (c.x * 100) / (1 - c.w)
+                  }% ${c.h >= 1 ? 0 : (c.y * 100) / (1 - c.h)}%`,
+                }}
+              />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
