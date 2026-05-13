@@ -998,6 +998,59 @@ function PreviewOverlay({
   );
 }
 
+// Round chevron arrow used inside the batch editor for prev/next.
+// Mirrors the photo lightbox's NavArrow styling so the lightbox /
+// editor feel consistent. Click navigates only — saving is handled
+// separately by the "save & next" button or the "save" button.
+function BatchNavArrow({
+  direction,
+  disabled,
+  onClick,
+  title,
+}: {
+  direction: "prev" | "next";
+  disabled?: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  const isPrev = direction === "prev";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={title}
+      title={title}
+      className={
+        "absolute top-1/2 -translate-y-1/2 z-10 " +
+        "w-11 h-11 sm:w-12 sm:h-12 rounded-full " +
+        "bg-skynavy-900/55 hover:bg-skynavy-900/80 active:bg-skynavy-900/90 " +
+        "text-cream border border-cream/30 hover:border-cream/55 " +
+        "shadow-[0_4px_14px_rgba(0,0,0,0.35)] backdrop-blur-sm " +
+        "flex items-center justify-center transition disabled:opacity-25 disabled:cursor-not-allowed " +
+        (isPrev ? "left-2 sm:left-3" : "right-2 sm:right-3")
+      }
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.25}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="w-5 h-5 sm:w-[22px] sm:h-[22px]"
+        aria-hidden
+      >
+        {isPrev ? (
+          <polyline points="15 5 8 12 15 19" />
+        ) : (
+          <polyline points="9 5 16 12 9 19" />
+        )}
+      </svg>
+    </button>
+  );
+}
+
 // Success view for a batch upload (>1 file). Renders a compact grid
 // of thumbnails; clicking any one opens an edit overlay where admin
 // can tweak that specific photo's caption / tags / album / hidden.
@@ -1076,11 +1129,23 @@ function UploadSuccessGrid({
 
       {editingItem !== null && editingIndex !== null ? (
         <BatchItemEditor
+          // Re-key on item id so the editor's internal state (caption
+          // / tags / album / hidden drafts) re-initialises when we
+          // jump to a different photo via the prev/next arrows.
+          key={editingItem.id}
           item={editingItem}
+          index={editingIndex}
+          total={items.length}
           albums={albums}
           existingTags={existingTags}
           onClose={() => setEditingIndex(null)}
           onSaved={(next) => updateAt(editingIndex, next)}
+          onNavigate={(direction) => {
+            const nextIdx = editingIndex + direction;
+            if (nextIdx >= 0 && nextIdx < items.length) {
+              setEditingIndex(nextIdx);
+            }
+          }}
         />
       ) : null}
     </div>
@@ -1093,22 +1158,60 @@ function UploadSuccessGrid({
 // preserves whatever was last persisted.
 function BatchItemEditor({
   item,
+  index,
+  total,
   albums,
   existingTags,
   onClose,
   onSaved,
+  onNavigate,
 }: {
   item: SuccessItem;
+  /** Position of this item in the batch (0-based). */
+  index: number;
+  /** Total items in the batch. Used to gate prev/next at edges. */
+  total: number;
   albums: Album[];
   existingTags: string[];
   onClose: () => void;
   onSaved: (next: SuccessItem) => void;
+  /** Move to the next/prev photo in the batch. The editor saves
+   *  current edits first so the arrow feels like "save & next". */
+  onNavigate: (direction: -1 | 1) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Escape closes; arrow keys save-and-navigate. We ignore arrow
+  // keys while the focus is in an input/textarea/select so admin
+  // can still move the caret around inside fields.
   useEffect(() => {
+    function isTextFocus() {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (!isTextFocus()) {
+        // Arrow keys are pure navigation (no save) so admin can skip
+        // past photos they don't want to commit changes to.
+        if (e.key === "ArrowLeft" && index > 0) {
+          e.preventDefault();
+          onNavigate(-1);
+        } else if (e.key === "ArrowRight" && index < total - 1) {
+          e.preventDefault();
+          onNavigate(1);
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -1117,7 +1220,8 @@ function BatchItemEditor({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, index, total]);
 
   const [caption, setCaption] = useState(item.caption);
   const [tagList, setTagList] = useState<string[]>(item.tags);
@@ -1126,7 +1230,30 @@ function BatchItemEditor({
   const [hidden, setHidden] = useState(item.hidden);
   const [savePending, startSave] = useTransition();
   const [hidePending, startHide] = useTransition();
+  const [navPending, startNav] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+
+  const canPrev = index > 0;
+  const canNext = index < total - 1;
+
+  // Local helper — true when the draft differs from the last saved
+  // state. Used to warn admin near the save button so a stray arrow
+  // press doesn't silently lose work. tagDraft is folded in (the
+  // pending text becomes a chip on save).
+  function effectiveTags(list: string[], draft: string): string[] {
+    const d = draft.trim().toLowerCase();
+    if (!d || list.includes(d)) return list;
+    return [...list, d];
+  }
+  function tagsEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  const dirty =
+    caption.trim() !== item.caption ||
+    !tagsEqual(effectiveTags(tagList, tagDraft), item.tags) ||
+    (albumId || null) !== (item.albumId ?? null);
 
   const haveDims =
     item.width && item.height && item.width > 0 && item.height > 0;
@@ -1139,36 +1266,52 @@ function BatchItemEditor({
     ? `view in “${currentAlbum.name}”`
     : "view photos";
 
-  function save() {
+  // Persist the current draft to the server and update the parent's
+  // item record. Returns whether the save succeeded so callers
+  // (save, save&navigate) can branch.
+  async function persistDraft(): Promise<boolean> {
     setErr(null);
-    startSave(async () => {
-      try {
-        const fd = new FormData();
-        fd.set("id", item.id);
-        fd.set("caption", caption);
-        fd.set("tags", joinTags(tagList, tagDraft.trim().toLowerCase()));
-        fd.set("album_id", albumId);
-        const res = await updatePhotoMeta(fd);
-        if (!res.ok) {
-          setErr(res.error ?? "save failed.");
-          return;
-        }
-        const finalTags = (() => {
-          const d = tagDraft.trim().toLowerCase();
-          if (!d || tagList.includes(d)) return tagList;
-          return [...tagList, d];
-        })();
-        onSaved({
-          ...item,
-          caption: caption.trim(),
-          tags: finalTags,
-          albumId: albumId || null,
-          hidden,
-        });
-        onClose();
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
+    try {
+      const fd = new FormData();
+      fd.set("id", item.id);
+      fd.set("caption", caption);
+      fd.set("tags", joinTags(tagList, tagDraft.trim().toLowerCase()));
+      fd.set("album_id", albumId);
+      const res = await updatePhotoMeta(fd);
+      if (!res.ok) {
+        setErr(res.error ?? "save failed.");
+        return false;
       }
+      const finalTags = (() => {
+        const d = tagDraft.trim().toLowerCase();
+        if (!d || tagList.includes(d)) return tagList;
+        return [...tagList, d];
+      })();
+      onSaved({
+        ...item,
+        caption: caption.trim(),
+        tags: finalTags,
+        albumId: albumId || null,
+        hidden,
+      });
+      return true;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }
+
+  function save() {
+    startSave(async () => {
+      const ok = await persistDraft();
+      if (ok) onClose();
+    });
+  }
+
+  function saveAndNavigate(direction: -1 | 1) {
+    startNav(async () => {
+      const ok = await persistDraft();
+      if (ok) onNavigate(direction);
     });
   }
 
@@ -1201,7 +1344,7 @@ function BatchItemEditor({
     >
       <div className="flex items-center justify-between px-3 sm:px-4 py-3 text-cream/80 gap-2 shrink-0">
         <span className="font-script text-cream/70 text-xl select-none">
-          ✿ edit
+          ✿ edit · {index + 1} of {total}
         </span>
         <button
           type="button"
@@ -1223,23 +1366,41 @@ function BatchItemEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="min-h-full flex flex-col items-center px-4 pb-6 gap-4">
-          <div
-            className="relative"
-            style={{
-              aspectRatio: aspect,
-              maxWidth: "min(100%, 900px)",
-              maxHeight: "calc(100vh - 360px)",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={item.src}
-              alt={item.caption || "uploaded photo"}
-              className={
-                aspect
-                  ? "block w-full h-full object-contain rounded-md shadow-soft"
-                  : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft"
-              }
+          {/* Photo + prev/next arrows. The arrows are "save & {prev,
+              next}" — they persist the current draft before moving
+              on, so admin can sweep through a batch with one tap per
+              photo. */}
+          <div className="relative w-full flex items-center justify-center">
+            <BatchNavArrow
+              direction="prev"
+              disabled={!canPrev || savePending || navPending}
+              onClick={() => onNavigate(-1)}
+              title="previous (no save)"
+            />
+            <div
+              className="relative"
+              style={{
+                aspectRatio: aspect,
+                maxWidth: "min(100%, 900px)",
+                maxHeight: "calc(100vh - 360px)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={item.src}
+                alt={item.caption || "uploaded photo"}
+                className={
+                  aspect
+                    ? "block w-full h-full object-contain rounded-md shadow-soft"
+                    : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft"
+                }
+              />
+            </div>
+            <BatchNavArrow
+              direction="next"
+              disabled={!canNext || savePending || navPending}
+              onClick={() => onNavigate(1)}
+              title="next (no save)"
             />
           </div>
 
@@ -1311,19 +1472,34 @@ function BatchItemEditor({
               <button
                 type="button"
                 onClick={save}
-                disabled={savePending || hidePending}
+                disabled={savePending || hidePending || navPending}
                 className="rounded-pill bg-pink-300 text-white border border-pink-300 hover:bg-pink-400 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
               >
-                {savePending ? "saving…" : "save"}
+                {savePending && !navPending ? "saving…" : "save"}
               </button>
+              {canNext ? (
+                <button
+                  type="button"
+                  onClick={() => saveAndNavigate(1)}
+                  disabled={savePending || hidePending || navPending}
+                  className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:bg-pink-300 hover:border-pink-300 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+                >
+                  {navPending ? "saving…" : "save & next →"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={toggleHidden}
-                disabled={savePending || hidePending}
+                disabled={savePending || hidePending || navPending}
                 className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-3 py-2 text-sm font-semibold disabled:opacity-60"
               >
                 {hidePending ? "…" : hidden ? "◉ unhide" : "○ hide"}
               </button>
+              {dirty && !savePending && !navPending ? (
+                <span className="text-[11px] text-amber-200 font-semibold">
+                  unsaved
+                </span>
+              ) : null}
               <span className="flex-1" />
               <Link
                 href={albumLinkHref}
