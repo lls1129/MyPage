@@ -72,6 +72,8 @@ export function UploadForm({
   // whose pinned cover was reset as part of the cleanup. Dismissed
   // manually or replaced by a new delete.
   const [deleteNotice, setDeleteNotice] = useState<{
+    /** "single" = "deleted X"; "batch" = "cancelled upload of N photos". */
+    kind?: "single" | "batch";
     photoCaption: string;
     stillCoverFor: string[];
     autoShiftedFor: string[];
@@ -1249,6 +1251,7 @@ function DeleteNoticeBanner({
   onDismiss,
 }: {
   notice: {
+    kind?: "single" | "batch";
     photoCaption: string;
     stillCoverFor: string[];
     autoShiftedFor: string[];
@@ -1257,6 +1260,7 @@ function DeleteNoticeBanner({
 }) {
   const pinnedList = formatNameList(notice.stillCoverFor);
   const shiftedList = formatNameList(notice.autoShiftedFor);
+  const isBatch = notice.kind === "batch";
   return (
     <div
       role="status"
@@ -1264,19 +1268,21 @@ function DeleteNoticeBanner({
     >
       <div className="flex-1">
         <p className="font-semibold">
-          deleted “{notice.photoCaption}”.
+          {isBatch
+            ? `cancelled upload — removed ${notice.photoCaption}.`
+            : `deleted “${notice.photoCaption}”.`}
         </p>
         {notice.stillCoverFor.length > 0 ? (
           <p className="text-[11px] mt-0.5">
-            it’s still set as the cover for {pinnedList} — the photo is
+            still set as the cover for {pinnedList} — the photo is
             kept in storage so the cover keeps rendering. change it on
             the album page if you’d like to remove it.
           </p>
         ) : null}
         {notice.autoShiftedFor.length > 0 ? (
           <p className="text-[11px] mt-0.5">
-            it was the auto-picked cover for {shiftedList}; the next
-            photo there becomes the cover.
+            {isBatch ? "was" : "it was"} the auto-picked cover for{" "}
+            {shiftedList}; the next photo there becomes the cover.
           </p>
         ) : null}
       </div>
@@ -1398,6 +1404,7 @@ function UploadSuccessGrid({
   albums: Album[];
   existingTags: string[];
   notice: {
+    kind?: "single" | "batch";
     photoCaption: string;
     stillCoverFor: string[];
     autoShiftedFor: string[];
@@ -1405,6 +1412,7 @@ function UploadSuccessGrid({
   onUpdate: (next: SuccessItem[]) => void;
   onDismissNotice: () => void;
   onSetNotice: (info: {
+    kind?: "single" | "batch";
     photoCaption: string;
     stillCoverFor: string[];
     autoShiftedFor: string[];
@@ -1458,40 +1466,127 @@ function UploadSuccessGrid({
     ? `/photos/album/${encodeURIComponent(sharedAlbum.slug)}?show=all`
     : null;
 
+  // Batch-level "cancel" — discards every photo in the just-
+  // completed upload. Runs deletePhoto for each in turn so cover
+  // cleanup + storage policy stays consistent with the per-item
+  // delete flow. Aggregated cover impact is surfaced in one
+  // notice after the form resets.
+  const [cancelPending, startCancel] = useTransition();
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelErr, setCancelErr] = useState<string | null>(null);
+  function doCancel() {
+    setCancelErr(null);
+    startCancel(async () => {
+      const stillCoverFor: string[] = [];
+      const autoShiftedFor: string[] = [];
+      for (const it of items) {
+        try {
+          const res = await deletePhoto(it.id);
+          if (!res.ok) {
+            setCancelErr(res.error ?? "couldn’t cancel.");
+            return;
+          }
+          for (const n of res.stillCoverFor) {
+            if (!stillCoverFor.includes(n)) stillCoverFor.push(n);
+          }
+          for (const n of res.autoShiftedFor) {
+            if (!autoShiftedFor.includes(n)) autoShiftedFor.push(n);
+          }
+        } catch (e) {
+          setCancelErr(
+            e instanceof Error ? e.message : "couldn’t reach the server."
+          );
+          return;
+        }
+      }
+      const count = items.length;
+      onSetNotice({
+        kind: "batch",
+        photoCaption: `${count} photo${count === 1 ? "" : "s"}`,
+        stillCoverFor,
+        autoShiftedFor,
+      });
+      onResetForAnother();
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-4 sm:p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <p className="font-script text-pink-600 text-2xl leading-tight">
-          uploaded {items.length} ✿
-        </p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={onResetForAnother}
-            className="lift rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-4 py-2 text-sm font-semibold"
-          >
-            + upload another
-          </button>
-          {sharedAlbum && sharedAlbumHref ? (
-            <Link
-              href={sharedAlbumHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
-            >
-              view in “{sharedAlbum.name}” ↗
-            </Link>
-          ) : null}
+      {/* Header on its own row so the four CTAs below have a full
+          row to breathe — desktop was getting cramped at three
+          buttons before adding cancel; mobile already stacked. */}
+      <p className="font-script text-pink-600 text-2xl leading-tight">
+        uploaded {items.length} ✿
+      </p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={onResetForAnother}
+          disabled={cancelPending || confirmingCancel}
+          className="lift rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60"
+        >
+          + upload another
+        </button>
+        {sharedAlbum && sharedAlbumHref ? (
           <Link
-            href="/photos?show=all"
+            href={sharedAlbumHref}
             target="_blank"
             rel="noopener noreferrer"
             className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
           >
-            view photos ↗
+            view in “{sharedAlbum.name}” ↗
           </Link>
-        </div>
+        ) : null}
+        <Link
+          href="/photos?show=all"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
+        >
+          view photos ↗
+        </Link>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setConfirmingCancel(true)}
+          disabled={cancelPending || confirmingCancel}
+          title="discard every photo in this upload"
+          className="lift rounded-pill bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 hover:border-pink-300 px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          ✕ cancel
+        </button>
       </div>
+
+      {confirmingCancel ? (
+        <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-100/70 border border-pink-200 px-3 py-2 text-[12px] text-pink-800">
+          <span className="font-semibold">
+            discard all {items.length} photo
+            {items.length === 1 ? "" : "s"} in this upload? this can’t be
+            undone.
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={doCancel}
+            disabled={cancelPending}
+            className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+          >
+            {cancelPending ? "discarding…" : "yes, discard all"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmingCancel(false)}
+            disabled={cancelPending}
+            className="rounded-pill bg-white text-pink-800 border border-pink-200 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+          >
+            cancel
+          </button>
+        </div>
+      ) : null}
+
+      {cancelErr ? (
+        <p className="text-xs text-pink-600 font-semibold">{cancelErr}</p>
+      ) : null}
       {notice ? (
         <DeleteNoticeBanner notice={notice} onDismiss={onDismissNotice} />
       ) : null}
