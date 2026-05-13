@@ -126,6 +126,12 @@ export async function deletePhoto(id: string) {
       // a different bucket) still get cleaned up correctly.
       await admin.storage.from(ref.bucket).remove([ref.key]);
     }
+    // Cover-orphan cleanup: any album currently pinning this URL as
+    // its cover loses the pin (falls back to auto-pick / gradient),
+    // and any cover_history entry for this URL is dropped so the
+    // dead URL can't be re-pinned with one click later. Best-effort
+    // — failures here don't block the photo delete.
+    await cleanupCoverReferences(admin, row.image_url);
   }
 
   const { error: deleteError } = await admin
@@ -135,7 +141,58 @@ export async function deletePhoto(id: string) {
   if (deleteError) return { ok: false, error: deleteError.message };
 
   revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
   return { ok: true };
+}
+
+// Strip a URL from every album row that references it — both as
+// the pinned cover and as a recent-history entry. Run from the
+// service-role client so RLS doesn't filter rows out. Best-effort:
+// errors are swallowed (the delete shouldn't fail because of a
+// cleanup hiccup).
+async function cleanupCoverReferences(
+  admin: ReturnType<typeof createAdminClient>,
+  url: string
+) {
+  try {
+    // Clear cover_image_url on any album using this URL. The reset
+    // also restores crop fields so the next pinned cover starts
+    // fresh.
+    await admin
+      .from("albums")
+      .update({
+        cover_image_url: null,
+        cover_crop_x: 0,
+        cover_crop_y: 0,
+        cover_crop_w: 1,
+        cover_crop_h: 1,
+      })
+      .eq("cover_image_url", url);
+
+    // cover_history is jsonb — pull all rows whose history contains
+    // this URL, filter the array client-side, write back. Tiny
+    // table for this site so the read isn't a concern.
+    const { data: affected } = await admin
+      .from("albums")
+      .select("id, cover_history")
+      .contains("cover_history", [{ url }]);
+    if (Array.isArray(affected)) {
+      for (const row of affected) {
+        const history = Array.isArray(row.cover_history)
+          ? (row.cover_history as { url: string }[])
+          : [];
+        const next = history.filter((e) => e.url !== url);
+        if (next.length !== history.length) {
+          await admin
+            .from("albums")
+            .update({ cover_history: next })
+            .eq("id", row.id);
+        }
+      }
+    }
+  } catch {
+    // Swallow — the photo delete itself succeeded, cleanup is a nicety.
+  }
 }
 
 // Create a new album in the "photos" library. Returns the new row so

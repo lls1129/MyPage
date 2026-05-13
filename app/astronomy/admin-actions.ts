@@ -324,12 +324,48 @@ export async function deleteAstrophoto(id: string) {
       // Read bucket from URL — converted rows may live in a different one.
       await admin.storage.from(ref.bucket).remove([ref.key]);
     }
+    // Cover-orphan cleanup mirrors the photos side — any album
+    // using this URL as a cover loses the pin, and any
+    // cover_history entry for it is removed.
+    try {
+      await admin
+        .from("albums")
+        .update({
+          cover_image_url: null,
+          cover_crop_x: 0,
+          cover_crop_y: 0,
+          cover_crop_w: 1,
+          cover_crop_h: 1,
+        })
+        .eq("cover_image_url", row.image_url);
+      const { data: affected } = await admin
+        .from("albums")
+        .select("id, cover_history")
+        .contains("cover_history", [{ url: row.image_url }]);
+      if (Array.isArray(affected)) {
+        for (const r of affected) {
+          const history = Array.isArray(r.cover_history)
+            ? (r.cover_history as { url: string }[])
+            : [];
+          const next = history.filter((e) => e.url !== row.image_url);
+          if (next.length !== history.length) {
+            await admin
+              .from("albums")
+              .update({ cover_history: next })
+              .eq("id", r.id);
+          }
+        }
+      }
+    } catch {
+      // Best-effort: don't block the delete on a cleanup hiccup.
+    }
   }
 
   const { error } = await admin.from("astrophotos").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
   return { ok: true };
 }
 

@@ -388,17 +388,21 @@ export function UploadForm({
         ) : null}
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-ink/85 font-semibold cursor-pointer select-none">
-        <input
-          type="checkbox"
-          name="hidden"
-          className="accent-pink-400 w-4 h-4"
-        />
-        upload as hidden
-        <span className="text-[11px] text-lavender-600 font-normal">
-          (only you can see it until you unhide on /photos)
-        </span>
-      </label>
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-2 text-sm text-ink/85 font-semibold cursor-pointer select-none">
+          <input
+            type="checkbox"
+            name="hidden"
+            className="accent-pink-400 w-4 h-4"
+          />
+          upload as hidden
+        </label>
+        {/* Helper on its own row so the long explanatory text can't
+            wrap and squeeze the checkbox label on phones. */}
+        <p className="text-[11px] text-lavender-600 pl-6">
+          only you can see it until you unhide on /photos
+        </p>
+      </div>
 
       {error ? (
         <p className="text-xs text-pink-600 font-semibold">{error}</p>
@@ -1473,43 +1477,20 @@ function BatchItemEditor({
                   </option>
                 ))}
               </select>
-              {/* Contextual deep-link: lives with the album select so
-                  it doesn't compete with save / hide for action-row
-                  space (and so a save & next button appearing or
-                  disappearing can't push it to a second row on
-                  mobile). Reflects the *saved* album, not the draft —
-                  the link target only changes after admin saves. */}
-              <Link
-                href={albumLinkHref}
-                className="self-start text-[11px] text-cream/80 hover:text-cream underline-offset-2 hover:underline mt-0.5"
-              >
-                {albumLinkLabel} →
-              </Link>
             </div>
 
             {err ? (
               <p className="text-xs text-pink-200 font-semibold">{err}</p>
             ) : null}
 
+            {/* Action row laid out as a stable strip:
+                [hide] [save] [save & next] [spacer] [view in album].
+                save & next is always rendered (disabled when at the
+                last photo in the batch) so the surrounding buttons
+                don't reflow as admin navigates between items — the
+                pre-fix layout shimmer was the source of the earlier
+                "view in album" bouncing onto a second row. */}
             <div className="flex items-center gap-2 flex-wrap pt-1">
-              <button
-                type="button"
-                onClick={save}
-                disabled={savePending || hidePending || navPending}
-                className="rounded-pill bg-pink-300 text-white border border-pink-300 hover:bg-pink-400 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
-              >
-                {savePending && !navPending ? "saving…" : "save"}
-              </button>
-              {canNext ? (
-                <button
-                  type="button"
-                  onClick={() => saveAndNavigate(1)}
-                  disabled={savePending || hidePending || navPending}
-                  className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:bg-pink-300 hover:border-pink-300 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
-                >
-                  {navPending ? "saving…" : "save & next →"}
-                </button>
-              ) : null}
               <button
                 type="button"
                 onClick={toggleHidden}
@@ -1518,6 +1499,30 @@ function BatchItemEditor({
               >
                 {hidePending ? "…" : hidden ? "◉ unhide" : "○ hide"}
               </button>
+              <button
+                type="button"
+                onClick={save}
+                disabled={savePending || hidePending || navPending}
+                className="rounded-pill bg-pink-300 text-white border border-pink-300 hover:bg-pink-400 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+              >
+                {savePending && !navPending ? "saving…" : "save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => saveAndNavigate(1)}
+                disabled={!canNext || savePending || hidePending || navPending}
+                title={canNext ? "save & advance" : "no more photos in batch"}
+                className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:bg-pink-300 hover:border-pink-300 px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {navPending ? "saving…" : "save & next →"}
+              </button>
+              <span className="flex-1" />
+              <Link
+                href={albumLinkHref}
+                className="rounded-pill px-3 py-2 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
+              >
+                {albumLinkLabel} →
+              </Link>
             </div>
           </div>
         </div>
