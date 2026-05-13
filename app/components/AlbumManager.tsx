@@ -225,35 +225,34 @@ function AlbumRow({
             </button>
           </>
         ) : (
-          <>
-            <button
-              type="button"
+          // Group the action buttons so they wrap as one unit instead
+          // of breaking into a ragged second line on narrow widths.
+          // On mobile only the icon glyph shows; ≥sm we also render
+          // the word.
+          <span className="flex items-center gap-1.5 flex-wrap shrink-0">
+            <RowPill
               onClick={() => setEditing(true)}
               disabled={pending}
               title="rename"
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ✎ rename
-            </button>
-            <button
-              type="button"
+              icon="✎"
+              label="rename"
+            />
+            <RowPill
               onClick={toggleHidden}
               disabled={pending}
               title={album.hidden ? "unhide album" : "hide album"}
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              {album.hidden ? "👁 unhide" : "🙈 hide"}
-            </button>
-            <button
-              type="button"
+              icon={album.hidden ? "◉" : "○"}
+              label={album.hidden ? "unhide" : "hide"}
+            />
+            <RowPill
               onClick={() => setConfirmingDelete(true)}
               disabled={pending}
               title="delete"
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:bg-pink-100 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ✕ delete
-            </button>
-          </>
+              icon="✕"
+              label="delete"
+              danger
+            />
+          </span>
         )}
       </div>
       {confirmingDelete ? (
@@ -283,5 +282,45 @@ function AlbumRow({
         <p className="text-[11px] text-pink-600 font-semibold">{error}</p>
       ) : null}
     </li>
+  );
+}
+
+// Compact action button used inside AlbumRow. Icon glyph shows on
+// all widths; the word label only appears at sm+ so three buttons
+// fit on one row next to the album name on phone-sized screens.
+function RowPill({
+  onClick,
+  disabled,
+  title,
+  icon,
+  label,
+  danger,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+  icon: string;
+  label: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className={
+        "inline-flex items-center gap-1 rounded-pill bg-white text-pink-800 border border-pink-200 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60 " +
+        (danger
+          ? "hover:bg-pink-100 hover:border-pink-400"
+          : "hover:border-pink-400")
+      }
+    >
+      <span className="inline-flex w-3 justify-center text-pink-500">
+        {icon}
+      </span>
+      <span className="hidden sm:inline">{label}</span>
+    </button>
   );
 }
