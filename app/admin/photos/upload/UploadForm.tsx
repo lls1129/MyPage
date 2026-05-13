@@ -796,8 +796,13 @@ function UploadSuccessCard({
     });
   }
 
+  // Append ?show=all so the destination page defaults to showing
+  // hidden photos — admin who just uploaded as hidden expects to
+  // see their photo, not have it filtered out by the public view.
   const albumLinkHref =
-    currentAlbum ? `/photos/album/${encodeURIComponent(currentAlbum.slug)}` : "/photos";
+    currentAlbum
+      ? `/photos/album/${encodeURIComponent(currentAlbum.slug)}?show=all`
+      : "/photos?show=all";
   const albumLinkLabel = currentAlbum
     ? `view in “${currentAlbum.name}”`
     : "view photos";
@@ -835,10 +840,12 @@ function UploadSuccessCard({
             + upload another
           </button>
           <Link
-            href="/photos"
+            href="/photos?show=all"
+            target="_blank"
+            rel="noopener noreferrer"
             className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
           >
-            view photos
+            view photos ↗
           </Link>
         </div>
       </div>
@@ -1032,9 +1039,11 @@ function UploadSuccessCard({
               {currentAlbum ? (
                 <Link
                   href={albumLinkHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-2 text-sm font-semibold"
                 >
-                  {albumLinkLabel} →
+                  {albumLinkLabel} ↗
                 </Link>
               ) : null}
             </div>
@@ -1153,9 +1162,11 @@ function PreviewOverlay({
             </p>
             <Link
               href={albumLinkHref}
+              target="_blank"
+              rel="noopener noreferrer"
               className="rounded-pill px-3 py-1.5 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
             >
-              {albumLinkLabel} →
+              {albumLinkLabel} ↗
             </Link>
           </div>
         </div>
@@ -1432,6 +1443,21 @@ function UploadSuccessGrid({
 
   const editingItem = editingIndex !== null ? items[editingIndex] : null;
 
+  // If every photo in the batch is in the same album, expose a
+  // single "view in {album}" deep link in the top CTAs alongside
+  // "view photos". When items have mixed albums (admin edited some
+  // into different albums), hide it — there isn't a single target.
+  const sharedAlbum = (() => {
+    if (items.length === 0) return null;
+    const firstId = items[0].albumId;
+    if (!firstId) return null;
+    if (items.some((it) => it.albumId !== firstId)) return null;
+    return albums.find((a) => a.id === firstId) ?? null;
+  })();
+  const sharedAlbumHref = sharedAlbum
+    ? `/photos/album/${encodeURIComponent(sharedAlbum.slug)}?show=all`
+    : null;
+
   return (
     <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1446,11 +1472,23 @@ function UploadSuccessGrid({
           >
             + upload another
           </button>
+          {sharedAlbum && sharedAlbumHref ? (
+            <Link
+              href={sharedAlbumHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
+            >
+              view in “{sharedAlbum.name}” ↗
+            </Link>
+          ) : null}
           <Link
-            href="/photos"
+            href="/photos?show=all"
+            target="_blank"
+            rel="noopener noreferrer"
             className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
           >
-            view photos
+            view photos ↗
           </Link>
         </div>
       </div>
@@ -1682,9 +1720,11 @@ function BatchItemEditor({
     item.width && item.height && item.width > 0 && item.height > 0;
   const aspect = haveDims ? `${item.width} / ${item.height}` : undefined;
   const currentAlbum = albums.find((a) => a.id === item.albumId) ?? null;
+  // ?show=all so admin lands on a page already showing the photo
+  // they just edited (whether or not it's hidden).
   const albumLinkHref = currentAlbum
-    ? `/photos/album/${encodeURIComponent(currentAlbum.slug)}`
-    : "/photos";
+    ? `/photos/album/${encodeURIComponent(currentAlbum.slug)}?show=all`
+    : "/photos?show=all";
   const albumLinkLabel = currentAlbum
     ? `view in “${currentAlbum.name}”`
     : "view photos";
@@ -1999,9 +2039,11 @@ function BatchItemEditor({
               </button>
               <Link
                 href={albumLinkHref}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="rounded-pill px-3 py-2 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
               >
-                {albumLinkLabel} →
+                {albumLinkLabel} ↗
               </Link>
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
 import {
@@ -41,7 +41,13 @@ export function PhotoGrid({
   const [tag, setTag] = useState<string>("all");
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [editing, setEditing] = useState<Photo | null>(null);
-  const [showHidden, setShowHidden] = useState<boolean>(false);
+  // Default-on when ?show=all is in the URL — used by the upload
+  // editor's "view in album" deep link so admin lands on a page
+  // already showing the photo they just uploaded (which may be
+  // hidden). Admin can still toggle off via the show-hidden pill.
+  const searchParams = useSearchParams();
+  const wantsAllVisible = searchParams.get("show") === "all";
+  const [showHidden, setShowHidden] = useState<boolean>(wantsAllVisible);
   const [pending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
 
