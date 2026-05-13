@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Album, CoverHistoryEntry } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
 import { CoverUploader } from "./CoverUploader";
-import { FILTERS, FRAMES } from "./cover-decorations";
+import { FILTERS, FRAMES, FRAME_SIZES } from "./cover-decorations";
 import {
   getCropsForUrl,
   pushCrop,
@@ -62,7 +62,11 @@ export function AlbumPageAdmin({
   ) => Promise<ActionResult>;
   onSetCoverDecorations: (
     id: string,
-    patch: { frame?: string | null; filter?: string | null }
+    patch: {
+      frame?: string | null;
+      filter?: string | null;
+      frame_width?: string;
+    }
   ) => Promise<ActionResult>;
 }) {
   // libraryKind isn't used directly here yet; kept on the signature
@@ -229,7 +233,11 @@ export function AlbumPageAdmin({
     return res;
   }
 
-  function applyDecoration(patch: { frame?: string | null; filter?: string | null }) {
+  function applyDecoration(patch: {
+    frame?: string | null;
+    filter?: string | null;
+    frame_width?: string;
+  }) {
     setError(null);
     startTransition(async () => {
       try {
@@ -411,6 +419,7 @@ export function AlbumPageAdmin({
                 }}
                 recentCrops={recentCrops}
                 frame={album.cover_frame}
+                frameWidth={album.cover_frame_width}
                 filter={album.cover_filter}
                 onCommit={commitCrop}
               />
@@ -434,6 +443,19 @@ export function AlbumPageAdmin({
                   onPick={(id) => applyDecoration({ filter: id })}
                   disabled={pending}
                 />
+                {/* Frame size only matters when a frame is set, but
+                    showing it always lets admin pick the size first
+                    if they want. NULL chip is hidden — width has a
+                    sensible default (medium) and isn't nullable. */}
+                {album.cover_frame ? (
+                  <SizeRow
+                    label="size"
+                    options={FRAME_SIZES}
+                    currentId={album.cover_frame_width}
+                    onPick={(id) => applyDecoration({ frame_width: id })}
+                    disabled={pending}
+                  />
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -726,6 +748,47 @@ function DecorationRow({
             key={opt.id}
             type="button"
             onClick={() => onPick(selected ? null : opt.id)}
+            disabled={disabled}
+            className={
+              "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+              (selected
+                ? "bg-pink-300 text-white border-pink-300"
+                : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Variant of DecorationRow without the "none" chip — used for frame
+// size, which has a sensible non-null default (medium).
+function SizeRow({
+  label,
+  options,
+  currentId,
+  onPick,
+  disabled,
+}: {
+  label: string;
+  options: { id: string; label: string }[];
+  currentId: string;
+  onPick: (id: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <p className="label text-pink-600 shrink-0 w-12">{label}</p>
+      {options.map((opt) => {
+        const selected = currentId === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onPick(opt.id)}
             disabled={disabled}
             className={
               "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +

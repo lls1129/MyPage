@@ -1,19 +1,30 @@
 // Decoration presets for album covers. Single source of truth for
 // both the picker UI (chip buttons) and the renderers (card +
-// cropper preview).
+// cropper preview + photo grid + lightbox).
 //
 // Adding a preset: drop a new entry below. Class names must appear
-// as static string literals here so Tailwind's content scanner picks
-// them up — don't compose class names dynamically.
+// as static string literals here so Tailwind's content scanner
+// picks them up — don't compose class names dynamically.
+
+export type FrameSize = "thin" | "medium" | "thick";
+
+export const FRAME_SIZES: { id: FrameSize; label: string }[] = [
+  { id: "thin", label: "thin" },
+  { id: "medium", label: "medium" },
+  { id: "thick", label: "thick" },
+];
+
+function isFrameSize(v: string | null | undefined): v is FrameSize {
+  return v === "thin" || v === "medium" || v === "thick";
+}
 
 export type FramePreset = {
   id: string;
   label: string;
-  /** Classes applied to an overlay div sitting on top of the cover.
-   *  The renderer wraps this in `absolute inset-0 pointer-events-none`
-   *  so the frame paints over the image without intercepting clicks
-   *  or shrinking the cover. */
-  overlayClassName: string;
+  /** Classes for an overlay div (absolute inset-0 pointer-events-none)
+   *  that paints the frame on top of the cover. One variant per
+   *  size tier — admin picks both id and size in the cover picker. */
+  sizes: Record<FrameSize, string>;
 };
 
 export type FilterPreset = {
@@ -27,49 +38,80 @@ export const FRAMES: FramePreset[] = [
   {
     id: "soft",
     label: "soft pink",
-    overlayClassName: "border-[4px] border-pink-300 rounded-md",
+    sizes: {
+      thin: "border-[2px] border-pink-300 rounded-md",
+      medium: "border-[4px] border-pink-300 rounded-md",
+      thick: "border-[8px] border-pink-300 rounded-md",
+    },
   },
   {
     id: "dashed",
     label: "dashed",
-    overlayClassName: "border-[3px] border-dashed border-pink-400 rounded-md",
+    sizes: {
+      thin: "border-[2px] border-dashed border-pink-400 rounded-md",
+      medium: "border-[3px] border-dashed border-pink-400 rounded-md",
+      thick: "border-[6px] border-dashed border-pink-400 rounded-md",
+    },
   },
   {
     id: "dotted",
     label: "dotted",
-    overlayClassName: "border-[3px] border-dotted border-pink-400 rounded-md",
+    sizes: {
+      thin: "border-[2px] border-dotted border-pink-400 rounded-md",
+      medium: "border-[3px] border-dotted border-pink-400 rounded-md",
+      thick: "border-[6px] border-dotted border-pink-400 rounded-md",
+    },
   },
   {
     id: "double",
     label: "double",
-    // Concentric pink–white–pink rings via stacked inset shadows.
-    overlayClassName:
-      "shadow-[inset_0_0_0_3px_#f9a8d4,inset_0_0_0_6px_#ffffff,inset_0_0_0_9px_#f9a8d4] rounded-md",
+    sizes: {
+      // Concentric pink–white–pink rings via stacked inset shadows.
+      thin: "shadow-[inset_0_0_0_2px_#f9a8d4,inset_0_0_0_4px_#ffffff,inset_0_0_0_6px_#f9a8d4] rounded-md",
+      medium:
+        "shadow-[inset_0_0_0_3px_#f9a8d4,inset_0_0_0_6px_#ffffff,inset_0_0_0_9px_#f9a8d4] rounded-md",
+      thick:
+        "shadow-[inset_0_0_0_5px_#f9a8d4,inset_0_0_0_10px_#ffffff,inset_0_0_0_15px_#f9a8d4] rounded-md",
+    },
   },
   {
     id: "mat",
     label: "mat",
-    overlayClassName: "border-[10px] border-cream rounded-md",
+    sizes: {
+      thin: "border-[6px] border-cream rounded-md",
+      medium: "border-[10px] border-cream rounded-md",
+      thick: "border-[18px] border-cream rounded-md",
+    },
   },
   {
     id: "polaroid",
-    // White border that's heavier on the bottom edge — classic polaroid
-    // photo look. The cover still occupies the whole tile; the border
-    // crops in on top.
     label: "polaroid",
-    overlayClassName: "border-[6px] border-b-[18px] border-white",
+    sizes: {
+      // Heavier bottom for the iconic look. Scales the gap with size.
+      thin: "border-[4px] border-b-[12px] border-white",
+      medium: "border-[6px] border-b-[18px] border-white",
+      thick: "border-[10px] border-b-[30px] border-white",
+    },
   },
   {
     id: "gilt",
     label: "gilt",
-    overlayClassName:
-      "border-[4px] border-amber-200 shadow-[inset_0_0_0_2px_rgba(239,159,39,0.35)] rounded-md",
+    sizes: {
+      thin: "border-[2px] border-amber-200 shadow-[inset_0_0_0_1px_rgba(239,159,39,0.35)] rounded-md",
+      medium:
+        "border-[4px] border-amber-200 shadow-[inset_0_0_0_2px_rgba(239,159,39,0.35)] rounded-md",
+      thick:
+        "border-[8px] border-amber-200 shadow-[inset_0_0_0_3px_rgba(239,159,39,0.45)] rounded-md",
+    },
   },
   {
     id: "vignette",
     label: "vignette",
-    overlayClassName:
-      "shadow-[inset_0_0_24px_8px_rgba(64,40,82,0.45)] rounded-md",
+    sizes: {
+      thin: "shadow-[inset_0_0_16px_4px_rgba(64,40,82,0.35)] rounded-md",
+      medium: "shadow-[inset_0_0_24px_8px_rgba(64,40,82,0.45)] rounded-md",
+      thick: "shadow-[inset_0_0_40px_14px_rgba(64,40,82,0.55)] rounded-md",
+    },
   },
 ];
 
@@ -105,9 +147,8 @@ export const FILTERS: FilterPreset[] = [
 //   null  → inherit (fall back to album's value, else nothing)
 //   ""    → explicit no decoration (override an album default off)
 //   id    → explicit preset override
-// Lives here (not in lib/supabase/photos.ts) so client components
-// can import it without pulling in the server-only Supabase clients
-// from that file.
+// Frame width is album-only — photos inherit it whichever way their
+// frame resolves.
 function resolveOne(photoValue: string | null, albumValue: string | null) {
   if (photoValue === null) return albumValue ?? null; // inherit
   if (photoValue === "") return null; // explicit none
@@ -116,19 +157,36 @@ function resolveOne(photoValue: string | null, albumValue: string | null) {
 
 export function resolveDecoration(
   photo: { cover_frame: string | null; cover_filter: string | null },
-  album: { cover_frame: string | null; cover_filter: string | null } | null
-): { frame: string | null; filter: string | null } {
+  album: {
+    cover_frame: string | null;
+    cover_filter: string | null;
+    cover_frame_width?: string;
+  } | null
+): {
+  frame: string | null;
+  filter: string | null;
+  frameWidth: FrameSize;
+} {
   return {
     frame: resolveOne(photo.cover_frame, album?.cover_frame ?? null),
     filter: resolveOne(photo.cover_filter, album?.cover_filter ?? null),
+    frameWidth: isFrameSize(album?.cover_frame_width)
+      ? album.cover_frame_width
+      : "medium",
   };
 }
 
 // Lookup helpers — return empty string for unknown ids so renderer
 // treats stale/typo'd values as "no decoration" instead of throwing.
-export function frameOverlayFor(id: string | null | undefined): string {
+export function frameOverlayFor(
+  id: string | null | undefined,
+  size: string | null | undefined = "medium"
+): string {
   if (!id) return "";
-  return FRAMES.find((f) => f.id === id)?.overlayClassName ?? "";
+  const preset = FRAMES.find((f) => f.id === id);
+  if (!preset) return "";
+  const sz = isFrameSize(size) ? size : "medium";
+  return preset.sizes[sz] ?? "";
 }
 
 export function filterCssFor(id: string | null | undefined): string {

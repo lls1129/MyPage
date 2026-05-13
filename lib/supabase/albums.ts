@@ -57,6 +57,11 @@ function normalizeAlbum(row: Record<string, unknown>): Album {
       typeof row.cover_filter === "string" && row.cover_filter.length > 0
         ? row.cover_filter
         : null,
+    cover_frame_width:
+      typeof row.cover_frame_width === "string" &&
+      row.cover_frame_width.length > 0
+        ? row.cover_frame_width
+        : "medium",
     hidden: Boolean(row.hidden),
     created_at: row.created_at as string,
   };
@@ -107,6 +112,11 @@ export type Album = {
   // Tailwind classes and CSS filter strings. Null = none.
   cover_frame: string | null;
   cover_filter: string | null;
+  // Scaling factor for the frame overlay — see FRAME_WIDTHS in
+  // app/components/cover-decorations.ts. Default "medium" matches
+  // pre-0018 rendering. Photos that inherit (or override) this
+  // album's frame also inherit this width.
+  cover_frame_width: string;
   hidden: boolean;
   created_at: string;
 };

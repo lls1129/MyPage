@@ -266,13 +266,19 @@ export async function deletePhotoAlbum(id: string) {
 // clear a field.
 export async function setPhotoAlbumCoverDecorations(
   id: string,
-  patch: { frame?: string | null; filter?: string | null }
+  patch: {
+    frame?: string | null;
+    filter?: string | null;
+    frame_width?: string;
+  }
 ) {
   await requireAdmin();
   if (!id) return { ok: false as const, error: "missing album id" };
   const updates: Record<string, string | null> = {};
   if ("frame" in patch) updates.cover_frame = patch.frame ?? null;
   if ("filter" in patch) updates.cover_filter = patch.filter ?? null;
+  if ("frame_width" in patch && patch.frame_width)
+    updates.cover_frame_width = patch.frame_width;
   if (Object.keys(updates).length === 0) return { ok: true as const };
   const admin = createAdminClient();
   const { error } = await admin.from("albums").update(updates).eq("id", id);

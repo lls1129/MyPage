@@ -98,7 +98,7 @@ export function AlbumCardGrid({
                     <div
                       className={
                         "absolute inset-0 pointer-events-none " +
-                        frameOverlayFor(a.cover_frame)
+                        frameOverlayFor(a.cover_frame, a.cover_frame_width)
                       }
                       aria-hidden
                     />

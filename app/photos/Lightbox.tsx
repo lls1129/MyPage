@@ -115,7 +115,7 @@ export function Lightbox({
   const album = photo.album_id ? albumMap.get(photo.album_id) ?? null : null;
   const decor = resolveDecoration(photo, album);
   const filterCss = filterCssFor(decor.filter);
-  const frameClass = frameOverlayFor(decor.frame);
+  const frameClass = frameOverlayFor(decor.frame, decor.frameWidth);
 
   const date = photo.taken_at ?? photo.created_at;
   const dateLabel = date

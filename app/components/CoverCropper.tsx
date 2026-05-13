@@ -48,6 +48,7 @@ export function CoverCropper({
   initialCrop,
   recentCrops = [],
   frame = null,
+  frameWidth = "medium",
   filter = null,
   onCommit,
 }: {
@@ -57,6 +58,7 @@ export function CoverCropper({
   /** Decoration preset ids — applied to the preview tile only, so the
    *  preview matches what the actual card on /photos will render. */
   frame?: string | null;
+  frameWidth?: string;
   filter?: string | null;
   onCommit: (crop: CoverCrop) => Promise<ActionResult>;
 }) {
@@ -558,7 +560,7 @@ export function CoverCropper({
                     <div
                       className={
                         "absolute inset-0 pointer-events-none " +
-                        frameOverlayFor(frame)
+                        frameOverlayFor(frame, frameWidth)
                       }
                       aria-hidden
                     />

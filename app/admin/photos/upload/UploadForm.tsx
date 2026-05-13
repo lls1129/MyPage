@@ -43,49 +43,47 @@ export function UploadForm({
   const fileInput = useRef<HTMLInputElement>(null);
   const [tagList, setTagList] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState<string>("");
-  const [fileName, setFileName] = useState<string>("");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Selected files (one or many). Previews are object URLs we
+  // generate per file and revoke when we replace or reset the list.
+  const [selectedFiles, setSelectedFiles] = useState<
+    { file: File; previewUrl: string }[]
+  >([]);
   const [dragActive, setDragActive] = useState(false);
   const [pending, setPending] = useState(false);
   const [stageNote, setStageNote] = useState<string>("");
   const [error, setError] = useState<string | null>(initialError ?? null);
-  // Success state for the inline preview card. When set, the form is
-  // hidden and the admin can pick "upload another" to reset.
-  const [justUploaded, setJustUploaded] = useState<{
-    id: string;
-    src: string;
-    caption: string;
-    tags: string[];
-    albumId: string | null;
-    hidden: boolean;
-    width: number | null;
-    height: number | null;
-  } | null>(null);
+  // Success state — list of items, one per successful upload. The
+  // form is replaced by the success view as soon as the batch
+  // finishes (or the first one succeeds for single-file uploads).
+  const [justUploadedList, setJustUploadedList] = useState<
+    SuccessItem[]
+  >([]);
 
-  function setFile(file: File | null) {
-    if (!file) {
-      setFileName("");
-      setPreviewUrl(null);
-      return;
-    }
-    setFileName(file.name);
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
+  function setFiles(files: File[]) {
+    setSelectedFiles((prev) => {
+      // Revoke previous object URLs to avoid leaks.
+      for (const p of prev) URL.revokeObjectURL(p.previewUrl);
+      return files.map((f) => ({
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+      }));
     });
+    setError(null);
   }
 
   function onDrop(e: React.DragEvent<HTMLLabelElement>) {
     e.preventDefault();
     setDragActive(false);
-    const f = e.dataTransfer.files?.[0];
-    if (!f) return;
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      f.type.startsWith("image/")
+    );
+    if (files.length === 0) return;
     if (fileInput.current) {
       const dt = new DataTransfer();
-      dt.items.add(f);
+      for (const f of files) dt.items.add(f);
       fileInput.current.files = dt.files;
     }
-    setFile(f);
+    setFiles(files);
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -93,72 +91,101 @@ export function UploadForm({
     setError(null);
     const formEl = e.currentTarget;
     const formData = new FormData(formEl);
-    const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      setError("Please pick a file.");
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      setError("File must be an image.");
+    if (selectedFiles.length === 0) {
+      setError("Please pick at least one file.");
       return;
     }
 
     setPending(true);
+    // Read form-level fields that apply to ALL files in this batch.
+    const albumIdRaw = formData.get("album_id");
+    const sharedAlbumId =
+      typeof albumIdRaw === "string" && albumIdRaw !== ""
+        ? albumIdRaw
+        : null;
+    const sharedHidden = formData.get("hidden") === "on";
+    const sharedCaption = String(formData.get("caption") ?? "").trim();
+    const sharedTags = parseTagsCsv(String(formData.get("tags") ?? ""));
+
+    const uploaded: SuccessItem[] = [];
+    let failed = 0;
     try {
-      setStageNote("reading file…");
-      const exif = await parseExifInBrowser(file);
-      const dims = exif.width && exif.height ? exif : await readImageDimensions(file);
-
-      setStageNote("getting upload slot…");
-      const sign = await signPhotoUpload(extension(file.name));
-      if (!sign.ok) throw new Error(sign.error);
-
-      setStageNote("uploading…");
       const supabase = createClient();
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .uploadToSignedUrl(sign.path, sign.token, file, {
-          contentType: file.type,
-        });
-      if (upErr) throw new Error(upErr.message);
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const { file, previewUrl } = selectedFiles[i];
+        const labelN =
+          selectedFiles.length === 1
+            ? ""
+            : ` (${i + 1}/${selectedFiles.length})`;
+        try {
+          setStageNote(`reading file…${labelN}`);
+          const exif = await parseExifInBrowser(file);
+          const dims =
+            exif.width && exif.height ? exif : await readImageDimensions(file);
 
-      setStageNote("saving metadata…");
-      const albumIdRaw = formData.get("album_id");
-      const albumId =
-        typeof albumIdRaw === "string" && albumIdRaw !== ""
-          ? albumIdRaw
-          : null;
-      const hidden = formData.get("hidden") === "on";
-      const captionText = String(formData.get("caption") ?? "").trim();
-      const tagsArr = parseTagsCsv(String(formData.get("tags") ?? ""));
-      const result = await insertPhotoRow({
-        storagePath: sign.path,
-        imageUrl: sign.publicUrl,
-        caption: captionText,
-        tags: tagsArr,
-        takenAt: exif.takenAt,
-        width: dims?.width ?? null,
-        height: dims?.height ?? null,
-        albumId,
-        hidden,
-      });
-      if (!result.ok) throw new Error(result.error);
+          setStageNote(`signing…${labelN}`);
+          const sign = await signPhotoUpload(extension(file.name));
+          if (!sign.ok) throw new Error(sign.error);
 
-      // Show the inline success preview instead of navigating away.
-      // The Storage URL works for the thumbnail since the file is
-      // public; we keep the local previewUrl alive too just in case
-      // the CDN is slow on first hit.
-      setJustUploaded({
-        id: result.id,
-        src: sign.publicUrl || previewUrl || "",
-        caption: captionText,
-        tags: tagsArr,
-        albumId,
-        hidden,
-        width: dims?.width ?? null,
-        height: dims?.height ?? null,
-      });
-      router.refresh();
+          setStageNote(`uploading…${labelN}`);
+          const { error: upErr } = await supabase.storage
+            .from(BUCKET)
+            .uploadToSignedUrl(sign.path, sign.token, file, {
+              contentType: file.type,
+            });
+          if (upErr) throw new Error(upErr.message);
+
+          setStageNote(`saving metadata…${labelN}`);
+          // Shared caption only applies to the first file when
+          // uploading many — re-using it for the rest would
+          // duplicate text in unhelpful ways. Admin can edit
+          // each photo's caption in the success grid.
+          const caption =
+            selectedFiles.length === 1 || i === 0 ? sharedCaption : "";
+          const result = await insertPhotoRow({
+            storagePath: sign.path,
+            imageUrl: sign.publicUrl,
+            caption,
+            tags: sharedTags,
+            takenAt: exif.takenAt,
+            width: dims?.width ?? null,
+            height: dims?.height ?? null,
+            albumId: sharedAlbumId,
+            hidden: sharedHidden,
+          });
+          if (!result.ok) throw new Error(result.error);
+
+          uploaded.push({
+            id: result.id,
+            src: sign.publicUrl || previewUrl,
+            caption,
+            tags: sharedTags,
+            albumId: sharedAlbumId,
+            hidden: sharedHidden,
+            width: dims?.width ?? null,
+            height: dims?.height ?? null,
+          });
+        } catch (err) {
+          failed += 1;
+          // Track the first failure to surface inline; continue with
+          // remaining files so a single bad upload doesn't abort the
+          // whole batch.
+          if (!error) {
+            setError(
+              `${file.name}: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            );
+          }
+        }
+      }
+      if (uploaded.length > 0) {
+        setJustUploadedList(uploaded);
+        router.refresh();
+      }
+      if (uploaded.length === 0 && failed > 0 && !error) {
+        setError("All uploads failed. Check file types and try again.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -168,26 +195,37 @@ export function UploadForm({
   }
 
   function resetForAnother() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setFileName("");
-    setPreviewUrl(null);
+    for (const p of selectedFiles) URL.revokeObjectURL(p.previewUrl);
+    setSelectedFiles([]);
     setTagList([]);
     setTagDraft("");
     setError(null);
-    setJustUploaded(null);
+    setJustUploadedList([]);
     if (fileInput.current) fileInput.current.value = "";
   }
 
-  // Inline success card after a successful upload — replaces the
-  // form with a thumbnail + edit panel + "upload another" CTA so
-  // admin can confirm + tweak the result without leaving the page.
-  if (justUploaded) {
+  // Inline success card after a successful upload. Single-file
+  // uploads keep the existing thumbnail-plus-edit-panel layout; a
+  // batch upload renders the items as a grid where clicking a
+  // thumbnail opens the editor in an overlay.
+  if (justUploadedList.length === 1) {
     return (
       <UploadSuccessCard
-        item={justUploaded}
+        item={justUploadedList[0]}
         albums={albums}
         existingTags={existingTags}
-        onUpdate={(next) => setJustUploaded(next)}
+        onUpdate={(next) => setJustUploadedList([next])}
+        onResetForAnother={resetForAnother}
+      />
+    );
+  }
+  if (justUploadedList.length > 1) {
+    return (
+      <UploadSuccessGrid
+        items={justUploadedList}
+        albums={albums}
+        existingTags={existingTags}
+        onUpdate={(next) => setJustUploadedList(next)}
         onResetForAnother={resetForAnother}
       />
     );
@@ -214,22 +252,52 @@ export function UploadForm({
             : "bg-pink-50/60 border-pink-200 hover:border-pink-400")
         }
       >
-        {previewUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={previewUrl}
-            alt="preview"
-            className="mx-auto max-h-64 rounded-sm border border-pink-100"
-          />
-        ) : (
+        {selectedFiles.length === 0 ? (
           <>
             <p className="font-script text-pink-600 text-2xl">
-              drop a photo here ✿
+              drop photos here ✿
             </p>
             <p className="text-xs text-lavender-600 mt-2 font-semibold">
-              or click to choose · uploads directly to storage · no size cap
+              one or many · uploads directly to storage · no size cap
             </p>
           </>
+        ) : selectedFiles.length === 1 ? (
+          // Single selection: show the full preview thumbnail like
+          // before.
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={selectedFiles[0].previewUrl}
+              alt="preview"
+              className="mx-auto max-h-64 rounded-sm border border-pink-100"
+            />
+            <p className="text-xs text-pink-600 mt-3 font-semibold truncate">
+              {selectedFiles[0].file.name}
+            </p>
+          </>
+        ) : (
+          // Multiple selection: small thumbnail strip + count.
+          <div className="flex flex-col gap-3 items-center">
+            <div className="flex flex-wrap items-center justify-center gap-2 max-h-40 overflow-hidden">
+              {selectedFiles.slice(0, 10).map((p, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={p.previewUrl}
+                  alt=""
+                  className="w-16 h-16 object-cover rounded-sm border border-pink-100"
+                />
+              ))}
+              {selectedFiles.length > 10 ? (
+                <span className="text-[11px] text-pink-700 font-semibold px-2">
+                  +{selectedFiles.length - 10} more
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-pink-600 font-semibold">
+              {selectedFiles.length} photos selected
+            </p>
+          </div>
         )}
         <input
           ref={fileInput}
@@ -237,15 +305,13 @@ export function UploadForm({
           name="file"
           type="file"
           accept="image/*"
+          multiple
           required
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) =>
+            setFiles(Array.from(e.target.files ?? []))
+          }
           className="sr-only"
         />
-        {fileName ? (
-          <p className="text-xs text-pink-600 mt-3 font-semibold truncate">
-            {fileName}
-          </p>
-        ) : null}
       </label>
 
       <div className="flex flex-col gap-2">
@@ -924,6 +990,348 @@ function PreviewOverlay({
             >
               {albumLinkLabel} →
             </Link>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Success view for a batch upload (>1 file). Renders a compact grid
+// of thumbnails; clicking any one opens an edit overlay where admin
+// can tweak that specific photo's caption / tags / album / hidden.
+// Mobile-friendly by default — no per-item edit panel inline, since
+// many would make the page very long.
+function UploadSuccessGrid({
+  items,
+  albums,
+  existingTags,
+  onUpdate,
+  onResetForAnother,
+}: {
+  items: SuccessItem[];
+  albums: Album[];
+  existingTags: string[];
+  onUpdate: (next: SuccessItem[]) => void;
+  onResetForAnother: () => void;
+}) {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  function updateAt(idx: number, next: SuccessItem) {
+    onUpdate(items.map((it, i) => (i === idx ? next : it)));
+  }
+
+  const editingItem = editingIndex !== null ? items[editingIndex] : null;
+
+  return (
+    <div className="flex flex-col gap-4 mt-6 rounded-lg bg-white border border-pink-100 shadow-soft p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p className="font-script text-pink-600 text-2xl leading-tight">
+          uploaded {items.length} ✿
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={onResetForAnother}
+            className="lift rounded-pill bg-pink-200 text-white border border-pink-200 shadow-soft hover:border-pink-400 px-4 py-2 text-sm font-semibold"
+          >
+            + upload another
+          </button>
+          <Link
+            href="/photos"
+            className="lift rounded-pill bg-white text-pink-800 border border-pink-100 hover:border-pink-200 px-4 py-2 text-sm font-semibold"
+          >
+            view photos
+          </Link>
+        </div>
+      </div>
+      <p className="text-[11px] text-lavender-600 font-semibold">
+        tap a photo to edit caption / tags / album / visibility.
+      </p>
+
+      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {items.map((it, i) => (
+          <li key={it.id}>
+            <button
+              type="button"
+              onClick={() => setEditingIndex(i)}
+              className="block w-full aspect-square rounded-md overflow-hidden border border-pink-100 hover:border-pink-300 bg-pink-50/40 relative"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={it.src}
+                alt={it.caption || "uploaded photo"}
+                className="w-full h-full object-cover"
+              />
+              {it.hidden ? (
+                <span className="absolute top-1.5 left-1.5 rounded-pill bg-lavender-100/95 text-lavender-800 px-1.5 py-0.5 text-[9px] font-semibold border border-lavender-200">
+                  hidden
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {editingItem !== null && editingIndex !== null ? (
+        <BatchItemEditor
+          item={editingItem}
+          albums={albums}
+          existingTags={existingTags}
+          onClose={() => setEditingIndex(null)}
+          onSaved={(next) => updateAt(editingIndex, next)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Per-item edit overlay used by UploadSuccessGrid. Wraps the photo
+// at viewport size and lets admin tweak caption / tags / album /
+// visibility inline. Save closes the overlay; close-without-save
+// preserves whatever was last persisted.
+function BatchItemEditor({
+  item,
+  albums,
+  existingTags,
+  onClose,
+  onSaved,
+}: {
+  item: SuccessItem;
+  albums: Album[];
+  existingTags: string[];
+  onClose: () => void;
+  onSaved: (next: SuccessItem) => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  const [caption, setCaption] = useState(item.caption);
+  const [tagList, setTagList] = useState<string[]>(item.tags);
+  const [tagDraft, setTagDraft] = useState("");
+  const [albumId, setAlbumId] = useState<string>(item.albumId ?? "");
+  const [hidden, setHidden] = useState(item.hidden);
+  const [savePending, startSave] = useTransition();
+  const [hidePending, startHide] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  const haveDims =
+    item.width && item.height && item.width > 0 && item.height > 0;
+  const aspect = haveDims ? `${item.width} / ${item.height}` : undefined;
+  const currentAlbum = albums.find((a) => a.id === item.albumId) ?? null;
+  const albumLinkHref = currentAlbum
+    ? `/photos/album/${encodeURIComponent(currentAlbum.slug)}`
+    : "/photos";
+  const albumLinkLabel = currentAlbum
+    ? `view in “${currentAlbum.name}”`
+    : "view photos";
+
+  function save() {
+    setErr(null);
+    startSave(async () => {
+      try {
+        const fd = new FormData();
+        fd.set("id", item.id);
+        fd.set("caption", caption);
+        fd.set("tags", joinTags(tagList, tagDraft.trim().toLowerCase()));
+        fd.set("album_id", albumId);
+        const res = await updatePhotoMeta(fd);
+        if (!res.ok) {
+          setErr(res.error ?? "save failed.");
+          return;
+        }
+        const finalTags = (() => {
+          const d = tagDraft.trim().toLowerCase();
+          if (!d || tagList.includes(d)) return tagList;
+          return [...tagList, d];
+        })();
+        onSaved({
+          ...item,
+          caption: caption.trim(),
+          tags: finalTags,
+          albumId: albumId || null,
+          hidden,
+        });
+        onClose();
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    });
+  }
+
+  function toggleHidden() {
+    const next = !hidden;
+    startHide(async () => {
+      try {
+        const res = await togglePhotoHidden(item.id, next);
+        if (!res.ok) {
+          setErr(res.error ?? "couldn’t change visibility.");
+          return;
+        }
+        setHidden(next);
+        onSaved({ ...item, hidden: next });
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    });
+  }
+
+  if (!mounted) return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] bg-skynavy-900/90 backdrop-blur-sm flex flex-col"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+      onClick={onClose}
+    >
+      <div className="flex items-center justify-between px-3 sm:px-4 py-3 text-cream/80 gap-2 shrink-0">
+        <span className="font-script text-cream/70 text-xl select-none">
+          ✿ edit
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="close"
+          className="rounded-full w-11 h-11 sm:w-auto sm:h-auto sm:rounded-pill sm:px-3 sm:py-2 inline-flex items-center justify-center text-base sm:text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
+        >
+          <span aria-hidden className="sm:hidden text-lg leading-none">
+            ✕
+          </span>
+          <span aria-hidden className="hidden sm:inline">
+            ✕ close
+          </span>
+        </button>
+      </div>
+
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="min-h-full flex flex-col items-center px-4 pb-6 gap-4">
+          <div
+            className="relative"
+            style={{
+              aspectRatio: aspect,
+              maxWidth: "min(100%, 900px)",
+              maxHeight: "calc(100vh - 360px)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.src}
+              alt={item.caption || "uploaded photo"}
+              className={
+                aspect
+                  ? "block w-full h-full object-contain rounded-md shadow-soft"
+                  : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft"
+              }
+            />
+          </div>
+
+          <div className="w-full max-w-[680px] rounded-md bg-cream/5 border border-cream/10 px-4 py-3 text-cream flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase tracking-wide font-bold text-cream/55">
+                caption
+              </label>
+              <input
+                type="text"
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                maxLength={240}
+                placeholder="a sentence or two…"
+                className="bg-cream/10 border border-cream/20 rounded-sm px-3 py-2 text-sm text-cream placeholder:text-cream/40 focus:outline-none focus:border-cream/50"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide font-bold text-cream/55">
+                tags
+              </span>
+              <TagChipInput
+                tags={tagList}
+                draft={tagDraft}
+                setTags={setTagList}
+                setDraft={setTagDraft}
+              />
+              {existingTags.length > 0 ? (
+                <TagSuggestions
+                  available={existingTags}
+                  current={tagList}
+                  onPick={(t) =>
+                    setTagList(
+                      tagList.includes(t)
+                        ? tagList.filter((x) => x !== t)
+                        : [...tagList, t]
+                    )
+                  }
+                />
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase tracking-wide font-bold text-cream/55">
+                album
+              </label>
+              <select
+                value={albumId}
+                onChange={(e) => setAlbumId(e.target.value)}
+                className="bg-cream/10 border border-cream/20 rounded-sm px-3 py-2 text-sm text-cream focus:outline-none focus:border-cream/50"
+              >
+                <option value="" className="text-ink">
+                  — uncategorized —
+                </option>
+                {albums.map((a) => (
+                  <option key={a.id} value={a.id} className="text-ink">
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {err ? (
+              <p className="text-xs text-pink-200 font-semibold">{err}</p>
+            ) : null}
+
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <button
+                type="button"
+                onClick={save}
+                disabled={savePending || hidePending}
+                className="rounded-pill bg-pink-300 text-white border border-pink-300 hover:bg-pink-400 hover:border-pink-400 px-4 py-2 text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+              >
+                {savePending ? "saving…" : "save"}
+              </button>
+              <button
+                type="button"
+                onClick={toggleHidden}
+                disabled={savePending || hidePending}
+                className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-3 py-2 text-sm font-semibold disabled:opacity-60"
+              >
+                {hidePending ? "…" : hidden ? "◉ unhide" : "○ hide"}
+              </button>
+              <span className="flex-1" />
+              <Link
+                href={albumLinkHref}
+                className="rounded-pill px-3 py-2 text-sm font-semibold bg-cream/15 text-cream border border-cream/30 hover:bg-cream/25"
+              >
+                {albumLinkLabel} →
+              </Link>
+            </div>
           </div>
         </div>
       </div>

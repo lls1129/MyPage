@@ -316,6 +316,7 @@ function MasonryGrid({
                 key={photo.id}
                 photo={photo}
                 frame={decor.frame}
+                frameWidth={decor.frameWidth}
                 filter={decor.filter}
                 isAdmin={isAdmin}
                 eager={globalIndex < 6}
@@ -338,6 +339,7 @@ function MasonryGrid({
 function PhotoTile({
   photo,
   frame,
+  frameWidth,
   filter,
   isAdmin,
   eager,
@@ -351,6 +353,7 @@ function PhotoTile({
 }: {
   photo: Photo;
   frame: string | null;
+  frameWidth: string;
   filter: string | null;
   isAdmin: boolean;
   eager: boolean;
@@ -363,7 +366,7 @@ function PhotoTile({
   busy: boolean;
 }) {
   const filterCss = filterCssFor(filter);
-  const frameClass = frameOverlayFor(frame);
+  const frameClass = frameOverlayFor(frame, frameWidth);
   return (
     <div
       className={
