@@ -22,9 +22,11 @@ function normalize(p: Promise<{ ok: boolean; error?: string }>) {
 export function PhotoAlbumPageAdminWrapper({
   album,
   coverCandidates,
+  allAlbums,
 }: {
   album: Album;
   coverCandidates: { id: string; image_url: string }[];
+  allAlbums: Album[];
 }) {
   return (
     <AlbumPageAdmin
@@ -32,6 +34,7 @@ export function PhotoAlbumPageAdminWrapper({
       parentHref="/photos"
       libraryKind="photos"
       coverCandidates={coverCandidates}
+      allAlbums={allAlbums}
       onRename={(id, name) => normalize(renamePhotoAlbum(id, name))}
       onDelete={(id) => normalize(deletePhotoAlbum(id))}
       onSetCover={(id, url) => normalize(setPhotoAlbumCover(id, url))}

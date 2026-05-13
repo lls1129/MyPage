@@ -22,9 +22,11 @@ function normalize(p: Promise<{ ok: boolean; error?: string }>) {
 export function AstrophotoAlbumPageAdminWrapper({
   album,
   coverCandidates,
+  allAlbums,
 }: {
   album: Album;
   coverCandidates: { id: string; image_url: string }[];
+  allAlbums: Album[];
 }) {
   return (
     <AlbumPageAdmin
@@ -32,6 +34,7 @@ export function AstrophotoAlbumPageAdminWrapper({
       parentHref="/astronomy"
       libraryKind="astrophotos"
       coverCandidates={coverCandidates}
+      allAlbums={allAlbums}
       onRename={(id, name) => normalize(renameAstrophotoAlbum(id, name))}
       onDelete={(id) => normalize(deleteAstrophotoAlbum(id))}
       onSetCover={(id, url) => normalize(setAstrophotoAlbumCover(id, url))}

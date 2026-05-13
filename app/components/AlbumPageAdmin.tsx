@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Album, CoverHistoryEntry } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
+import { CoverUploader } from "./CoverUploader";
 import {
   getCropsForUrl,
   pushCrop,
@@ -26,6 +27,7 @@ export function AlbumPageAdmin({
   parentHref,
   libraryKind,
   coverCandidates,
+  allAlbums,
   onRename,
   onDelete,
   onSetCover,
@@ -41,6 +43,9 @@ export function AlbumPageAdmin({
   libraryKind: LibraryKind;
   /** Photos in this album the admin can pin as the cover. */
   coverCandidates: CoverCandidate[];
+  /** All albums in this library, used by the cover uploader's
+   *  "also save in album" selector. */
+  allAlbums: Album[];
   onRename: (id: string, newName: string) => Promise<ActionResult>;
   onDelete: (id: string) => Promise<ActionResult>;
   onSetCover: (id: string, coverUrl: string | null) => Promise<ActionResult>;
@@ -529,6 +534,17 @@ export function AlbumPageAdmin({
               {pending ? "saving…" : "use URL"}
             </button>
           </div>
+
+          {/* Cover-only upload. Photo albums only for now — astrophoto
+              cover upload would need parallel server actions and isn't
+              part of this iteration. */}
+          {album.kind === "photos" ? (
+            <CoverUploader
+              currentAlbumId={album.id}
+              allAlbums={allAlbums}
+              onUploaded={(url) => pickCover(url)}
+            />
+          ) : null}
         </div>
       ) : null}
 

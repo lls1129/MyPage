@@ -62,6 +62,7 @@ export default async function AstrophotoAlbumPage(
             id: a.id,
             image_url: a.image_url,
           }))}
+          allAlbums={allAlbums}
         />
       ) : null}
 

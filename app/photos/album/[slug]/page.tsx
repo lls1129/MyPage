@@ -61,6 +61,7 @@ export default async function PhotoAlbumPage(
             id: p.id,
             image_url: p.image_url,
           }))}
+          allAlbums={allAlbums}
         />
       ) : null}
 
