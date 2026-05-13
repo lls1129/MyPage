@@ -5,6 +5,7 @@ import {
   renameAstrophotoAlbum,
   deleteAstrophotoAlbum,
   setAstrophotoAlbumCover,
+  setAstrophotoAlbumCoverCrop,
   setAstrophotoAlbumHidden,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
@@ -32,6 +33,9 @@ export function AstrophotoAlbumPageAdminWrapper({
       onRename={(id, name) => normalize(renameAstrophotoAlbum(id, name))}
       onDelete={(id) => normalize(deleteAstrophotoAlbum(id))}
       onSetCover={(id, url) => normalize(setAstrophotoAlbumCover(id, url))}
+      onSetCoverCrop={(id, crop) =>
+        normalize(setAstrophotoAlbumCoverCrop(id, crop))
+      }
       onSetHidden={(id, hidden) =>
         normalize(setAstrophotoAlbumHidden(id, hidden))
       }

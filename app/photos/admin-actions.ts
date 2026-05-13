@@ -156,8 +156,38 @@ export async function renamePhotoAlbum(id: string, newName: string) {
   return { ok: true as const };
 }
 
+// Set the square crop rectangle for a photo album's cover. Coords are
+// normalized to source W/H, and the UI is responsible for keeping the
+// rect square in source pixels (w*sourceW == h*sourceH). Default
+// (0,0,1,1) means "no crop" — the renderer falls back to object-cover.
+export async function setPhotoAlbumCoverCrop(
+  id: string,
+  crop: { x: number; y: number; w: number; h: number }
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  const clamp = (n: number) => Math.max(0, Math.min(1, n));
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({
+      cover_crop_x: clamp(crop.x),
+      cover_crop_y: clamp(crop.y),
+      cover_crop_w: clamp(crop.w),
+      cover_crop_h: clamp(crop.h),
+    })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Set or clear the cover image URL for a photo album. Pass null to
-// clear (cover falls back to auto-picked most-recent photo).
+// clear (cover falls back to auto-picked most-recent photo). When the
+// cover changes (pin a new image OR clear), the existing crop is no
+// longer meaningful — reset it to the trivial default so the new
+// cover renders as object-cover until admin re-crops.
 export async function setPhotoAlbumCover(
   id: string,
   coverUrl: string | null
@@ -167,7 +197,13 @@ export async function setPhotoAlbumCover(
   const admin = createAdminClient();
   const { error } = await admin
     .from("albums")
-    .update({ cover_image_url: coverUrl })
+    .update({
+      cover_image_url: coverUrl,
+      cover_crop_x: 0,
+      cover_crop_y: 0,
+      cover_crop_w: 1,
+      cover_crop_h: 1,
+    })
     .eq("id", id);
   if (error) return { ok: false as const, error: error.message };
   revalidatePath("/photos");

@@ -4,12 +4,63 @@ import { createAdminClient, isAdminConfigured } from "./admin";
 
 export type AlbumKind = "photos" | "astrophotos";
 
+// Defensive cast: `numeric` comes back from PostgREST as number in
+// most cases but can be a string. Coerce + clamp to [0,1] with a
+// fallback when missing/NaN so pre-migration rows still render.
+function coerceCrop(v: unknown, fallback: number): number {
+  const n = typeof v === "string" ? parseFloat(v) : (v as number);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+
+function normalizeAlbum(row: Record<string, unknown>): Album {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    slug: row.slug as string,
+    kind: row.kind as AlbumKind,
+    cover_image_url: (row.cover_image_url as string | null) ?? null,
+    cover_crop_x: coerceCrop(row.cover_crop_x, 0),
+    cover_crop_y: coerceCrop(row.cover_crop_y, 0),
+    cover_crop_w: coerceCrop(row.cover_crop_w, 1),
+    cover_crop_h: coerceCrop(row.cover_crop_h, 1),
+    hidden: Boolean(row.hidden),
+    created_at: row.created_at as string,
+  };
+}
+
+// True when the album hasn't had a crop set — renderer should fall
+// back to object-cover (centered) instead of the explicit-crop math
+// (which needs the source aspect to match w/h).
+export function isTrivialCrop(a: {
+  cover_crop_x: number;
+  cover_crop_y: number;
+  cover_crop_w: number;
+  cover_crop_h: number;
+}): boolean {
+  return (
+    a.cover_crop_x === 0 &&
+    a.cover_crop_y === 0 &&
+    a.cover_crop_w === 1 &&
+    a.cover_crop_h === 1
+  );
+}
+
 export type Album = {
   id: string;
   name: string;
   slug: string;
   kind: AlbumKind;
   cover_image_url: string | null;
+  // Square crop of the source cover image, normalized to source W/H.
+  // Constraint enforced by the cropper UI: w*sourceW == h*sourceH, so
+  // the cropped region is square in source pixels. Defaults (0,0,1,1)
+  // are the "no crop set" sentinel — renderer falls back to object-
+  // cover (centered) which doesn't need to know source dimensions.
+  cover_crop_x: number;
+  cover_crop_y: number;
+  cover_crop_w: number;
+  cover_crop_h: number;
   hidden: boolean;
   created_at: string;
 };
@@ -54,7 +105,7 @@ export async function listAlbums(
       .eq("kind", kind)
       .order("name", { ascending: true });
     if (error) return [];
-    return (data ?? []) as Album[];
+    return (data ?? []).map((r) => normalizeAlbum(r as Record<string, unknown>));
   } catch {
     return [];
   }
@@ -149,7 +200,7 @@ export async function getAlbumBySlug(
       .eq("slug", slug)
       .maybeSingle();
     if (error || !data) return null;
-    return data as Album;
+    return normalizeAlbum(data as Record<string, unknown>);
   } catch {
     return null;
   }

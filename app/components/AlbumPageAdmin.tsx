@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Album } from "@/lib/supabase/albums";
+import { CoverCropper } from "./CoverCropper";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -21,6 +22,7 @@ export function AlbumPageAdmin({
   onDelete,
   onSetCover,
   onSetHidden,
+  onSetCoverCrop,
 }: {
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
@@ -31,6 +33,10 @@ export function AlbumPageAdmin({
   onDelete: (id: string) => Promise<ActionResult>;
   onSetCover: (id: string, coverUrl: string | null) => Promise<ActionResult>;
   onSetHidden: (id: string, hidden: boolean) => Promise<ActionResult>;
+  onSetCoverCrop: (
+    id: string,
+    crop: { x: number; y: number; w: number; h: number }
+  ) => Promise<ActionResult>;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -116,6 +122,24 @@ export function AlbumPageAdmin({
     pickCover(url);
   }
 
+  // Commit a crop from the CoverCropper; refresh so the card on the
+  // /photos library page reflects the change without a full reload.
+  async function commitCrop(crop: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }): Promise<ActionResult> {
+    setError(null);
+    const res = await onSetCoverCrop(album.id, crop);
+    if (res.ok) {
+      router.refresh();
+      return { ok: true };
+    }
+    setError(res.error);
+    return res;
+  }
+
   function toggleHidden() {
     setError(null);
     startTransition(async () => {
@@ -134,49 +158,46 @@ export function AlbumPageAdmin({
 
   return (
     <section className="rounded-md bg-pink-50 border border-pink-100 p-3 md:p-4 flex flex-col gap-2 mt-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="label text-pink-600 shrink-0">admin · this album</p>
-        {album.hidden ? (
-          <span className="rounded-pill bg-pink-200 text-white px-2 py-0.5 text-[10px] font-semibold">
-            hidden
-          </span>
-        ) : null}
-        <span className="flex-1" />
+      <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3">
+        <div className="flex items-center gap-2">
+          <p className="label text-pink-600 shrink-0">admin · this album</p>
+          {album.hidden ? (
+            <span className="rounded-pill bg-pink-200 text-white px-2 py-0.5 text-[10px] font-semibold">
+              hidden
+            </span>
+          ) : null}
+        </div>
         {editing ? null : (
-          <>
-            <button
-              type="button"
+          // Keep the action buttons in their own flex group so they
+          // wrap together (a single line, or all together onto a new
+          // line) rather than scattering across rows on narrow widths.
+          <div className="flex items-center flex-wrap gap-1.5">
+            <AdminPill
+              icon="✎"
+              label="rename"
               onClick={() => setEditing(true)}
               disabled={pending || confirming || pickingCover}
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ✎ rename
-            </button>
-            <button
-              type="button"
+            />
+            <AdminPill
+              icon="✦"
+              label="cover"
               onClick={() => setPickingCover((v) => !v)}
               disabled={pending || confirming}
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ✦ cover
-            </button>
-            <button
-              type="button"
+            />
+            <AdminPill
+              icon={album.hidden ? "◉" : "○"}
+              label={album.hidden ? "unhide" : "hide"}
               onClick={toggleHidden}
               disabled={pending || confirming || pickingCover}
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              {album.hidden ? "👁 unhide" : "🙈 hide"}
-            </button>
-            <button
-              type="button"
+            />
+            <AdminPill
+              icon="✕"
+              label="delete"
+              danger
               onClick={() => setConfirming(true)}
               disabled={pending || confirming || pickingCover}
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:bg-pink-100 hover:border-pink-400 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ✕ delete album
-            </button>
-          </>
+            />
+          </div>
         )}
       </div>
 
@@ -250,16 +271,8 @@ export function AlbumPageAdmin({
           </div>
 
           {album.cover_image_url ? (
-            <div className="flex items-center gap-2 rounded-md bg-pink-50 border border-pink-100 px-2 py-2">
-              <div className="relative w-14 h-14 shrink-0 rounded-md overflow-hidden border border-pink-200">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={album.cover_image_url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex flex-col gap-2 rounded-md bg-pink-50 border border-pink-100 p-2.5">
+              <div className="flex items-baseline gap-2 flex-wrap">
                 <p className="text-[11px] text-pink-800 font-semibold">
                   current cover
                 </p>
@@ -270,21 +283,32 @@ export function AlbumPageAdmin({
                     ? "from this album"
                     : "from URL"}
                 </p>
-                <p className="text-[10px] text-ink/55 font-mono truncate">
-                  {album.cover_image_url}
-                </p>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() =>
+                    album.cover_image_url &&
+                    setPreviewUrl(album.cover_image_url)
+                  }
+                  className="rounded-pill bg-white hover:bg-white text-pink-800 border border-pink-200 px-2.5 py-0.5 text-[11px] font-semibold"
+                  title="view larger"
+                >
+                  ⤢ view
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  album.cover_image_url && setPreviewUrl(album.cover_image_url)
-                }
-                className="rounded-full bg-white hover:bg-pink-50 text-pink-800 border border-pink-200 w-7 h-7 flex items-center justify-center text-[11px] font-semibold shrink-0"
-                title="view larger"
-                aria-label="view larger"
-              >
-                ⤢
-              </button>
+              <p className="text-[10px] text-ink/55 font-mono truncate">
+                {album.cover_image_url}
+              </p>
+              <CoverCropper
+                imageUrl={album.cover_image_url}
+                initialCrop={{
+                  x: album.cover_crop_x,
+                  y: album.cover_crop_y,
+                  w: album.cover_crop_w,
+                  h: album.cover_crop_h,
+                }}
+                onCommit={commitCrop}
+              />
             </div>
           ) : null}
 
@@ -421,6 +445,43 @@ export function AlbumPageAdmin({
         <p className="text-[11px] text-pink-600 font-semibold">{error}</p>
       ) : null}
     </section>
+  );
+}
+
+// Small action pill shared by the admin action row. Icons live in a
+// fixed-width slot so buttons line up even when the icon glyph widths
+// differ (emoji vs. text symbols), and the label is wrapped in a
+// flex item so wrapping behavior is predictable.
+function AdminPill({
+  icon,
+  label,
+  onClick,
+  disabled,
+  danger,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "inline-flex items-center gap-1 rounded-pill bg-white text-pink-800 border border-pink-200 px-2.5 py-0.5 text-[11px] font-semibold disabled:opacity-60 " +
+        (danger
+          ? "hover:bg-pink-100 hover:border-pink-400"
+          : "hover:border-pink-400")
+      }
+    >
+      <span className="inline-flex w-3 justify-center text-pink-500">
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
   );
 }
 
