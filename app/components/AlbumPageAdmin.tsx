@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Album, CoverHistoryEntry } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
 import {
+  getCropsForUrl,
   pushCrop,
   pushUrl,
   removeUrl,
@@ -165,6 +166,16 @@ export function AlbumPageAdmin({
             const next = pushUrl(history, url);
             setHistory(next);
             persistHistory(next);
+
+            // If admin had previously cropped this same URL, restore
+            // the most recent crop. setPhotoAlbumCover just reset the
+            // crop to trivial as part of pinning, so this re-applies
+            // it. Without this, re-picking a familiar photo would
+            // mean re-cropping from scratch.
+            const priorCrops = getCropsForUrl(next, url);
+            if (priorCrops.length > 0) {
+              await onSetCoverCrop(album.id, priorCrops[0]);
+            }
           }
           router.refresh();
         }

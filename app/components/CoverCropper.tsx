@@ -357,7 +357,7 @@ export function CoverCropper({
                 : "bg-white text-pink-800 border-pink-200")
             }
           >
-            {pending ? "saving…" : dirty ? "✓ save crop" : "saved"}
+            {pending ? "saving…" : dirty ? "✓ save" : "saved"}
           </button>
         </div>
       </div>
