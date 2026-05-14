@@ -65,11 +65,29 @@ export function OverlayEditor({
    *  appended to the array on pointerdown and updated in place on
    *  every pointermove sample. */
   const drawRef = useRef<{ id: string } | null>(null);
+  /** Snapshot of overlays at the start of a drag / rotate / draw
+   *  gesture, used so undo can restore the pre-gesture state in
+   *  one click instead of replaying each pointermove sample. */
+  const historyBookmark = useRef<CoverOverlay[] | null>(null);
   const [drawMode, setDrawMode] = useState(false);
+  const [eraserMode, setEraserMode] = useState(false);
   const [drawColor, setDrawColor] = useState<OverlayColor>("pink");
   const [drawWidth, setDrawWidth] = useState(0.015); // ~1.5% of stage width
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savingErr, setSavingErr] = useState<string | null>(null);
+  // Auto-save status: "saved" by default, "unsaved" between an
+  // optimistic onChange and the actual commit (during a drag),
+  // "saving" while the server action is in flight, "error" if it
+  // failed (savingErr holds the message).
+  type SaveStatus = "saved" | "unsaved" | "saving" | "error";
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  // Undo / redo stacks. Each entry is the overlays snapshot from
+  // immediately before a discrete change (add / delete / style edit
+  // / drag-end / etc.). Capped at 40 entries so a long session
+  // can't bloat memory.
+  const [history, setHistory] = useState<CoverOverlay[][]>([]);
+  const [future, setFuture] = useState<CoverOverlay[][]>([]);
+  const HISTORY_CAP = 40;
 
   // Add-overlay popovers (one open at a time). Keeps the picker
   // compact when collapsed.
@@ -86,11 +104,113 @@ export function OverlayEditor({
     }
   }, [overlays, selectedId]);
 
-  function persist(next: CoverOverlay[]) {
+  // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z (or Cmd/Ctrl+Y) = redo.
+  // Only fires when the stage or its descendants have focus so
+  // these shortcuts don't fight with the rest of the page.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!stageRef.current) return;
+      // Ignore when focus is in an input / contentEditable — admin
+      // is probably typing a caption.
+      const active = document.activeElement as HTMLElement | null;
+      if (active) {
+        const tag = active.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          active.isContentEditable
+        )
+          return;
+      }
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        redo();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history.length, future.length, overlays]);
+
+  // commit() — fire the actual server save + drive the status
+  // indicator. Doesn't touch history (caller decides whether to
+  // push a snapshot first).
+  function commit(next: CoverOverlay[]) {
     onChange(next);
     setSavingErr(null);
+    setSaveStatus("saving");
     onCommit(next).then((res) => {
-      if (!res.ok) setSavingErr(res.error);
+      if (!res.ok) {
+        setSavingErr(res.error);
+        setSaveStatus("error");
+      } else {
+        setSaveStatus("saved");
+      }
+    });
+  }
+
+  // modify() — discrete user change. Pushes the current state to
+  // history so undo can roll back, clears the redo stack (since we
+  // just branched the timeline), then commits.
+  function modify(next: CoverOverlay[]) {
+    setHistory((h) => {
+      const trimmed = h.length >= HISTORY_CAP ? h.slice(1) : h;
+      return [...trimmed, overlays];
+    });
+    setFuture([]);
+    commit(next);
+  }
+
+  // Convenience for drag/rotate/draw: while the gesture is in
+  // flight we want optimistic-only updates (no history, no
+  // commit). The bookmark captured at gesture start gives undo a
+  // single-step rollback to the pre-gesture state.
+  function bookmark() {
+    historyBookmark.current = overlays;
+  }
+  function commitWithBookmark(next: CoverOverlay[]) {
+    if (historyBookmark.current) {
+      const snap = historyBookmark.current;
+      setHistory((h) => {
+        const trimmed = h.length >= HISTORY_CAP ? h.slice(1) : h;
+        return [...trimmed, snap];
+      });
+      setFuture([]);
+      historyBookmark.current = null;
+    }
+    commit(next);
+  }
+
+  function undo() {
+    setHistory((h) => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setFuture((f) => {
+        const trimmed = f.length >= HISTORY_CAP ? f.slice(0, -1) : f;
+        return [overlays, ...trimmed];
+      });
+      commit(prev);
+      return h.slice(0, -1);
+    });
+  }
+
+  function redo() {
+    setFuture((f) => {
+      if (f.length === 0) return f;
+      const next = f[0];
+      setHistory((h) => {
+        const trimmed = h.length >= HISTORY_CAP ? h.slice(1) : h;
+        return [...trimmed, overlays];
+      });
+      commit(next);
+      return f.slice(1);
     });
   }
 
@@ -98,11 +218,11 @@ export function OverlayEditor({
     const next = overlays.map((o) =>
       o.id === id ? ({ ...o, ...patch } as CoverOverlay) : o
     );
-    persist(next);
+    modify(next);
   }
 
   function removeOverlay(id: string) {
-    persist(overlays.filter((o) => o.id !== id));
+    modify(overlays.filter((o) => o.id !== id));
     if (selectedId === id) setSelectedId(null);
   }
 
@@ -120,7 +240,7 @@ export function OverlayEditor({
         rotation: 0,
       },
     ];
-    persist(next);
+    modify(next);
     setSelectedId(next[next.length - 1].id);
     setActiveAdder(null);
     setStickerInput("");
@@ -141,7 +261,7 @@ export function OverlayEditor({
         rotation: 0,
       },
     ];
-    persist(next);
+    modify(next);
     setSelectedId(next[next.length - 1].id);
     setActiveAdder(null);
     setCaptionInput("");
@@ -164,16 +284,24 @@ export function OverlayEditor({
         rotation: 0,
       },
     ];
-    persist(next);
+    modify(next);
     setSelectedId(next[next.length - 1].id);
     setActiveAdder(null);
   }
 
   function startDrag(e: React.PointerEvent, overlay: CoverOverlay) {
+    // Eraser mode: tap-to-delete instead of starting a drag.
+    if (eraserMode) {
+      e.preventDefault();
+      e.stopPropagation();
+      removeOverlay(overlay.id);
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     setSelectedId(overlay.id);
+    bookmark();
     dragRef.current = {
       id: overlay.id,
       startPointerX: e.clientX,
@@ -199,6 +327,7 @@ export function OverlayEditor({
     // Optimistic only — commit happens on pointer release so we
     // don't fire dozens of server actions during a single drag.
     onChange(next);
+    setSaveStatus("unsaved");
   }
 
   function endDrag(e: React.PointerEvent) {
@@ -206,7 +335,7 @@ export function OverlayEditor({
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     dragRef.current = null;
     // Persist whatever the latest local state is.
-    persist(overlays);
+    commitWithBookmark(overlays);
   }
 
   // Rotation drag — pulls the handle around the overlay's center
@@ -218,6 +347,7 @@ export function OverlayEditor({
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     setSelectedId(overlay.id);
+    bookmark();
     rotateRef.current = { id: overlay.id };
     applyRotationFromPointer(e, overlay.id);
   }
@@ -232,7 +362,7 @@ export function OverlayEditor({
     if (!rotateRef.current) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     rotateRef.current = null;
-    persist(overlays);
+    commitWithBookmark(overlays);
   }
 
   // Drawing — start, sample, finish a stroke. Points are stored
@@ -258,6 +388,7 @@ export function OverlayEditor({
     if (!p) return;
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    bookmark();
     const id = newOverlayId();
     drawRef.current = { id };
     const stroke: CoverOverlay = {
@@ -272,6 +403,7 @@ export function OverlayEditor({
       width: drawWidth,
     };
     onChange([...overlays, stroke]);
+    setSaveStatus("unsaved");
   }
 
   function moveDraw(e: React.PointerEvent) {
@@ -292,6 +424,7 @@ export function OverlayEditor({
         : o
     );
     onChange(next);
+    setSaveStatus("unsaved");
   }
 
   function endDraw(e: React.PointerEvent) {
@@ -303,16 +436,19 @@ export function OverlayEditor({
     // tap with no drag) so an accidental click doesn't litter the
     // overlay list with invisible dots.
     const stroke = overlays.find((o) => o.id === d.id);
-    const next =
-      stroke && stroke.type === "stroke" && stroke.points.length >= 2
-        ? overlays
-        : overlays.filter((o) => o.id !== d.id);
-    if (next === overlays) {
-      persist(next);
+    const finished =
+      stroke && stroke.type === "stroke" && stroke.points.length >= 2;
+    if (finished) {
+      // Real stroke — commit via the bookmark so undo rolls back
+      // the entire gesture in one step.
+      commitWithBookmark(overlays);
     } else {
+      // Empty stroke — discard. Clear the bookmark to avoid
+      // pushing a stale snapshot, and reset state locally.
+      historyBookmark.current = null;
+      const next = overlays.filter((o) => o.id !== d.id);
       onChange(next);
-      // No need to persist if we just removed the in-progress
-      // empty stroke that was only in local state.
+      setSaveStatus("saved");
     }
   }
 
@@ -338,6 +474,7 @@ export function OverlayEditor({
       o.id === id ? ({ ...o, rotation } as CoverOverlay) : o
     );
     onChange(next);
+    setSaveStatus("unsaved");
   }
 
   const selected = overlays.find((o) => o.id === selectedId) ?? null;
@@ -352,47 +489,80 @@ export function OverlayEditor({
           <p className="text-[10px] text-ink/65">
             {overlays.length} of {OVERLAY_LIMIT} · drag to reposition
           </p>
+          <SaveStatusPill status={saveStatus} />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
+          <UndoRedoPill
+            label="↶"
+            title="undo last change"
+            disabled={history.length === 0}
+            onClick={undo}
+          />
+          <UndoRedoPill
+            label="↷"
+            title="redo"
+            disabled={future.length === 0}
+            onClick={redo}
+          />
           <AdderPill
             label="+ sticker"
             active={activeAdder === "sticker"}
-            disabled={overlays.length >= OVERLAY_LIMIT || drawMode}
+            disabled={overlays.length >= OVERLAY_LIMIT || drawMode || eraserMode}
             onClick={() => {
               setDrawMode(false);
+              setEraserMode(false);
               setActiveAdder((a) => (a === "sticker" ? null : "sticker"));
             }}
           />
           <AdderPill
             label="+ caption"
             active={activeAdder === "caption"}
-            disabled={overlays.length >= OVERLAY_LIMIT || drawMode}
+            disabled={overlays.length >= OVERLAY_LIMIT || drawMode || eraserMode}
             onClick={() => {
               setDrawMode(false);
+              setEraserMode(false);
               setActiveAdder((a) => (a === "caption" ? null : "caption"));
             }}
           />
           <AdderPill
             label="+ highlight"
             active={activeAdder === "highlight"}
-            disabled={overlays.length >= OVERLAY_LIMIT || drawMode}
+            disabled={overlays.length >= OVERLAY_LIMIT || drawMode || eraserMode}
             onClick={() => {
               setDrawMode(false);
+              setEraserMode(false);
               setActiveAdder((a) =>
                 a === "highlight" ? null : "highlight"
               );
             }}
           />
-          {/* Draw mode is mutually exclusive with the adder
-              popovers — toggling it closes them and swaps the
-              stage into stroke-capture mode. */}
+          {/* Draw + eraser modes are mutually exclusive with the
+              adder popovers — toggling either closes them and
+              swaps the stage into the right capture mode. The
+              draw / drawing labels share a min-width so toggling
+              doesn't shift the row layout on mobile. */}
           <AdderPill
             label={drawMode ? "✓ drawing" : "✎ draw"}
             active={drawMode}
-            disabled={overlays.length >= OVERLAY_LIMIT && !drawMode}
+            disabled={
+              (overlays.length >= OVERLAY_LIMIT && !drawMode) || eraserMode
+            }
+            minWidth="5.25rem"
             onClick={() => {
               setActiveAdder(null);
+              setEraserMode(false);
               setDrawMode((v) => !v);
+            }}
+          />
+          <AdderPill
+            label={eraserMode ? "✓ erasing" : "🩹 erase"}
+            active={eraserMode}
+            disabled={drawMode}
+            minWidth="5.25rem"
+            onClick={() => {
+              setActiveAdder(null);
+              setDrawMode(false);
+              setEraserMode((v) => !v);
             }}
           />
         </div>
@@ -804,6 +974,64 @@ function EditableOverlay({
   );
 }
 
+function SaveStatusPill({
+  status,
+}: {
+  status: "saved" | "unsaved" | "saving" | "error";
+}) {
+  if (status === "saved") {
+    return (
+      <span className="text-[10px] text-lavender-600 font-semibold">
+        ✓ saved
+      </span>
+    );
+  }
+  if (status === "saving") {
+    return (
+      <span className="text-[10px] text-pink-600 font-semibold">
+        saving…
+      </span>
+    );
+  }
+  if (status === "unsaved") {
+    return (
+      <span className="rounded-pill bg-amber-200/90 text-amber-900 px-1.5 py-0.5 text-[10px] font-semibold border border-amber-300/80">
+        unsaved
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-pill bg-pink-200 text-white px-1.5 py-0.5 text-[10px] font-semibold">
+      save failed
+    </span>
+  );
+}
+
+function UndoRedoPill({
+  label,
+  title,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  title: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className="rounded-full w-7 h-7 inline-flex items-center justify-center text-sm font-semibold bg-white text-pink-800 border border-pink-200 hover:border-pink-400 disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      {label}
+    </button>
+  );
+}
+
 // Rotation drag-handle shown on the selected overlay. The outer
 // wrapper rotates with the overlay so the handle paints at the
 // overlay's "top" — dragging it sweeps the overlay around its
@@ -852,19 +1080,24 @@ function AdderPill({
   active,
   disabled,
   onClick,
+  minWidth,
 }: {
   label: string;
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
+  /** When set, fixes the button width so toggling labels (e.g.
+   *  "✎ draw" vs "✓ drawing") doesn't shift the row layout. */
+  minWidth?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      style={minWidth ? { minWidth } : undefined}
       className={
-        "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 " +
+        "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 text-center " +
         (active
           ? "bg-pink-300 text-white border-pink-300"
           : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
