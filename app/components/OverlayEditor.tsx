@@ -55,6 +55,7 @@ export function OverlayEditor({
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const rotateRef = useRef<{ id: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savingErr, setSavingErr] = useState<string | null>(null);
 
@@ -194,6 +195,56 @@ export function OverlayEditor({
     dragRef.current = null;
     // Persist whatever the latest local state is.
     persist(overlays);
+  }
+
+  // Rotation drag — pulls the handle around the overlay's center
+  // and sets rotation to the angle of (pointer → center). Direct
+  // assignment (not delta) so the handle always "follows the
+  // finger" the way most editors do.
+  function startRotate(e: React.PointerEvent, overlay: CoverOverlay) {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    setSelectedId(overlay.id);
+    rotateRef.current = { id: overlay.id };
+    applyRotationFromPointer(e, overlay.id);
+  }
+
+  function moveRotate(e: React.PointerEvent) {
+    const r = rotateRef.current;
+    if (!r) return;
+    applyRotationFromPointer(e, r.id);
+  }
+
+  function endRotate(e: React.PointerEvent) {
+    if (!rotateRef.current) return;
+    (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+    rotateRef.current = null;
+    persist(overlays);
+  }
+
+  function applyRotationFromPointer(e: React.PointerEvent, id: string) {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const overlay = overlays.find((o) => o.id === id);
+    if (!overlay) return;
+    const cx = rect.left + overlay.x * rect.width;
+    const cy = rect.top + overlay.y * rect.height;
+    // Angle from center to pointer. +90 so that "directly above"
+    // maps to 0° (matching how CSS rotates 0° = identity, with
+    // the handle painted above the overlay at 0°).
+    const rawDeg =
+      (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI + 90;
+    // Normalize to (-180, 180].
+    let rotation = rawDeg;
+    while (rotation > 180) rotation -= 360;
+    while (rotation <= -180) rotation += 360;
+    const next = overlays.map((o) =>
+      o.id === id ? ({ ...o, rotation } as CoverOverlay) : o
+    );
+    onChange(next);
   }
 
   const selected = overlays.find((o) => o.id === selectedId) ?? null;
@@ -343,9 +394,18 @@ export function OverlayEditor({
           maxWidth: 360,
           containerType: "inline-size",
         }}
-        onPointerMove={moveDrag}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+        onPointerMove={(e) => {
+          if (rotateRef.current) moveRotate(e);
+          else if (dragRef.current) moveDrag(e);
+        }}
+        onPointerUp={(e) => {
+          if (rotateRef.current) endRotate(e);
+          else if (dragRef.current) endDrag(e);
+        }}
+        onPointerCancel={(e) => {
+          if (rotateRef.current) endRotate(e);
+          else if (dragRef.current) endDrag(e);
+        }}
         onClick={() => setSelectedId(null)}
       >
         {background}
@@ -359,6 +419,15 @@ export function OverlayEditor({
             onPointerDown={(e) => startDrag(e, o)}
           />
         ))}
+        {/* Rotation handle for the selected overlay — a small dot
+            anchored "above" the overlay in its rotated frame.
+            Dragging it spins the overlay around its center. */}
+        {selected ? (
+          <RotationHandle
+            overlay={selected}
+            onPointerDown={(e) => startRotate(e, selected)}
+          />
+        ) : null}
       </div>
 
       {/* Selected overlay controls — only shown when something is
@@ -490,6 +559,49 @@ function EditableOverlay({
       }
       style={style}
     />
+  );
+}
+
+// Rotation drag-handle shown on the selected overlay. The outer
+// wrapper rotates with the overlay so the handle paints at the
+// overlay's "top" — dragging it sweeps the overlay around its
+// own center.
+function RotationHandle({
+  overlay: o,
+  onPointerDown,
+}: {
+  overlay: CoverOverlay;
+  onPointerDown: (e: React.PointerEvent) => void;
+}) {
+  return (
+    <div
+      className="absolute pointer-events-none"
+      style={{
+        left: `${o.x * 100}%`,
+        top: `${o.y * 100}%`,
+        transform: `translate(-50%, -50%) rotate(${o.rotation}deg)`,
+      }}
+      aria-hidden
+    >
+      {/* Dashed tether so admin sees the rotation pivot point. */}
+      <span
+        className="absolute left-1/2 -translate-x-1/2 border-l border-dashed border-pink-400/85"
+        style={{ top: -36, height: 28 }}
+      />
+      <button
+        type="button"
+        onPointerDown={onPointerDown}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="rotate overlay"
+        title="drag to rotate"
+        className="pointer-events-auto absolute w-5 h-5 rounded-full bg-white border-2 border-pink-400 shadow-soft cursor-grab active:cursor-grabbing touch-none"
+        style={{
+          left: "50%",
+          top: -36,
+          transform: "translate(-50%, -50%)",
+        }}
+      />
+    </div>
   );
 }
 
