@@ -151,6 +151,27 @@ export async function setAstrophotoAlbumCoverDecorations(
   return { ok: true as const };
 }
 
+// Replace an astrophoto album's cover_overlays array. See
+// setPhotoAlbumCoverOverlays for design rationale.
+export async function setAstrophotoAlbumCoverOverlays(
+  id: string,
+  overlays: unknown
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (!Array.isArray(overlays))
+    return { ok: false as const, error: "overlays must be an array" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ cover_overlays: overlays })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace an astrophoto album's cover_history. Client-computed, see
 // the photos twin above for the design rationale.
 export async function setAstrophotoAlbumCoverHistory(

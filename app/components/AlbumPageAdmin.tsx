@@ -6,7 +6,18 @@ import { useRouter } from "next/navigation";
 import type { Album, CoverHistoryEntry } from "@/lib/supabase/albums";
 import { CoverCropper } from "./CoverCropper";
 import { CoverUploader } from "./CoverUploader";
-import { FILTERS, FRAMES, FRAME_SIZES } from "./cover-decorations";
+import {
+  FILTERS,
+  FRAMES,
+  FRAME_SIZES,
+  filterCssFor,
+  frameOverlayFor,
+} from "./cover-decorations";
+import {
+  normalizeOverlays,
+  type CoverOverlay,
+} from "./cover-overlays";
+import { OverlayEditor } from "./OverlayEditor";
 import {
   getCropsForUrl,
   pushCrop,
@@ -36,6 +47,7 @@ export function AlbumPageAdmin({
   onSetCoverCrop,
   onSetCoverHistory,
   onSetCoverDecorations,
+  onSetCoverOverlays,
 }: {
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
@@ -67,6 +79,10 @@ export function AlbumPageAdmin({
       filter?: string | null;
       frame_width?: string;
     }
+  ) => Promise<ActionResult>;
+  onSetCoverOverlays: (
+    id: string,
+    overlays: CoverOverlay[]
   ) => Promise<ActionResult>;
 }) {
   // libraryKind isn't used directly here yet; kept on the signature
@@ -105,6 +121,18 @@ export function AlbumPageAdmin({
       if (!res.ok) setError(res.error);
     });
   }
+
+  // Local overlay state — initialized from the album row's
+  // cover_overlays (normalized to drop malformed entries), updated
+  // optimistically while admin drags / edits, and persisted via
+  // onSetCoverOverlays. Re-syncs from the prop if the upstream
+  // record changes (e.g., router.refresh after another action).
+  const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
+    normalizeOverlays(album.cover_overlays)
+  );
+  useEffect(() => {
+    setOverlays(normalizeOverlays(album.cover_overlays));
+  }, [album.cover_overlays]);
 
   // Recent crops for the currently pinned URL — surfaced as
   // clickable presets next to the crop preview inside CoverCropper.
@@ -421,6 +449,7 @@ export function AlbumPageAdmin({
                 frame={album.cover_frame}
                 frameWidth={album.cover_frame_width}
                 filter={album.cover_filter}
+                overlays={overlays}
                 onCommit={commitCrop}
               />
 
@@ -457,6 +486,30 @@ export function AlbumPageAdmin({
                   />
                 ) : null}
               </div>
+
+              {/* Overlay editor — stickers / captions / highlights.
+                  Caller passes a background node so the editor can
+                  paint overlays + drag handles on top without
+                  re-knowing the cover URL + crop math. */}
+              <OverlayEditor
+                overlays={overlays}
+                onChange={setOverlays}
+                onCommit={(next) => onSetCoverOverlays(album.id, next)}
+                background={
+                  <CoverPreviewBackground
+                    imageUrl={album.cover_image_url}
+                    crop={{
+                      x: album.cover_crop_x,
+                      y: album.cover_crop_y,
+                      w: album.cover_crop_w,
+                      h: album.cover_crop_h,
+                    }}
+                    frame={album.cover_frame}
+                    frameWidth={album.cover_frame_width}
+                    filter={album.cover_filter}
+                  />
+                }
+              />
             </div>
           ) : null}
 
@@ -761,6 +814,72 @@ function DecorationRow({
         );
       })}
     </div>
+  );
+}
+
+// Composes the cover preview's background layer (cropped image +
+// filter + frame) without overlays, for the OverlayEditor's stage.
+// Mirrors the math used by AlbumCardGrid + CoverCropper preview so
+// admin's editor matches what visitors will eventually see.
+function CoverPreviewBackground({
+  imageUrl,
+  crop,
+  frame,
+  frameWidth,
+  filter,
+}: {
+  imageUrl: string | null;
+  crop: { x: number; y: number; w: number; h: number };
+  frame: string | null;
+  frameWidth: string;
+  filter: string | null;
+}) {
+  const trivial =
+    crop.x === 0 && crop.y === 0 && crop.w === 1 && crop.h === 1;
+  const filterCss = filterCssFor(filter) || undefined;
+  if (!imageUrl) {
+    return (
+      <div
+        className="absolute inset-0 bg-gradient-to-br from-pink-50 to-lavender-100"
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <>
+      <div
+        className="absolute inset-0"
+        style={
+          trivial
+            ? {
+                backgroundImage: `url("${imageUrl}")`,
+                backgroundRepeat: "no-repeat",
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                filter: filterCss,
+              }
+            : {
+                backgroundImage: `url("${imageUrl}")`,
+                backgroundRepeat: "no-repeat",
+                backgroundSize: `${100 / crop.w}% ${100 / crop.h}%`,
+                backgroundPosition: `${
+                  crop.w >= 1 ? 0 : (crop.x * 100) / (1 - crop.w)
+                }% ${crop.h >= 1 ? 0 : (crop.y * 100) / (1 - crop.h)}%`,
+                filter: filterCss,
+              }
+        }
+        aria-hidden
+      />
+      {frame ? (
+        <div
+          className={
+            "absolute inset-0 pointer-events-none " +
+            frameOverlayFor(frame, frameWidth)
+          }
+          aria-hidden
+        />
+      ) : null}
+    </>
   );
 }
 

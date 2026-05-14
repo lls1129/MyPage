@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { AlbumWithCover } from "@/lib/supabase/albums";
 import { isTrivialCrop } from "@/lib/supabase/albums";
 import { filterCssFor, frameOverlayFor } from "./cover-decorations";
+import { normalizeOverlays } from "./cover-overlays";
+import { OverlayLayer } from "./OverlayLayer";
 
 // Pastel gradient palette used for empty-album covers. We pick one
 // deterministically from the album id so each empty album has a stable
@@ -51,7 +53,12 @@ export function AlbumCardGrid({
               (a.hidden ? "border-pink-300" : "border-pink-100")
             }
           >
-            <div className="aspect-square bg-pink-50 relative overflow-hidden">
+            <div
+              className="aspect-square bg-pink-50 relative overflow-hidden"
+              // Establish a container so the overlay layer's
+              // `cqw` font sizes scale against the card width.
+              style={{ containerType: "inline-size" }}
+            >
               {a.cover_image_url ? (
                 <>
                   {/* Cover image rendered as a background-image so
@@ -117,6 +124,13 @@ export function AlbumCardGrid({
                   </span>
                 </div>
               )}
+              {/* Stickers / captions / highlights sit above any
+                  cover (or above the empty-album gradient) so the
+                  overlay layer always renders consistently. */}
+              <OverlayLayer
+                overlays={normalizeOverlays(a.cover_overlays)}
+                className={a.hidden ? "opacity-70" : ""}
+              />
               {a.hidden ? (
                 <span className="absolute top-1.5 left-1.5 rounded-pill bg-pink-200 text-white px-1.5 py-0.5 text-[10px] font-semibold shadow-soft">
                   hidden

@@ -8,6 +8,7 @@ import {
   setPhotoAlbumCoverCrop,
   setPhotoAlbumCoverDecorations,
   setPhotoAlbumCoverHistory,
+  setPhotoAlbumCoverOverlays,
   setPhotoAlbumHidden,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
@@ -47,6 +48,9 @@ export function PhotoAlbumPageAdminWrapper({
       }
       onSetCoverDecorations={(id, patch) =>
         normalize(setPhotoAlbumCoverDecorations(id, patch))
+      }
+      onSetCoverOverlays={(id, overlays) =>
+        normalize(setPhotoAlbumCoverOverlays(id, overlays))
       }
       onSetHidden={(id, hidden) => normalize(setPhotoAlbumHidden(id, hidden))}
     />

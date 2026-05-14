@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { filterCssFor, frameOverlayFor } from "./cover-decorations";
+import { type CoverOverlay } from "./cover-overlays";
+import { OverlayLayer } from "./OverlayLayer";
 
 export type CoverCrop = { x: number; y: number; w: number; h: number };
 
@@ -50,6 +52,7 @@ export function CoverCropper({
   frame = null,
   frameWidth = "medium",
   filter = null,
+  overlays = [],
   onCommit,
 }: {
   imageUrl: string;
@@ -60,6 +63,10 @@ export function CoverCropper({
   frame?: string | null;
   frameWidth?: string;
   filter?: string | null;
+  /** Live overlay list for the preview tile. Echoes whatever the
+   *  overlay editor is showing so admin sees crop + decoration +
+   *  overlays composed together. */
+  overlays?: CoverOverlay[];
   onCommit: (crop: CoverCrop) => Promise<ActionResult>;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -523,7 +530,10 @@ export function CoverCropper({
         <div className="flex flex-row md:flex-col items-center md:items-stretch gap-3 md:gap-2 md:w-44 shrink-0">
           <div className="flex flex-col gap-1 shrink-0">
             <p className="label text-pink-600">card preview</p>
-            <div className="w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft">
+            <div
+              className="w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft"
+              style={{ containerType: "inline-size" }}
+            >
               {natural ? (
                 <>
                   <div
@@ -565,6 +575,7 @@ export function CoverCropper({
                       aria-hidden
                     />
                   ) : null}
+                  <OverlayLayer overlays={overlays} />
                 </>
               ) : null}
             </div>

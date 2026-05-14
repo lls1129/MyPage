@@ -8,6 +8,7 @@ import {
   setAstrophotoAlbumCoverCrop,
   setAstrophotoAlbumCoverDecorations,
   setAstrophotoAlbumCoverHistory,
+  setAstrophotoAlbumCoverOverlays,
   setAstrophotoAlbumHidden,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
@@ -47,6 +48,9 @@ export function AstrophotoAlbumPageAdminWrapper({
       }
       onSetCoverDecorations={(id, patch) =>
         normalize(setAstrophotoAlbumCoverDecorations(id, patch))
+      }
+      onSetCoverOverlays={(id, overlays) =>
+        normalize(setAstrophotoAlbumCoverOverlays(id, overlays))
       }
       onSetHidden={(id, hidden) =>
         normalize(setAstrophotoAlbumHidden(id, hidden))

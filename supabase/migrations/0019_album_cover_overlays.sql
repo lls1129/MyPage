@@ -1,0 +1,34 @@
+-- Album cover overlays — stickers, captions, highlights.
+--
+-- Adds a single jsonb column to the albums table holding an array
+-- of overlay objects. Each overlay carries its own type-specific
+-- shape; the renderer + editor inspect `type` to decide what to
+-- paint. App-level cap is enforced in code (10 overlays per cover).
+--
+-- Overlay shape (TypeScript-ish):
+--   {
+--     id: string,           // uuid, used for React keying + drag id
+--     type: "sticker" | "caption" | "highlight",
+--     x: number,            // 0..1 — horizontal center, normalized
+--     y: number,            // 0..1 — vertical center, normalized
+--     scale: number,        // 1 = base size
+--     rotation: number,     // degrees
+--     // sticker:
+--     emoji?: string,
+--     // caption:
+--     text?: string,
+--     color?: "cream" | "pink" | "lavender" | "ink",
+--     // highlight:
+--     shape?: "circle" | "rect" | "heart",
+--     width?: number,       // 0..1 — for rect / shape sizing
+--     height?: number,      // 0..1
+--   }
+--
+-- Unknown / malformed entries are filtered by the renderer's
+-- normalizer so a typo doesn't break a card. Default '[]' means
+-- "no overlays" — existing albums render unchanged.
+--
+-- Run once in Supabase Dashboard → SQL Editor. Safe to re-run.
+
+alter table albums
+  add column if not exists cover_overlays jsonb default '[]'::jsonb not null;

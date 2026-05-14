@@ -390,6 +390,30 @@ export async function setPhotoAlbumCoverDecorations(
   return { ok: true as const };
 }
 
+// Replace a photo album's cover_overlays array. Client computes
+// the next array (add / remove / reposition / restyle), ships the
+// whole thing. Shape validated by the renderer's normalizer so we
+// don't need to deep-validate here — typed `unknown[]` to keep the
+// action permissive and let the UI evolve without action churn.
+export async function setPhotoAlbumCoverOverlays(
+  id: string,
+  overlays: unknown
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (!Array.isArray(overlays))
+    return { ok: false as const, error: "overlays must be an array" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ cover_overlays: overlays })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace a photo album's cover_history. The client computes the
 // next array using the helpers in lib/cover-history.ts and ships
 // the whole thing — keeps the server side trivially correct, and
