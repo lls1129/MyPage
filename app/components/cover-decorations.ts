@@ -113,6 +113,49 @@ export const FRAMES: FramePreset[] = [
       thick: "shadow-[inset_0_0_40px_14px_rgba(64,40,82,0.55)] rounded-md",
     },
   },
+  {
+    id: "glow",
+    label: "pink glow",
+    sizes: {
+      thin: "shadow-[inset_0_0_18px_4px_rgba(244,114,182,0.45)] rounded-md",
+      medium:
+        "shadow-[inset_0_0_28px_8px_rgba(244,114,182,0.55)] rounded-md",
+      thick:
+        "shadow-[inset_0_0_48px_16px_rgba(244,114,182,0.65)] rounded-md",
+    },
+  },
+  {
+    id: "ribbon",
+    // Two concentric pink rings with a white gap between — reads
+    // like a thin ribbon laid over the edge.
+    label: "ribbon",
+    sizes: {
+      thin: "shadow-[inset_0_0_0_2px_#ec4899,inset_0_0_0_4px_#ffffff,inset_0_0_0_5px_#ec4899] rounded-md",
+      medium:
+        "shadow-[inset_0_0_0_3px_#ec4899,inset_0_0_0_6px_#ffffff,inset_0_0_0_8px_#ec4899] rounded-md",
+      thick:
+        "shadow-[inset_0_0_0_5px_#ec4899,inset_0_0_0_10px_#ffffff,inset_0_0_0_14px_#ec4899] rounded-md",
+    },
+  },
+  {
+    id: "rounded",
+    label: "rounded mat",
+    sizes: {
+      thin: "border-[6px] border-cream rounded-2xl",
+      medium: "border-[12px] border-cream rounded-3xl",
+      thick: "border-[20px] border-cream rounded-[2rem]",
+    },
+  },
+  {
+    id: "lavender",
+    label: "lavender",
+    sizes: {
+      thin: "border-[3px] border-lavender-300 rounded-md",
+      medium: "border-[5px] border-lavender-300 rounded-md",
+      thick:
+        "border-[10px] border-lavender-300 shadow-[inset_0_0_0_2px_rgba(196,181,253,0.5)] rounded-md",
+    },
+  },
 ];
 
 export const FILTERS: FilterPreset[] = [
@@ -139,6 +182,36 @@ export const FILTERS: FilterPreset[] = [
     id: "rosy",
     label: "rosy",
     css: "hue-rotate(-10deg) saturate(1.15) brightness(1.03)",
+  },
+  {
+    id: "noir",
+    label: "noir",
+    css: "grayscale(1) contrast(1.3) brightness(0.88)",
+  },
+  {
+    id: "sunset",
+    label: "sunset",
+    css: "sepia(0.4) saturate(1.35) hue-rotate(-20deg) brightness(1.05)",
+  },
+  {
+    id: "film",
+    label: "film",
+    css: "sepia(0.22) contrast(1.12) saturate(0.85) brightness(0.96)",
+  },
+  {
+    id: "moody",
+    label: "moody",
+    css: "brightness(0.85) saturate(1.25) contrast(1.15)",
+  },
+  {
+    id: "bright",
+    label: "bright",
+    css: "brightness(1.15) saturate(1.2) contrast(1.04)",
+  },
+  {
+    id: "twilight",
+    label: "twilight",
+    css: "hue-rotate(20deg) saturate(1.2) brightness(0.95) contrast(1.05)",
   },
 ];
 

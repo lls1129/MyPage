@@ -6,12 +6,16 @@
 // cover is 80px in a list or 600px in the cropper preview.
 
 import {
+  DIAMOND_PATH,
   HEART_PATH,
   OVERLAY_SHAPE_CLASSES,
   OVERLAY_SHAPE_SVG,
   OVERLAY_TEXT_CLASSES,
+  STAR_PATH,
+  strokePointsToPath,
   type CoverOverlay,
   type HighlightOverlay,
+  type StrokeOverlay,
 } from "./cover-overlays";
 
 export function OverlayLayer({
@@ -82,6 +86,7 @@ function OverlayItem({ overlay: o }: { overlay: CoverOverlay }) {
     );
   }
   if (o.type === "highlight") return <HighlightRender o={o} />;
+  if (o.type === "stroke") return <StrokeRender o={o} />;
   return null;
 }
 
@@ -93,8 +98,16 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
     height: `${Math.max(o.height, 0.05) * 100}%`,
     transform: `translate(-50%, -50%) rotate(${o.rotation}deg) scale(${o.scale})`,
   };
-  if (o.shape === "heart") {
+  // SVG-rendered shapes share fill+stroke styling for visual
+  // consistency with the heart preset.
+  if (o.shape === "heart" || o.shape === "star" || o.shape === "diamond") {
     const svg = OVERLAY_SHAPE_SVG[o.color];
+    const path =
+      o.shape === "heart"
+        ? HEART_PATH
+        : o.shape === "star"
+        ? STAR_PATH
+        : DIAMOND_PATH;
     return (
       <svg
         className="absolute pointer-events-none"
@@ -104,7 +117,7 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
         aria-hidden
       >
         <path
-          d={HEART_PATH}
+          d={path}
           fill={svg.fill}
           fillOpacity={0.55}
           stroke={svg.stroke}
@@ -124,4 +137,55 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
       style={style}
     />
   );
+}
+
+// Freehand stroke render. Points are normalized 0..1 against the
+// container; we paint them into a fixed 100×100 viewBox so the
+// stroke width stays proportional regardless of the rendered
+// size. The SVG fills the parent's full bounds (inset-0).
+function StrokeRender({ o }: { o: StrokeOverlay }) {
+  const svg = OVERLAY_SHAPE_SVG[o.color];
+  // Stroke width in viewBox units (0..100 maps to 0..1 fraction).
+  const strokeWidth = Math.max(o.width * 100, 0.4);
+  // Scale + rotate around the bounding-box center of the points
+  // so admin's drag-rotate / scale-slider feels natural.
+  const center = strokeCenter(o.points);
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <g
+        transform={`translate(${center.x * 100} ${
+          center.y * 100
+        }) rotate(${o.rotation}) scale(${o.scale}) translate(${
+          -center.x * 100
+        } ${-center.y * 100})`}
+      >
+        <path
+          d={strokePointsToPath(o.points)}
+          fill="none"
+          stroke={svg.stroke}
+          strokeOpacity={0.92}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </g>
+    </svg>
+  );
+}
+
+function strokeCenter(points: [number, number][]): { x: number; y: number } {
+  if (points.length === 0) return { x: 0.5, y: 0.5 };
+  let sx = 0;
+  let sy = 0;
+  for (const [x, y] of points) {
+    sx += x;
+    sy += y;
+  }
+  return { x: sx / points.length, y: sy / points.length };
 }

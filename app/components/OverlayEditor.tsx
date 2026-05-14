@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  DIAMOND_PATH,
   HEART_PATH,
   newOverlayId,
   normalizeOverlays,
@@ -9,7 +10,9 @@ import {
   OVERLAY_SHAPE_CLASSES,
   OVERLAY_SHAPE_SVG,
   OVERLAY_TEXT_CLASSES,
+  STAR_PATH,
   STICKER_QUICK_PICKS,
+  strokePointsToPath,
   type CoverOverlay,
   type HighlightShape,
   type OverlayColor,
@@ -18,10 +21,12 @@ import {
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 const COLOR_OPTIONS: { id: OverlayColor; label: string }[] = [
+  { id: "white", label: "white" },
   { id: "cream", label: "cream" },
   { id: "pink", label: "pink" },
   { id: "lavender", label: "lavender" },
   { id: "amber", label: "amber" },
+  { id: "skynavy", label: "navy" },
   { id: "ink", label: "ink" },
 ];
 
@@ -56,6 +61,13 @@ export function OverlayEditor({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const rotateRef = useRef<{ id: string } | null>(null);
+  /** Stroke-in-progress while in draw mode. The drawing overlay is
+   *  appended to the array on pointerdown and updated in place on
+   *  every pointermove sample. */
+  const drawRef = useRef<{ id: string } | null>(null);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawColor, setDrawColor] = useState<OverlayColor>("pink");
+  const [drawWidth, setDrawWidth] = useState(0.015); // ~1.5% of stage width
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savingErr, setSavingErr] = useState<string | null>(null);
 
@@ -223,6 +235,87 @@ export function OverlayEditor({
     persist(overlays);
   }
 
+  // Drawing — start, sample, finish a stroke. Points are stored
+  // in normalized stage coords (0..1). Sampling skips moves that
+  // are smaller than 0.5% of the stage's smaller dimension to
+  // keep paths from being absurdly dense.
+  function pointerToStageFraction(
+    e: React.PointerEvent
+  ): { x: number; y: number } | null {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const rect = stage.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+    };
+  }
+
+  function startDraw(e: React.PointerEvent) {
+    if (overlays.length >= OVERLAY_LIMIT) return;
+    const p = pointerToStageFraction(e);
+    if (!p) return;
+    e.preventDefault();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    const id = newOverlayId();
+    drawRef.current = { id };
+    const stroke: CoverOverlay = {
+      id,
+      type: "stroke",
+      x: 0.5,
+      y: 0.5,
+      scale: 1,
+      rotation: 0,
+      points: [[p.x, p.y]],
+      color: drawColor,
+      width: drawWidth,
+    };
+    onChange([...overlays, stroke]);
+  }
+
+  function moveDraw(e: React.PointerEvent) {
+    const d = drawRef.current;
+    if (!d) return;
+    const p = pointerToStageFraction(e);
+    if (!p) return;
+    // Find current stroke + skip-tiny-moves filter.
+    const cur = overlays.find((o) => o.id === d.id);
+    if (!cur || cur.type !== "stroke") return;
+    const last = cur.points[cur.points.length - 1];
+    const dx = p.x - last[0];
+    const dy = p.y - last[1];
+    if (dx * dx + dy * dy < 0.000025) return; // 0.5% threshold
+    const next = overlays.map((o) =>
+      o.id === d.id && o.type === "stroke"
+        ? { ...o, points: [...o.points, [p.x, p.y]] as [number, number][] }
+        : o
+    );
+    onChange(next);
+  }
+
+  function endDraw(e: React.PointerEvent) {
+    const d = drawRef.current;
+    if (!d) return;
+    (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+    drawRef.current = null;
+    // Strip any stroke that ended with no real movement (single
+    // tap with no drag) so an accidental click doesn't litter the
+    // overlay list with invisible dots.
+    const stroke = overlays.find((o) => o.id === d.id);
+    const next =
+      stroke && stroke.type === "stroke" && stroke.points.length >= 2
+        ? overlays
+        : overlays.filter((o) => o.id !== d.id);
+    if (next === overlays) {
+      persist(next);
+    } else {
+      onChange(next);
+      // No need to persist if we just removed the in-progress
+      // empty stroke that was only in local state.
+    }
+  }
+
   function applyRotationFromPointer(e: React.PointerEvent, id: string) {
     const stage = stageRef.current;
     if (!stage) return;
@@ -264,28 +357,43 @@ export function OverlayEditor({
           <AdderPill
             label="+ sticker"
             active={activeAdder === "sticker"}
-            disabled={overlays.length >= OVERLAY_LIMIT}
-            onClick={() =>
-              setActiveAdder((a) => (a === "sticker" ? null : "sticker"))
-            }
+            disabled={overlays.length >= OVERLAY_LIMIT || drawMode}
+            onClick={() => {
+              setDrawMode(false);
+              setActiveAdder((a) => (a === "sticker" ? null : "sticker"));
+            }}
           />
           <AdderPill
             label="+ caption"
             active={activeAdder === "caption"}
-            disabled={overlays.length >= OVERLAY_LIMIT}
-            onClick={() =>
-              setActiveAdder((a) => (a === "caption" ? null : "caption"))
-            }
+            disabled={overlays.length >= OVERLAY_LIMIT || drawMode}
+            onClick={() => {
+              setDrawMode(false);
+              setActiveAdder((a) => (a === "caption" ? null : "caption"));
+            }}
           />
           <AdderPill
             label="+ highlight"
             active={activeAdder === "highlight"}
-            disabled={overlays.length >= OVERLAY_LIMIT}
-            onClick={() =>
+            disabled={overlays.length >= OVERLAY_LIMIT || drawMode}
+            onClick={() => {
+              setDrawMode(false);
               setActiveAdder((a) =>
                 a === "highlight" ? null : "highlight"
-              )
-            }
+              );
+            }}
+          />
+          {/* Draw mode is mutually exclusive with the adder
+              popovers — toggling it closes them and swaps the
+              stage into stroke-capture mode. */}
+          <AdderPill
+            label={drawMode ? "✓ drawing" : "✎ draw"}
+            active={drawMode}
+            disabled={overlays.length >= OVERLAY_LIMIT && !drawMode}
+            onClick={() => {
+              setActiveAdder(null);
+              setDrawMode((v) => !v);
+            }}
           />
         </div>
       </div>
@@ -370,6 +478,8 @@ export function OverlayEditor({
               { id: "circle" as HighlightShape, label: "● circle" },
               { id: "rect" as HighlightShape, label: "▢ rectangle" },
               { id: "heart" as HighlightShape, label: "♡ heart" },
+              { id: "star" as HighlightShape, label: "★ star" },
+              { id: "diamond" as HighlightShape, label: "◆ diamond" },
             ] as const
           ).map((s) => (
             <button
@@ -384,45 +494,111 @@ export function OverlayEditor({
         </div>
       ) : null}
 
+      {drawMode ? (
+        <div className="flex flex-col gap-2 rounded-md bg-pink-50/60 border border-pink-100 px-2.5 py-2">
+          <p className="text-[10px] text-ink/70">
+            drag on the canvas to draw. release to finish a stroke.
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] text-ink/70 font-semibold w-12 shrink-0">
+              color
+            </span>
+            {COLOR_OPTIONS.map((c) => {
+              const active = drawColor === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setDrawColor(c.id)}
+                  className={
+                    "rounded-pill border px-2 py-0.5 text-[10px] font-semibold transition " +
+                    (active
+                      ? "bg-pink-300 text-white border-pink-300"
+                      : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+                  }
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+          <label className="flex items-center gap-2 text-[11px]">
+            <span className="font-semibold text-ink/70 w-12 shrink-0">
+              brush
+            </span>
+            <input
+              type="range"
+              value={drawWidth}
+              min={0.005}
+              max={0.05}
+              step={0.005}
+              onChange={(e) => setDrawWidth(parseFloat(e.target.value))}
+              className="flex-1 accent-pink-400"
+            />
+            <span className="font-mono text-ink/65 w-12 text-right">
+              {Math.round(drawWidth * 1000) / 10}%
+            </span>
+          </label>
+        </div>
+      ) : null}
+
       {/* Stage — the editable cover canvas. Caller passes the
           background (image / frame / filter) and we draw overlays
           + drag handles on top so click-to-select works. */}
       <div
         ref={stageRef}
-        className="relative w-full aspect-square rounded-md overflow-hidden border border-pink-100 bg-pink-50 mx-auto"
+        className={
+          "relative w-full aspect-square rounded-md overflow-hidden border border-pink-100 bg-pink-50 mx-auto " +
+          (drawMode ? "cursor-crosshair touch-none" : "")
+        }
         style={{
           maxWidth: 360,
           containerType: "inline-size",
         }}
+        onPointerDown={(e) => {
+          // In draw mode the stage itself captures the pointer to
+          // start a stroke. Existing overlays render with
+          // pointer-events:none so they don't intercept the press.
+          if (drawMode) startDraw(e);
+        }}
         onPointerMove={(e) => {
-          if (rotateRef.current) moveRotate(e);
+          if (drawRef.current) moveDraw(e);
+          else if (rotateRef.current) moveRotate(e);
           else if (dragRef.current) moveDrag(e);
         }}
         onPointerUp={(e) => {
-          if (rotateRef.current) endRotate(e);
+          if (drawRef.current) endDraw(e);
+          else if (rotateRef.current) endRotate(e);
           else if (dragRef.current) endDrag(e);
         }}
         onPointerCancel={(e) => {
-          if (rotateRef.current) endRotate(e);
+          if (drawRef.current) endDraw(e);
+          else if (rotateRef.current) endRotate(e);
           else if (dragRef.current) endDrag(e);
         }}
-        onClick={() => setSelectedId(null)}
+        onClick={() => {
+          if (drawMode) return; // don't deselect mid-draw
+          setSelectedId(null);
+        }}
       >
         {background}
         {/* Editable overlay items — duplicates the OverlayLayer
-            renderer but with drag handlers + a selection ring. */}
+            renderer but with drag handlers + a selection ring.
+            In draw mode they go inert so the stage receives the
+            stroke gesture instead. */}
         {overlays.map((o) => (
           <EditableOverlay
             key={o.id}
             overlay={o}
-            selected={o.id === selectedId}
+            selected={!drawMode && o.id === selectedId}
+            interactive={!drawMode}
             onPointerDown={(e) => startDrag(e, o)}
           />
         ))}
         {/* Rotation handle for the selected overlay — a small dot
             anchored "above" the overlay in its rotated frame.
             Dragging it spins the overlay around its center. */}
-        {selected ? (
+        {!drawMode && selected ? (
           <RotationHandle
             overlay={selected}
             onPointerDown={(e) => startRotate(e, selected)}
@@ -458,16 +634,21 @@ export function OverlayEditor({
 function EditableOverlay({
   overlay: o,
   selected,
+  interactive = true,
   onPointerDown,
 }: {
   overlay: CoverOverlay;
   selected: boolean;
+  /** When false, the overlay renders inert (pointer-events: none)
+   *  so the stage can capture pointer events for drawing instead. */
+  interactive?: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
 }) {
   const baseStyle: React.CSSProperties = {
     left: `${o.x * 100}%`,
     top: `${o.y * 100}%`,
     transform: `translate(-50%, -50%) rotate(${o.rotation}deg) scale(${o.scale})`,
+    pointerEvents: interactive ? undefined : "none",
   };
   const ring = selected
     ? "outline outline-2 outline-pink-400 outline-offset-2 rounded-sm"
@@ -513,6 +694,60 @@ function EditableOverlay({
       </button>
     );
   }
+  if (o.type === "stroke") {
+    const svg = OVERLAY_SHAPE_SVG[o.color];
+    const strokeWidth = Math.max(o.width * 100, 0.4);
+    const center = (() => {
+      if (o.points.length === 0) return { x: 0.5, y: 0.5 };
+      let sx = 0;
+      let sy = 0;
+      for (const [x, y] of o.points) {
+        sx += x;
+        sy += y;
+      }
+      return { x: sx / o.points.length, y: sy / o.points.length };
+    })();
+    return (
+      <svg
+        onPointerDown={onPointerDown}
+        onClick={(e) => e.stopPropagation()}
+        className={
+          "absolute inset-0 touch-none " +
+          (interactive ? "cursor-move" : "") +
+          " " +
+          (selected
+            ? "outline outline-2 outline-pink-400 outline-offset-2 rounded-sm"
+            : "")
+        }
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        aria-label="select stroke"
+        style={{ pointerEvents: interactive ? "auto" : "none" }}
+      >
+        <g
+          transform={`translate(${center.x * 100} ${
+            center.y * 100
+          }) rotate(${o.rotation}) scale(${o.scale}) translate(${
+            -center.x * 100
+          } ${-center.y * 100})`}
+        >
+          <path
+            d={strokePointsToPath(o.points)}
+            fill="none"
+            stroke={svg.stroke}
+            strokeOpacity={0.92}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            // Make the entire path width grab the pointer for drag/
+            // select, even though the painted line is thinner.
+            pointerEvents={interactive ? "stroke" : "none"}
+          />
+        </g>
+      </svg>
+    );
+  }
   // highlight
   const style: React.CSSProperties = {
     left: `${o.x * 100}%`,
@@ -520,9 +755,16 @@ function EditableOverlay({
     width: `${Math.max(o.width, 0.05) * 100}%`,
     height: `${Math.max(o.height, 0.05) * 100}%`,
     transform: `translate(-50%, -50%) rotate(${o.rotation}deg) scale(${o.scale})`,
+    pointerEvents: interactive ? undefined : "none",
   };
-  if (o.shape === "heart") {
+  if (o.shape === "heart" || o.shape === "star" || o.shape === "diamond") {
     const svg = OVERLAY_SHAPE_SVG[o.color];
+    const path =
+      o.shape === "heart"
+        ? HEART_PATH
+        : o.shape === "star"
+        ? STAR_PATH
+        : DIAMOND_PATH;
     return (
       <svg
         onPointerDown={onPointerDown}
@@ -531,10 +773,10 @@ function EditableOverlay({
         style={style}
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
-        aria-label="select heart highlight"
+        aria-label={`select ${o.shape} highlight`}
       >
         <path
-          d={HEART_PATH}
+          d={path}
           fill={svg.fill}
           fillOpacity={0.55}
           stroke={svg.stroke}
@@ -650,6 +892,8 @@ function SelectedControls({
             ? `sticker · ${o.emoji}`
             : o.type === "caption"
             ? `caption · "${o.text}"`
+            : o.type === "stroke"
+            ? `drawing · ${o.points.length} pts`
             : `${o.shape} highlight`}
         </span>
         <button
@@ -661,15 +905,21 @@ function SelectedControls({
         </button>
       </div>
 
-      <SliderRow
-        label="size"
-        value={o.scale}
-        min={0.4}
-        max={2.5}
-        step={0.1}
-        onChange={(scale) => onChange({ scale })}
-        format={(v) => `${v.toFixed(1)}×`}
-      />
+      {/* Size slider applies to sticker / caption / highlight via
+          CSS scale. For strokes, scale visually thickens the
+          path too, which conflates with the brush-width slider —
+          we omit it for strokes to keep semantics clean. */}
+      {o.type !== "stroke" ? (
+        <SliderRow
+          label="size"
+          value={o.scale}
+          min={0.4}
+          max={2.5}
+          step={0.1}
+          onChange={(scale) => onChange({ scale })}
+          format={(v) => `${v.toFixed(1)}×`}
+        />
+      ) : null}
       <SliderRow
         label="rotate"
         value={o.rotation}
@@ -703,7 +953,21 @@ function SelectedControls({
         </>
       ) : null}
 
-      {o.type === "caption" || o.type === "highlight" ? (
+      {o.type === "stroke" ? (
+        <SliderRow
+          label="brush"
+          value={o.width}
+          min={0.005}
+          max={0.05}
+          step={0.005}
+          onChange={(width) => onChange({ width })}
+          format={(v) => `${Math.round(v * 1000) / 10}%`}
+        />
+      ) : null}
+
+      {o.type === "caption" ||
+      o.type === "highlight" ||
+      o.type === "stroke" ? (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[10px] text-ink/70 font-semibold mr-1 w-12 shrink-0">
             color
