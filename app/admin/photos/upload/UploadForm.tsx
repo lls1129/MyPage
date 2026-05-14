@@ -1264,7 +1264,7 @@ function DeleteNoticeBanner({
   return (
     <div
       role="status"
-      className="flex items-start gap-3 rounded-md bg-amber-100/60 border border-amber-200 px-3 py-2 text-[12px] text-amber-900 mt-4"
+      className="flex items-center gap-3 rounded-md bg-amber-100/60 border border-amber-200 px-3 py-2 text-[12px] text-amber-900 mt-4"
     >
       <div className="flex-1">
         <p className="font-semibold">
