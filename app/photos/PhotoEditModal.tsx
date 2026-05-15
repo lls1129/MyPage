@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
 import { updatePhotoMeta, setPhotoDecorations } from "./admin-actions";
-import { FILTERS, FRAMES } from "../components/cover-decorations";
+import { FILTERS, FRAMES, FRAME_SIZES } from "../components/cover-decorations";
 
 export function PhotoEditModal({
   photo,
@@ -27,15 +27,24 @@ export function PhotoEditModal({
   // of truth on next router.refresh().
   const [frame, setFrame] = useState<string | null>(photo.cover_frame);
   const [filter, setFilter] = useState<string | null>(photo.cover_filter);
+  const [frameWidth, setFrameWidth] = useState<string | null>(
+    photo.cover_frame_width
+  );
   const [decorPending, startDecor] = useTransition();
   const album = albums.find((a) => a.id === photo.album_id) ?? null;
+  // Width picker only makes sense when there's actually a frame on
+  // this photo (either explicit or inherited from the album).
+  const effectiveFrame =
+    frame === null ? album?.cover_frame ?? null : frame || null;
 
   function applyDecoration(patch: {
     frame?: string | null;
     filter?: string | null;
+    frame_width?: string | null;
   }) {
     if ("frame" in patch) setFrame(patch.frame ?? null);
     if ("filter" in patch) setFilter(patch.filter ?? null);
+    if ("frame_width" in patch) setFrameWidth(patch.frame_width ?? null);
     startDecor(async () => {
       try {
         const res = await setPhotoDecorations(photo.id, patch);
@@ -174,6 +183,16 @@ export function PhotoEditModal({
               disabled={decorPending}
               onPick={(id) => applyDecoration({ filter: id })}
             />
+            {effectiveFrame ? (
+              <WidthRow
+                currentId={frameWidth}
+                albumValue={album?.cover_frame_width ?? null}
+                disabled={decorPending}
+                onPick={(id) =>
+                  applyDecoration({ frame_width: id })
+                }
+              />
+            ) : null}
           </div>
 
           {error ? (
@@ -265,6 +284,63 @@ function DecorationRow({
             }
           >
             {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Frame-thickness picker for the photo edit modal. Like
+// DecorationRow but without the explicit "none" chip — width has
+// no "off" state (every frame has some thickness). NULL = follow
+// album's width; explicit thin/medium/thick = override.
+function WidthRow({
+  currentId,
+  albumValue,
+  disabled,
+  onPick,
+}: {
+  currentId: string | null;
+  albumValue: string | null;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+}) {
+  const inheritLabel = albumValue
+    ? `follow album · ${albumValue}`
+    : "follow album";
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <p className="label text-pink-600 shrink-0 w-12">width</p>
+      <button
+        type="button"
+        onClick={() => onPick(null)}
+        disabled={disabled}
+        className={
+          "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+          (currentId === null
+            ? "bg-pink-300 text-white border-pink-300"
+            : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+        }
+      >
+        {inheritLabel}
+      </button>
+      {FRAME_SIZES.map((s) => {
+        const selected = currentId === s.id;
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onPick(selected ? null : s.id)}
+            disabled={disabled}
+            className={
+              "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+              (selected
+                ? "bg-pink-300 text-white border-pink-300"
+                : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+            }
+          >
+            {s.label}
           </button>
         );
       })}

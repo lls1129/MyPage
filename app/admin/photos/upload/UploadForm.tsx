@@ -189,6 +189,7 @@ export function UploadForm({
             // the batch editor or PhotoEditModal.
             cover_frame: null,
             cover_filter: null,
+            cover_frame_width: null,
           });
         } catch (err) {
           failed += 1;
@@ -660,6 +661,7 @@ type SuccessItem = {
   // PhotoEditModal — see app/components/cover-decorations.ts.
   cover_frame: string | null;
   cover_filter: string | null;
+  cover_frame_width: string | null;
 };
 
 function UploadSuccessCard({
@@ -1740,6 +1742,7 @@ function BatchItemEditor({
   function applyDecoration(patch: {
     frame?: string | null;
     filter?: string | null;
+    frame_width?: string | null;
   }) {
     setErr(null);
     // Optimistic-ish: bubble the new value to the parent so the
@@ -1751,6 +1754,10 @@ function BatchItemEditor({
         "frame" in patch ? patch.frame ?? null : item.cover_frame,
       cover_filter:
         "filter" in patch ? patch.filter ?? null : item.cover_filter,
+      cover_frame_width:
+        "frame_width" in patch
+          ? patch.frame_width ?? null
+          : item.cover_frame_width,
     });
     startDecor(async () => {
       try {

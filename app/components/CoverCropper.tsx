@@ -6,6 +6,7 @@ import {
   frameInsetFor,
   frameOverlayFor,
 } from "./cover-decorations";
+import { belowCoverTitle, onCoverTitle } from "./album-title";
 import { type CoverOverlay } from "./cover-overlays";
 import { OverlayLayer } from "./OverlayLayer";
 
@@ -57,6 +58,9 @@ export function CoverCropper({
   frameWidth = "medium",
   filter = null,
   overlays = [],
+  titlePlacement = "below",
+  albumName,
+  albumCount,
   onCommit,
 }: {
   imageUrl: string;
@@ -71,6 +75,12 @@ export function CoverCropper({
    *  overlay editor is showing so admin sees crop + decoration +
    *  overlays composed together. */
   overlays?: CoverOverlay[];
+  /** Where the album-name strip renders on the card. Passed through
+   *  so the preview tile mirrors the real card on /photos including
+   *  the title placement. */
+  titlePlacement?: string;
+  albumName?: string;
+  albumCount?: number;
   onCommit: (crop: CoverCrop) => Promise<ActionResult>;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -530,12 +540,29 @@ export function CoverCropper({
           ) : null}
         </div>
 
-        {/* Preview: square card-sized rendering with current crop. */}
+        {/* Preview: square card-sized rendering with current crop +
+            the album title strip in its chosen placement so admin
+            sees the full card as it'll render on /photos. For solid
+            frames we drop the preview's pink chrome (matching the
+            real card) so the frame's outer curve is the visible
+            outline. */}
         <div className="flex flex-row md:flex-col items-center md:items-stretch gap-3 md:gap-2 md:w-44 shrink-0">
+          {(() => {
+            const isSolidFrame = !!frameInsetFor(frame, frameWidth);
+            return (
           <div className="flex flex-col gap-1 shrink-0">
             <p className="label text-pink-600">card preview</p>
             <div
-              className="w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft"
+              className={
+                "w-32 md:w-full overflow-hidden " +
+                (isSolidFrame ? "" : "rounded-lg border border-pink-100 bg-white shadow-soft")
+              }
+            >
+            <div
+              className={
+                "aspect-square overflow-hidden relative " +
+                (isSolidFrame ? "" : "bg-pink-50")
+              }
               style={{ containerType: "inline-size" }}
             >
               {natural ? (
@@ -586,10 +613,24 @@ export function CoverCropper({
                     overlays={overlays}
                     insetClass={frameInsetFor(frame, frameWidth)}
                   />
+                  {/* In-cover title placements (corner / hover). For
+                      the preview we force the hover variant visible
+                      so admin can see the placement at rest too. */}
+                  {albumName !== undefined && albumCount !== undefined
+                    ? onCoverTitle(titlePlacement, albumName, albumCount, true)
+                    : null}
                 </>
               ) : null}
             </div>
+            {/* Below-cover title placements render outside the
+                aspect-square cover, inside the card chrome. */}
+            {albumName !== undefined && albumCount !== undefined
+              ? belowCoverTitle(titlePlacement, albumName, albumCount)
+              : null}
+            </div>
           </div>
+            );
+          })()}
           <div className="flex flex-col gap-1 min-w-0">
             <p className="text-[10px] text-ink/70 font-mono leading-tight">
               {natural

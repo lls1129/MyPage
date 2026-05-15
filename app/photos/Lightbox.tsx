@@ -14,6 +14,7 @@ import type { Album } from "@/lib/supabase/albums";
 import {
   FILTERS,
   FRAMES,
+  FRAME_SIZES,
   filterCssFor,
   frameOuterRadiusFor,
   frameOverlayFor,
@@ -66,7 +67,11 @@ export function Lightbox({
 
   function applyPhotoDecoration(
     photoId: string,
-    patch: { frame?: string | null; filter?: string | null }
+    patch: {
+      frame?: string | null;
+      filter?: string | null;
+      frame_width?: string | null;
+    }
   ) {
     setDecorError(null);
     startDecor(async () => {
@@ -351,6 +356,20 @@ export function Lightbox({
                   applyPhotoDecoration(photo.id, { filter: id })
                 }
               />
+              {/* Width override only useful when there's an effective
+                  frame on this photo (explicit or inherited). */}
+              {(photo.cover_frame === null
+                ? album?.cover_frame ?? null
+                : photo.cover_frame || null) ? (
+                <WidthChipRow
+                  currentId={photo.cover_frame_width}
+                  albumValue={album?.cover_frame_width ?? null}
+                  disabled={decorPending}
+                  onPick={(id) =>
+                    applyPhotoDecoration(photo.id, { frame_width: id })
+                  }
+                />
+              ) : null}
               {decorError ? (
                 <p className="text-[11px] text-pink-200 font-semibold">
                   {decorError}
@@ -424,6 +443,51 @@ function DecorationChipRow({
             disabled={disabled}
           >
             {opt.label}
+          </ChipBtn>
+        );
+      })}
+    </div>
+  );
+}
+
+// Width override for the lightbox meta panel — only meaningful when
+// the photo has an effective frame. NULL = follow album's width.
+function WidthChipRow({
+  currentId,
+  albumValue,
+  disabled,
+  onPick,
+}: {
+  currentId: string | null;
+  albumValue: string | null;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+}) {
+  const inheritLabel = albumValue
+    ? `follow album · ${albumValue}`
+    : "follow album";
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-[10px] uppercase tracking-wide font-bold text-cream/55 mr-1 w-12 shrink-0">
+        width
+      </span>
+      <ChipBtn
+        active={currentId === null}
+        onClick={() => onPick(null)}
+        disabled={disabled}
+      >
+        {inheritLabel}
+      </ChipBtn>
+      {FRAME_SIZES.map((s) => {
+        const selected = currentId === s.id;
+        return (
+          <ChipBtn
+            key={s.id}
+            active={selected}
+            onClick={() => onPick(selected ? null : s.id)}
+            disabled={disabled}
+          >
+            {s.label}
           </ChipBtn>
         );
       })}

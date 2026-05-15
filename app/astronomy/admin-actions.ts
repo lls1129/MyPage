@@ -285,13 +285,19 @@ export async function updateAstrophotoMeta(formData: FormData) {
 // See resolveDecoration() in lib/supabase/photos.ts for the rule.
 export async function setAstrophotoDecorations(
   id: string,
-  patch: { frame?: string | null; filter?: string | null }
+  patch: {
+    frame?: string | null;
+    filter?: string | null;
+    frame_width?: string | null;
+  }
 ) {
   await requireAdmin();
   if (!id) return { ok: false as const, error: "missing astrophoto id" };
   const updates: Record<string, string | null> = {};
   if ("frame" in patch) updates.cover_frame = patch.frame ?? null;
   if ("filter" in patch) updates.cover_filter = patch.filter ?? null;
+  if ("frame_width" in patch)
+    updates.cover_frame_width = patch.frame_width ?? null;
   if (Object.keys(updates).length === 0) return { ok: true as const };
   const admin = createAdminClient();
   const { error } = await admin

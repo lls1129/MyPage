@@ -18,6 +18,9 @@ export type Photo = {
   // setting" — use resolveDecoration() to compute the effective value.
   cover_frame: string | null;
   cover_filter: string | null;
+  // Per-photo override for the frame thickness. NULL inherits the
+  // album's width. See migration 0021.
+  cover_frame_width: string | null;
 };
 
 // resolveDecoration lives in app/components/cover-decorations.ts —

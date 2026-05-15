@@ -488,6 +488,9 @@ export function AlbumPageAdmin({
                 frameWidth={album.cover_frame_width}
                 filter={album.cover_filter}
                 overlays={overlays}
+                titlePlacement={album.title_placement}
+                albumName={album.name}
+                albumCount={coverCandidates.length}
                 onCommit={commitCrop}
               />
 

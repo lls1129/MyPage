@@ -25,6 +25,7 @@ export type Astrophoto = {
   // shared fallback rule.
   cover_frame: string | null;
   cover_filter: string | null;
+  cover_frame_width: string | null;
 };
 
 export type AstrophotosResult =

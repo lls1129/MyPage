@@ -330,8 +330,8 @@ export const FILTERS: FilterPreset[] = [
 //   null  → inherit (fall back to album's value, else nothing)
 //   ""    → explicit no decoration (override an album default off)
 //   id    → explicit preset override
-// Frame width is album-only — photos inherit it whichever way their
-// frame resolves.
+// Frame width follows the same rule (migration 0021); photos that
+// don't override inherit the album's width.
 function resolveOne(photoValue: string | null, albumValue: string | null) {
   if (photoValue === null) return albumValue ?? null; // inherit
   if (photoValue === "") return null; // explicit none
@@ -339,7 +339,11 @@ function resolveOne(photoValue: string | null, albumValue: string | null) {
 }
 
 export function resolveDecoration(
-  photo: { cover_frame: string | null; cover_filter: string | null },
+  photo: {
+    cover_frame: string | null;
+    cover_filter: string | null;
+    cover_frame_width?: string | null;
+  },
   album: {
     cover_frame: string | null;
     cover_filter: string | null;
@@ -350,12 +354,17 @@ export function resolveDecoration(
   filter: string | null;
   frameWidth: FrameSize;
 } {
+  const photoWidth =
+    typeof photo.cover_frame_width === "string" &&
+    photo.cover_frame_width.length > 0
+      ? photo.cover_frame_width
+      : null;
+  const albumWidth = album?.cover_frame_width ?? null;
+  const resolvedWidth = photoWidth ?? albumWidth;
   return {
     frame: resolveOne(photo.cover_frame, album?.cover_frame ?? null),
     filter: resolveOne(photo.cover_filter, album?.cover_filter ?? null),
-    frameWidth: isFrameSize(album?.cover_frame_width)
-      ? album.cover_frame_width
-      : "medium",
+    frameWidth: isFrameSize(resolvedWidth) ? resolvedWidth : "medium",
   };
 }
 

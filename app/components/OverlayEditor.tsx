@@ -868,9 +868,17 @@ export function OverlayEditor({
           "stage" div is inset to match the photo's frame inset so
           overlay coordinates + drag math share the photo's frame
           of reference. Background renders at the outer bounds so
-          the frame + photo paint at full size. */}
+          the frame + photo paint at full size. For solid frames
+          (which paint their own outer outline) we drop the pink
+          chrome on the outer container so the frame's curve is
+          the visible shape. */}
       <div
-        className="relative w-full aspect-square rounded-md overflow-hidden border border-pink-100 bg-pink-50 mx-auto"
+        className={
+          "relative w-full aspect-square overflow-hidden mx-auto " +
+          (stageInsetClass
+            ? ""
+            : "rounded-md border border-pink-100 bg-pink-50")
+        }
         style={{
           maxWidth: 360,
           containerType: "inline-size",
