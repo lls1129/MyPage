@@ -80,6 +80,10 @@ export function OverlayEditor({
    *  gesture, used so undo can restore the pre-gesture state in
    *  one click instead of replaying each pointermove sample. */
   const historyBookmark = useRef<CoverOverlay[] | null>(null);
+  // Editor starts collapsed — the album page already shows the
+  // small cover preview in the cropper, and admin only opens the
+  // overlay editor when they want to add / move decorations.
+  const [open, setOpen] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [eraserMode, setEraserMode] = useState(false);
   const [drawColor, setDrawColor] = useState<OverlayColor>("pink");
@@ -542,13 +546,58 @@ export function OverlayEditor({
 
   const selected = overlays.find((o) => o.id === selectedId) ?? null;
 
+  if (!open) {
+    // Collapsed header — admin opens the editor only when they need
+    // to add / reposition overlays, so the album page stays compact
+    // by default. Count + a small preview of the layer types lives
+    // here so admin can see at a glance what's applied.
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center justify-between gap-2 rounded-md bg-white border border-pink-100 px-3 py-2 text-left hover:border-pink-300 transition-colors"
+        aria-expanded={false}
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <span className="text-[11px] text-pink-800 font-semibold shrink-0">
+            ✿ overlays
+          </span>
+          <span className="text-[10px] text-ink/65 truncate">
+            {overlays.length === 0
+              ? "none yet · tap to add"
+              : `${overlays.length} of ${OVERLAY_LIMIT} · tap to edit`}
+          </span>
+        </span>
+        <span
+          aria-hidden
+          className="text-[10px] text-pink-700 font-semibold w-3 text-center shrink-0"
+        >
+          ▸
+        </span>
+      </button>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3 rounded-md bg-white border border-pink-100 p-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-[11px] text-pink-800 font-semibold">
-            ✿ overlays
-          </p>
+          <button
+            type="button"
+            onClick={() => {
+              endDrawSession();
+              setDrawMode(false);
+              setEraserMode(false);
+              setActiveAdder(null);
+              setOpen(false);
+            }}
+            className="text-[11px] text-pink-800 font-semibold inline-flex items-center gap-1 hover:text-pink-600"
+            title="collapse"
+            aria-expanded={true}
+          >
+            <span aria-hidden>▾</span>
+            <span>✿ overlays</span>
+          </button>
           <p className="text-[10px] text-ink/65">
             {overlays.length} of {OVERLAY_LIMIT} · drag to reposition
           </p>
