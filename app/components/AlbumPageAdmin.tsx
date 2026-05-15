@@ -707,7 +707,7 @@ export function AlbumPageAdmin({
                     ) : null}
                     {album.cover_frame ? (
                       <SizeRow
-                        label="frame α"
+                        label="fade"
                         options={FRAME_OPACITY_OPTIONS}
                         currentId={String(
                           Math.round((album.cover_frame_opacity ?? 1) * 100)

@@ -137,9 +137,26 @@ export function StackedTitle({
   count: number;
   style?: TitleStyle;
 }) {
-  const pad = SIZE_PADDING[style.size ?? "md"];
-  const nameText = SIZE_STACKED_NAME_TEXT[style.size ?? "md"];
+  const sizeKey = style.size ?? "md";
+  const nameText = SIZE_STACKED_NAME_TEXT[sizeKey];
   const radius = style.radius && style.radius !== "none" ? style.radius : null;
+  // Big rounded radii (pill / round) eat into the corner space; push
+  // text inward so e.g. "48 photos" doesn't kiss the bottom curve.
+  const curvyPad =
+    radius === "rounded-full"
+      ? sizeKey === "sm"
+        ? "px-5 py-2"
+        : sizeKey === "lg"
+        ? "px-7 py-3"
+        : "px-6 py-2.5"
+      : radius === "rounded-xl"
+      ? sizeKey === "sm"
+        ? "px-4 py-1.5"
+        : sizeKey === "lg"
+        ? "px-6 py-3"
+        : "px-5 py-2.5"
+      : SIZE_PADDING[sizeKey];
+  const pad = radius ? curvyPad : SIZE_PADDING[sizeKey];
   const body = (
     <>
       <p
