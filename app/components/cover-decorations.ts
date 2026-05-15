@@ -38,6 +38,11 @@ export type FramePreset = {
    *  the wrapper carries the frame. The padding shrinks the image's
    *  content area; the frame overlay still spans the full bounds. */
   pads?: Record<FrameSize, string>;
+  /** Outer corner-radius class for the cover/photo wrapper, matching
+   *  the frame's outermost rounded curve. Lets a wrapper clip its
+   *  contents (photo, bg) along the frame's shape so we don't see a
+   *  mismatched square / small-radius outline poking past curves. */
+  outerRadius?: Record<FrameSize, string>;
 };
 
 export type FilterPreset = {
@@ -65,6 +70,11 @@ export const FRAMES: FramePreset[] = [
       thin: "p-[2px]",
       medium: "p-[4px]",
       thick: "p-[8px]",
+    },
+    outerRadius: {
+      thin: "rounded-md",
+      medium: "rounded-md",
+      thick: "rounded-md",
     },
   },
   {
@@ -115,6 +125,11 @@ export const FRAMES: FramePreset[] = [
       medium: "p-[10px]",
       thick: "p-[18px]",
     },
+    outerRadius: {
+      thin: "rounded-md",
+      medium: "rounded-md",
+      thick: "rounded-md",
+    },
   },
   {
     id: "polaroid",
@@ -134,6 +149,11 @@ export const FRAMES: FramePreset[] = [
       thin: "pt-[4px] pl-[4px] pr-[4px] pb-[12px]",
       medium: "pt-[6px] pl-[6px] pr-[6px] pb-[18px]",
       thick: "pt-[10px] pl-[10px] pr-[10px] pb-[30px]",
+    },
+    outerRadius: {
+      thin: "",
+      medium: "",
+      thick: "",
     },
   },
   {
@@ -155,6 +175,11 @@ export const FRAMES: FramePreset[] = [
       thin: "p-[2px]",
       medium: "p-[4px]",
       thick: "p-[8px]",
+    },
+    outerRadius: {
+      thin: "rounded-md",
+      medium: "rounded-md",
+      thick: "rounded-md",
     },
   },
   {
@@ -210,6 +235,11 @@ export const FRAMES: FramePreset[] = [
       medium: "p-[12px]",
       thick: "p-[20px]",
     },
+    outerRadius: {
+      thin: "rounded-2xl",
+      medium: "rounded-3xl",
+      thick: "rounded-[2rem]",
+    },
   },
   {
     id: "lavender",
@@ -229,6 +259,11 @@ export const FRAMES: FramePreset[] = [
       thin: "p-[3px]",
       medium: "p-[5px]",
       thick: "p-[10px]",
+    },
+    outerRadius: {
+      thin: "rounded-md",
+      medium: "rounded-md",
+      thick: "rounded-md",
     },
   },
 ];
@@ -373,4 +408,20 @@ export function framePadFor(
   if (!preset?.pads) return "";
   const sz = isFrameSize(size) ? size : "medium";
   return preset.pads[sz] ?? "";
+}
+
+/** Outer corner-radius class for the cover/photo wrapper, matching
+ *  the chosen frame's outermost curve. Use on a wrapper that has
+ *  `overflow-hidden` so the photo and bg clip along the frame's
+ *  shape — avoids the small-radius outline showing past a bigger
+ *  / square frame outline. Returns empty for decorative frames. */
+export function frameOuterRadiusFor(
+  id: string | null | undefined,
+  size: string | null | undefined = "medium"
+): string {
+  if (!id) return "";
+  const preset = FRAMES.find((f) => f.id === id);
+  if (!preset?.outerRadius) return "";
+  const sz = isFrameSize(size) ? size : "medium";
+  return preset.outerRadius[sz] ?? "";
 }

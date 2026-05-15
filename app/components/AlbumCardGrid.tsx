@@ -175,9 +175,8 @@ export function AlbumCardGrid({
             </div>
             {/* Caption strip sits below the cover so the photo
                 stays clean and busy bottom-edge photos can't fight
-                with the script title. Bordered top keeps the label
-                visually tied to the card it describes. */}
-            <div className="flex items-baseline justify-between gap-2 px-3 py-2 border-t border-pink-100/80">
+                with the script title. */}
+            <div className="flex items-baseline justify-between gap-2 px-3 py-2">
               <p className="font-script text-skynavy-900 text-lg leading-tight truncate pr-1">
                 {a.name}
               </p>

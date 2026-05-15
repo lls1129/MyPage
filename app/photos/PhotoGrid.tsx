@@ -7,7 +7,8 @@ import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
 import {
   filterCssFor,
-  framePadFor,
+  frameInsetFor,
+  frameOuterRadiusFor,
   frameOverlayFor,
   resolveDecoration,
 } from "../components/cover-decorations";
@@ -374,15 +375,30 @@ function PhotoTile({
 }) {
   const filterCss = filterCssFor(filter);
   const frameClass = frameOverlayFor(frame, frameWidth);
-  const padClass = framePadFor(frame, frameWidth);
+  // Solid frames paint their own outer outline + shape, so we drop
+  // the wrapper's pink border + bg-pink-50 + small rounded-md and
+  // adopt the frame's outer radius so the photo clips along the
+  // frame's curve. Decorative frames (and frame-less photos) keep
+  // the original wrapper chrome.
+  const isSolidFrame = !!frameInsetFor(frame, frameWidth);
+  const outerRadiusClass =
+    frameOuterRadiusFor(frame, frameWidth) ||
+    (isSolidFrame ? "" : "rounded-md");
   return (
     <div
       className={
-        "group block w-full mb-4 break-inside-avoid relative overflow-hidden rounded-md bg-pink-50 border shadow-soft lift " +
-        padClass +
+        "group block w-full mb-4 break-inside-avoid relative overflow-hidden lift " +
+        outerRadiusClass +
         " " +
+        (isSolidFrame
+          ? "shadow-soft "
+          : "bg-pink-50 border shadow-soft ") +
         (photo.hidden
-          ? "border-lavender-200 ring-2 ring-lavender-100"
+          ? isSolidFrame
+            ? "ring-2 ring-lavender-100"
+            : "border-lavender-200 ring-2 ring-lavender-100"
+          : isSolidFrame
+          ? ""
           : "border-pink-100 hover:border-pink-200")
       }
     >
