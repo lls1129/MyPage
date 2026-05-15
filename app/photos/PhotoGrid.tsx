@@ -22,9 +22,15 @@ import {
   convertPhotoToAstrophoto,
 } from "./admin-actions";
 
-function rotationStyle(rotation: number | null | undefined) {
-  if (!rotation) return undefined;
-  return { transform: `rotate(${rotation}deg)` };
+function transformStyle(
+  rotation: number | null | undefined,
+  flipped: boolean | null | undefined
+) {
+  const parts: string[] = [];
+  if (rotation) parts.push(`rotate(${rotation}deg)`);
+  if (flipped) parts.push("scaleX(-1)");
+  if (parts.length === 0) return undefined;
+  return { transform: parts.join(" ") };
 }
 
 export function PhotoGrid({
@@ -425,7 +431,7 @@ function PhotoTile({
           loading={eager ? "eager" : "lazy"}
           decoding="async"
           style={{
-            ...(rotationStyle(photo.rotation) ?? {}),
+            ...(transformStyle(photo.rotation, photo.flipped) ?? {}),
             filter: filterCss || undefined,
           }}
           className={

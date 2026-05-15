@@ -246,9 +246,13 @@ export function Lightbox({
                   src={photo.image_url}
                   alt={photo.caption || ""}
                   style={{
-                    transform: photo.rotation
-                      ? `rotate(${photo.rotation}deg)`
-                      : undefined,
+                    transform: (() => {
+                      const parts: string[] = [];
+                      if (photo.rotation)
+                        parts.push(`rotate(${photo.rotation}deg)`);
+                      if (photo.flipped) parts.push("scaleX(-1)");
+                      return parts.length > 0 ? parts.join(" ") : undefined;
+                    })(),
                     filter: filterCss || undefined,
                     // No-dimensions fallback needs the same vh cap
                     // as the aspect-ratio'd wrapper so it doesn't

@@ -95,11 +95,14 @@ export default async function AstrophotoDetailPage(
           <img
             src={photo.image_url}
             alt={photo.object_name || photo.caption || "astrophoto"}
-            style={
-              photo.rotation
-                ? { transform: `rotate(${photo.rotation}deg)` }
-                : undefined
-            }
+            style={(() => {
+              const parts: string[] = [];
+              if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
+              if (photo.flipped) parts.push("scaleX(-1)");
+              return parts.length > 0
+                ? { transform: parts.join(" ") }
+                : undefined;
+            })()}
             className="w-full h-auto block transition-transform"
           />
         </div>

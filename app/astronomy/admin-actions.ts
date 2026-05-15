@@ -406,6 +406,28 @@ export async function rotateAstrophoto(id: string, direction: "left" | "right") 
   return { ok: true };
 }
 
+// Toggle the astrophoto's horizontal-flip flag. See flipPhoto.
+export async function flipAstrophoto(id: string) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "Missing id." };
+  const admin = createAdminClient();
+  const { data: row, error: fetchErr } = await admin
+    .from("astrophotos")
+    .select("flipped")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchErr) return { ok: false as const, error: fetchErr.message };
+  const next = !row?.flipped;
+  const { error } = await admin
+    .from("astrophotos")
+    .update({ flipped: next })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/photo/${id}`);
+  return { ok: true as const, flipped: next };
+}
+
 export async function deleteAstrophoto(id: string) {
   await requireAdmin();
   if (!id) return { ok: false as const, error: "Missing id." };
@@ -527,6 +549,7 @@ export async function convertAstrophotoToPhoto(id: string) {
     tags: [] as string[],
     hidden: row.hidden,
     rotation: row.rotation ?? 0,
+    flipped: Boolean(row.flipped),
     width: row.width,
     height: row.height,
     taken_at: row.taken_at,

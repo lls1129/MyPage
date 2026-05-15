@@ -112,6 +112,29 @@ export async function rotatePhoto(id: string, direction: "left" | "right") {
   return { ok: true };
 }
 
+// Toggle the photo's horizontal-flip flag. CSS scaleX(-1) is
+// composed on display alongside rotation; the file in storage is
+// never rewritten.
+export async function flipPhoto(id: string) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "Missing id." };
+  const admin = createAdminClient();
+  const { data: row, error: fetchErr } = await admin
+    .from("photos")
+    .select("flipped")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchErr) return { ok: false as const, error: fetchErr.message };
+  const next = !row?.flipped;
+  const { error } = await admin
+    .from("photos")
+    .update({ flipped: next })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  return { ok: true as const, flipped: next };
+}
+
 export async function deletePhoto(id: string) {
   await requireAdmin();
   if (!id) return { ok: false as const, error: "Missing id." };
@@ -567,6 +590,7 @@ export async function convertPhotoToAstrophoto(id: string) {
     taken_at: row.taken_at,
     hidden: row.hidden,
     rotation: row.rotation ?? 0,
+    flipped: Boolean(row.flipped),
     width: row.width,
     height: row.height,
   });

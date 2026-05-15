@@ -13,6 +13,7 @@ import {
 import { signPhotoUpload, insertPhotoRow } from "./actions";
 import {
   deletePhoto,
+  flipPhoto,
   rotatePhoto,
   setPhotoDecorations,
   togglePhotoHidden,
@@ -25,6 +26,22 @@ import {
 import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
+
+// Build a CSS transform that composes rotation (deg) with an
+// optional horizontal flip. Used by every upload-flow preview that
+// displays a photo so the rotated / flipped state stays consistent
+// across the success card, batch editor, larger preview, and grid
+// thumbnails.
+function composeTransform(
+  rotation: number | null | undefined,
+  flipped: boolean | null | undefined
+): React.CSSProperties | undefined {
+  const parts: string[] = [];
+  if (rotation) parts.push(`rotate(${rotation}deg)`);
+  if (flipped) parts.push("scaleX(-1)");
+  if (parts.length === 0) return undefined;
+  return { transform: parts.join(" ") };
+}
 
 function parseTagsCsv(raw: string): string[] {
   return raw
@@ -186,6 +203,7 @@ export function UploadForm({
             width: dims?.width ?? null,
             height: dims?.height ?? null,
             rotation: 0,
+            flipped: false,
             // No per-photo override at upload time — photo inherits
             // its album's decoration. Admin can override later via
             // the batch editor or PhotoEditModal.
@@ -661,6 +679,9 @@ type SuccessItem = {
   // Persisted rotation in degrees (0 / 90 / 180 / 270). Applied as a
   // CSS transform in renderers; the source pixels are never rewritten.
   rotation: number;
+  // Persisted horizontal-flip flag. Composed with rotation as a CSS
+  // transform on display — same source pixels.
+  flipped: boolean;
   // Per-photo decoration overrides. null = inherit album,
   // "" = explicit none, id = preset override. Same semantics as
   // PhotoEditModal — see app/components/cover-decorations.ts.
@@ -731,6 +752,21 @@ function UploadSuccessCard({
         const res = await rotatePhoto(item.id, direction);
         if (!res.ok)
           setSaveError(res.error ?? "couldn’t rotate.");
+      } catch (e) {
+        setSaveError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
+
+  function applyFlip() {
+    setSaveError(null);
+    onUpdate({ ...item, flipped: !item.flipped });
+    startRotate(async () => {
+      try {
+        const res = await flipPhoto(item.id);
+        if (!res.ok) setSaveError(res.error ?? "couldn’t flip.");
       } catch (e) {
         setSaveError(
           e instanceof Error ? e.message : "couldn’t reach the server."
@@ -928,11 +964,7 @@ function UploadSuccessCard({
             <img
               src={item.src}
               alt={item.caption || "uploaded photo"}
-              style={
-                item.rotation
-                  ? { transform: `rotate(${item.rotation}deg)` }
-                  : undefined
-              }
+              style={composeTransform(item.rotation, item.flipped)}
               className={
                 haveDims
                   ? "block w-full h-full object-cover transition-transform"
@@ -940,11 +972,11 @@ function UploadSuccessCard({
               }
             />
           </button>
-          {/* Rotate pair — sit under the thumbnail so admin can fix
-              EXIF-orientation issues without leaving the upload flow.
-              Action is persisted via rotatePhoto; CSS transform
-              renders the rotated visual without rewriting pixels. */}
-          <div className="flex items-center gap-1.5">
+          {/* Rotate + flip pair — sit under the thumbnail so admin
+              can fix EXIF-orientation issues and mirror without
+              leaving the upload flow. Actions are persisted; CSS
+              transforms render the visual without rewriting pixels. */}
+          <div className="flex items-center gap-1.5 flex-wrap justify-center">
             <button
               type="button"
               onClick={() => applyRotate("left")}
@@ -964,6 +996,21 @@ function UploadSuccessCard({
               className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
             >
               ↻ rotate
+            </button>
+            <button
+              type="button"
+              onClick={applyFlip}
+              disabled={rotatePending}
+              title="flip horizontally"
+              aria-label="flip horizontally"
+              className={
+                "rounded-pill border px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60 " +
+                (item.flipped
+                  ? "bg-pink-300 text-white border-pink-300"
+                  : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+              }
+            >
+              ⇋ flip
             </button>
           </div>
         </div>
@@ -1172,6 +1219,7 @@ function UploadSuccessCard({
           aspect={aspect}
           caption={item.caption}
           rotation={item.rotation}
+          flipped={item.flipped}
           albumLinkHref={albumLinkHref}
           albumLinkLabel={albumLinkLabel}
           onClose={() => setPreviewOpen(false)}
@@ -1190,6 +1238,7 @@ function PreviewOverlay({
   aspect,
   caption,
   rotation,
+  flipped,
   albumLinkHref,
   albumLinkLabel,
   onClose,
@@ -1198,6 +1247,7 @@ function PreviewOverlay({
   aspect?: string;
   caption: string;
   rotation?: number;
+  flipped?: boolean;
   albumLinkHref: string;
   albumLinkLabel: string;
   onClose: () => void;
@@ -1264,11 +1314,7 @@ function PreviewOverlay({
             <img
               src={src}
               alt={caption || "uploaded photo"}
-              style={
-                rotation
-                  ? { transform: `rotate(${rotation}deg)` }
-                  : undefined
-              }
+              style={composeTransform(rotation, flipped)}
               className={
                 aspect
                   ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
@@ -1813,11 +1859,7 @@ function UploadSuccessGrid({
               <img
                 src={it.src}
                 alt={it.caption || "uploaded photo"}
-                style={
-                  it.rotation
-                    ? { transform: `rotate(${it.rotation}deg)` }
-                    : undefined
-                }
+                style={composeTransform(it.rotation, it.flipped)}
                 className="w-full h-full object-cover transition-transform"
               />
               {it.hidden ? (
@@ -1960,6 +2002,21 @@ function BatchItemEditor({
       try {
         const res = await rotatePhoto(item.id, direction);
         if (!res.ok) setErr(res.error ?? "couldn’t rotate.");
+      } catch (e) {
+        setErr(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
+
+  function applyFlip() {
+    setErr(null);
+    onSaved({ ...item, flipped: !item.flipped });
+    startRotateBatch(async () => {
+      try {
+        const res = await flipPhoto(item.id);
+        if (!res.ok) setErr(res.error ?? "couldn’t flip.");
       } catch (e) {
         setErr(
           e instanceof Error ? e.message : "couldn’t reach the server."
@@ -2194,21 +2251,17 @@ function BatchItemEditor({
               <img
                 src={item.src}
                 alt={item.caption || "uploaded photo"}
-                style={
-                  item.rotation
-                    ? { transform: `rotate(${item.rotation}deg)` }
-                    : undefined
-                }
+                style={composeTransform(item.rotation, item.flipped)}
                 className={
                   aspect
                     ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
                     : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft transition-transform"
                 }
               />
-              {/* Rotate pair sits at the bottom-center of the photo
-                  so admin can fix orientation without leaving the
-                  batch editor. */}
-              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+              {/* Rotate + flip pair sits at the bottom-center of the
+                  photo so admin can fix orientation without leaving
+                  the batch editor. */}
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 flex-wrap justify-center">
                 <button
                   type="button"
                   onClick={() => applyRotate("left")}
@@ -2228,6 +2281,21 @@ function BatchItemEditor({
                   className="rounded-pill bg-skynavy-900/55 text-cream border border-cream/30 backdrop-blur-sm hover:bg-skynavy-900/80 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
                 >
                   ↻ rotate
+                </button>
+                <button
+                  type="button"
+                  onClick={applyFlip}
+                  disabled={rotatePending}
+                  title="flip horizontally"
+                  aria-label="flip horizontally"
+                  className={
+                    "rounded-pill border backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60 " +
+                    (item.flipped
+                      ? "bg-pink-300 text-white border-pink-300"
+                      : "bg-skynavy-900/55 text-cream border-cream/30 hover:bg-skynavy-900/80")
+                  }
+                >
+                  ⇋ flip
                 </button>
               </div>
             </div>

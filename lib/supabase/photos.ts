@@ -9,6 +9,9 @@ export type Photo = {
   tags: string[];
   hidden: boolean;
   rotation: number;
+  // Horizontal flip toggle — composed with rotation as a CSS
+  // transform on display. Source pixels stay untouched.
+  flipped: boolean;
   width: number | null;
   height: number | null;
   taken_at: string | null;
@@ -141,6 +144,7 @@ export async function fetchPhotosByIds(
         ...row,
         photo_ids: row.photo_ids ?? [],
         rotation: row.rotation ?? 0,
+        flipped: Boolean(row.flipped),
       } as Photo);
     }
     return map;

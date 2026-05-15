@@ -31,9 +31,15 @@ function quickDetail(p: Astrophoto): string {
   return parts.join(" · ");
 }
 
-function rotationStyle(rotation: number | null | undefined) {
-  if (!rotation) return undefined;
-  return { transform: `rotate(${rotation}deg)` };
+function transformStyle(
+  rotation: number | null | undefined,
+  flipped: boolean | null | undefined
+) {
+  const parts: string[] = [];
+  if (rotation) parts.push(`rotate(${rotation}deg)`);
+  if (flipped) parts.push("scaleX(-1)");
+  if (parts.length === 0) return undefined;
+  return { transform: parts.join(" ") };
 }
 
 export function AstrophotoGrid({
@@ -177,7 +183,7 @@ export function AstrophotoGrid({
                       src={p.image_url}
                       alt={p.object_name || p.caption || "astrophoto"}
                       loading="lazy"
-                      style={rotationStyle(p.rotation)}
+                      style={transformStyle(p.rotation, p.flipped)}
                       className={
                         "absolute inset-0 w-full h-full object-cover transition-transform " +
                         (p.hidden ? "opacity-60" : "")
