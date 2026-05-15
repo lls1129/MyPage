@@ -16,13 +16,22 @@ import {
   flipPhoto,
   rotatePhoto,
   setPhotoDecorations,
+  setPhotoOverlays,
   togglePhotoHidden,
   updatePhotoMeta,
 } from "@/app/photos/admin-actions";
 import {
   FILTERS,
   FRAMES,
+  filterCssFor,
+  frameInsetFor,
+  frameOverlayFor,
 } from "@/app/components/cover-decorations";
+import { OverlayEditor } from "@/app/components/OverlayEditor";
+import {
+  normalizeOverlays,
+  type CoverOverlay,
+} from "@/app/components/cover-overlays";
 import type { Album } from "@/lib/supabase/albums";
 
 const BUCKET = "photos";
@@ -743,6 +752,9 @@ function UploadSuccessCard({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [decorPending, startDecor] = useTransition();
   const [rotatePending, startRotate] = useTransition();
+  const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
+    normalizeOverlays(item.cover_overlays)
+  );
 
   function applyRotate(direction: "left" | "right") {
     setSaveError(null);
@@ -1123,6 +1135,56 @@ function UploadSuccessCard({
             />
           </div>
 
+          {/* Per-photo overlays — collapsed by default. Same editor
+              as the album cover / PhotoEditModal so admin can drop
+              stickers / drawings on a photo at upload time. */}
+          <OverlayEditor
+            overlays={overlays}
+            onChange={setOverlays}
+            onCommit={async (next) => {
+              const r = await setPhotoOverlays(item.id, next);
+              return r.ok
+                ? ({ ok: true } as const)
+                : ({
+                    ok: false,
+                    error: r.error ?? "couldn’t save overlays.",
+                  } as const);
+            }}
+            stageInsetClass={frameInsetFor(
+              item.cover_frame === null
+                ? currentAlbum?.cover_frame ?? null
+                : item.cover_frame || null,
+              item.cover_frame_width ??
+                currentAlbum?.cover_frame_width ??
+                "medium"
+            )}
+            stageAspect={
+              item.width && item.height && item.width > 0 && item.height > 0
+                ? `${item.width} / ${item.height}`
+                : "1 / 1"
+            }
+            background={
+              <SuccessOverlayBackground
+                item={item}
+                frame={
+                  item.cover_frame === null
+                    ? currentAlbum?.cover_frame ?? null
+                    : item.cover_frame || null
+                }
+                frameWidth={
+                  item.cover_frame_width ??
+                  currentAlbum?.cover_frame_width ??
+                  "medium"
+                }
+                filter={
+                  item.cover_filter === null
+                    ? currentAlbum?.cover_filter ?? null
+                    : item.cover_filter || null
+                }
+              />
+            }
+          />
+
           {saveError ? (
             <p className="text-xs text-pink-600 font-semibold">{saveError}</p>
           ) : null}
@@ -1467,6 +1529,57 @@ function DeleteNoticeBanner({
         ✕
       </button>
     </div>
+  );
+}
+
+// Background for the per-photo OverlayEditor inside the upload
+// flow — renders the just-uploaded image with its effective
+// rotation / flip / filter / frame applied, so the editor's
+// preview matches what visitors will see in the lightbox.
+function SuccessOverlayBackground({
+  item,
+  frame,
+  frameWidth,
+  filter,
+}: {
+  item: SuccessItem;
+  frame: string | null;
+  frameWidth: string;
+  filter: string | null;
+}) {
+  const filterCss = filterCssFor(filter);
+  return (
+    <>
+      <div
+        className={
+          "absolute overflow-hidden " +
+          (frameInsetFor(frame, frameWidth) || "inset-0")
+        }
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.src}
+          alt={item.caption || "uploaded photo"}
+          style={{
+            ...(composeTransform(item.rotation, item.flipped) ?? {}),
+            filter: filterCss || undefined,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+          className="block transition-transform"
+        />
+      </div>
+      {frame ? (
+        <div
+          className={
+            "absolute inset-0 pointer-events-none " +
+            frameOverlayFor(frame, frameWidth)
+          }
+          aria-hidden
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -1996,6 +2109,9 @@ function BatchItemEditor({
   const [deletePending, startDelete] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
+    normalizeOverlays(item.cover_overlays)
+  );
 
   function applyRotate(direction: "left" | "right") {
     setErr(null);
@@ -2391,6 +2507,58 @@ function BatchItemEditor({
               albumValue={currentAlbum?.cover_filter ?? null}
               disabled={decorPending || deletePending}
               onPick={(id) => applyDecoration({ filter: id })}
+            />
+
+            {/* Per-photo overlay editor — same as the single-card
+                version, collapsed by default. */}
+            <OverlayEditor
+              overlays={overlays}
+              onChange={setOverlays}
+              onCommit={async (next) => {
+                const r = await setPhotoOverlays(item.id, next);
+                return r.ok
+                  ? ({ ok: true } as const)
+                  : ({
+                      ok: false,
+                      error: r.error ?? "couldn’t save overlays.",
+                    } as const);
+              }}
+              stageInsetClass={frameInsetFor(
+                item.cover_frame === null
+                  ? currentAlbum?.cover_frame ?? null
+                  : item.cover_frame || null,
+                item.cover_frame_width ??
+                  currentAlbum?.cover_frame_width ??
+                  "medium"
+              )}
+              stageAspect={
+                item.width &&
+                item.height &&
+                item.width > 0 &&
+                item.height > 0
+                  ? `${item.width} / ${item.height}`
+                  : "1 / 1"
+              }
+              background={
+                <SuccessOverlayBackground
+                  item={item}
+                  frame={
+                    item.cover_frame === null
+                      ? currentAlbum?.cover_frame ?? null
+                      : item.cover_frame || null
+                  }
+                  frameWidth={
+                    item.cover_frame_width ??
+                    currentAlbum?.cover_frame_width ??
+                    "medium"
+                  }
+                  filter={
+                    item.cover_filter === null
+                      ? currentAlbum?.cover_filter ?? null
+                      : item.cover_filter || null
+                  }
+                />
+              }
             />
 
             {confirmingDelete ? (
