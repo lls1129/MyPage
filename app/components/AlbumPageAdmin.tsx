@@ -10,6 +10,7 @@ import {
   FILTERS,
   FRAMES,
   FRAME_SIZES,
+  coverClipRadiusFor,
   filterCssFor,
   frameOverlayFor,
 } from "./cover-decorations";
@@ -130,6 +131,10 @@ export function AlbumPageAdmin({
   const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
     normalizeOverlays(album.cover_overlays)
   );
+  // Frame + filter picker is collapsed by default — admin usually
+  // tunes it once and then moves on, so hiding it keeps the cover
+  // panel compact for the more common overlay editing.
+  const [decorOpen, setDecorOpen] = useState(false);
   useEffect(() => {
     setOverlays(normalizeOverlays(album.cover_overlays));
   }, [album.cover_overlays]);
@@ -453,37 +458,65 @@ export function AlbumPageAdmin({
                 onCommit={commitCrop}
               />
 
-              {/* Decorations — frame + filter chip rows. Click any
-                  chip to apply (or click an already-selected one to
-                  clear). Persisted immediately, no confirm needed
-                  since these aren't continuous adjustments. */}
+              {/* Decorations — frame + filter chip rows. Collapsed
+                  by default since admin typically picks one and moves
+                  on. Header shows the current selection so admin can
+                  tell at a glance what's applied without opening. */}
               <div className="flex flex-col gap-2 rounded-md bg-white border border-pink-100 p-2.5">
-                <DecorationRow
-                  label="frame"
-                  options={FRAMES.map((f) => ({ id: f.id, label: f.label }))}
-                  currentId={album.cover_frame}
-                  onPick={(id) => applyDecoration({ frame: id })}
-                  disabled={pending}
-                />
-                <DecorationRow
-                  label="filter"
-                  options={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
-                  currentId={album.cover_filter}
-                  onPick={(id) => applyDecoration({ filter: id })}
-                  disabled={pending}
-                />
-                {/* Frame size only matters when a frame is set, but
-                    showing it always lets admin pick the size first
-                    if they want. NULL chip is hidden — width has a
-                    sensible default (medium) and isn't nullable. */}
-                {album.cover_frame ? (
-                  <SizeRow
-                    label="size"
-                    options={FRAME_SIZES}
-                    currentId={album.cover_frame_width}
-                    onPick={(id) => applyDecoration({ frame_width: id })}
-                    disabled={pending}
-                  />
+                <button
+                  type="button"
+                  onClick={() => setDecorOpen((v) => !v)}
+                  className="flex items-center justify-between gap-2 text-left"
+                  aria-expanded={decorOpen}
+                >
+                  <span className="text-[11px] text-pink-800 font-semibold">
+                    ✦ frame + filter
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <DecorationSummary
+                      frame={album.cover_frame}
+                      filter={album.cover_filter}
+                    />
+                    <span
+                      aria-hidden
+                      className="text-[10px] text-pink-700 font-semibold w-3 text-center"
+                    >
+                      {decorOpen ? "▾" : "▸"}
+                    </span>
+                  </span>
+                </button>
+                {decorOpen ? (
+                  <>
+                    <DecorationRow
+                      label="frame"
+                      options={FRAMES.map((f) => ({ id: f.id, label: f.label }))}
+                      currentId={album.cover_frame}
+                      onPick={(id) => applyDecoration({ frame: id })}
+                      disabled={pending}
+                    />
+                    <DecorationRow
+                      label="filter"
+                      options={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
+                      currentId={album.cover_filter}
+                      onPick={(id) => applyDecoration({ filter: id })}
+                      disabled={pending}
+                    />
+                    {/* Frame size only matters when a frame is set, but
+                        showing it always lets admin pick the size first
+                        if they want. NULL chip is hidden — width has a
+                        sensible default (medium) and isn't nullable. */}
+                    {album.cover_frame ? (
+                      <SizeRow
+                        label="size"
+                        options={FRAME_SIZES}
+                        currentId={album.cover_frame_width}
+                        onPick={(id) =>
+                          applyDecoration({ frame_width: id })
+                        }
+                        disabled={pending}
+                      />
+                    ) : null}
+                  </>
                 ) : null}
               </div>
 
@@ -495,6 +528,10 @@ export function AlbumPageAdmin({
                 overlays={overlays}
                 onChange={setOverlays}
                 onCommit={(next) => onSetCoverOverlays(album.id, next)}
+                stageClassName={coverClipRadiusFor(
+                  album.cover_frame,
+                  album.cover_frame_width
+                )}
                 background={
                   <CoverPreviewBackground
                     imageUrl={album.cover_image_url}
@@ -814,6 +851,29 @@ function DecorationRow({
         );
       })}
     </div>
+  );
+}
+
+// One-line at-a-glance summary for the collapsed decoration header.
+// Pulls the human label out of FRAMES / FILTERS so admin can see
+// what's applied without expanding the picker.
+function DecorationSummary({
+  frame,
+  filter,
+}: {
+  frame: string | null;
+  filter: string | null;
+}) {
+  const frameLabel = frame
+    ? FRAMES.find((f) => f.id === frame)?.label ?? frame
+    : "none";
+  const filterLabel = filter
+    ? FILTERS.find((f) => f.id === filter)?.label ?? filter
+    : "none";
+  return (
+    <span className="text-[10px] text-ink/65">
+      {frameLabel} · {filterLabel}
+    </span>
   );
 }
 

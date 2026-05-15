@@ -15,6 +15,7 @@ import {
   FILTERS,
   FRAMES,
   filterCssFor,
+  coverClipRadiusFor,
   frameOverlayFor,
   resolveDecoration,
 } from "../components/cover-decorations";
@@ -116,6 +117,7 @@ export function Lightbox({
   const decor = resolveDecoration(photo, album);
   const filterCss = filterCssFor(decor.filter);
   const frameClass = frameOverlayFor(decor.frame, decor.frameWidth);
+  const clipClass = coverClipRadiusFor(decor.frame, decor.frameWidth);
 
   const date = photo.taken_at ?? photo.created_at;
   const dateLabel = date
@@ -232,9 +234,11 @@ export function Lightbox({
                     maxWidth: "100%",
                   }}
                   className={
-                    haveDims
+                    (haveDims
                       ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
-                      : "object-contain rounded-md shadow-soft transition-transform block"
+                      : "object-contain rounded-md shadow-soft transition-transform block") +
+                    " " +
+                    clipClass
                   }
                 />
                 {haveDims && frameClass ? (

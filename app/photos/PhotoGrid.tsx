@@ -7,6 +7,7 @@ import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
 import {
   filterCssFor,
+  coverClipRadiusFor,
   frameOverlayFor,
   resolveDecoration,
 } from "../components/cover-decorations";
@@ -373,10 +374,13 @@ function PhotoTile({
 }) {
   const filterCss = filterCssFor(filter);
   const frameClass = frameOverlayFor(frame, frameWidth);
+  const clipClass = coverClipRadiusFor(frame, frameWidth);
   return (
     <div
       className={
         "group block w-full mb-4 break-inside-avoid relative overflow-hidden rounded-md bg-pink-50 border shadow-soft lift " +
+        clipClass +
+        " " +
         (photo.hidden
           ? "border-lavender-200 ring-2 ring-lavender-100"
           : "border-pink-100 hover:border-pink-200")

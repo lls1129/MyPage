@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { filterCssFor, frameOverlayFor } from "./cover-decorations";
+import {
+  coverClipRadiusFor,
+  filterCssFor,
+  frameOverlayFor,
+} from "./cover-decorations";
 import { type CoverOverlay } from "./cover-overlays";
 import { OverlayLayer } from "./OverlayLayer";
 
@@ -531,7 +535,10 @@ export function CoverCropper({
           <div className="flex flex-col gap-1 shrink-0">
             <p className="label text-pink-600">card preview</p>
             <div
-              className="w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft"
+              className={
+                "w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft " +
+                coverClipRadiusFor(frame, frameWidth)
+              }
               style={{ containerType: "inline-size" }}
             >
               {natural ? (

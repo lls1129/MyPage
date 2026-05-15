@@ -266,3 +266,20 @@ export function filterCssFor(id: string | null | undefined): string {
   if (!id) return "";
   return FILTERS.find((f) => f.id === id)?.css ?? "";
 }
+
+/** Border-radius class for the cover-image container, matching the
+ *  chosen frame's outer curve. Most frames use a small/no radius,
+ *  but the "rounded mat" preset curves harder than the card's own
+ *  `rounded-lg` clip — without a matching class on the image
+ *  container, the square corners of the photo poke past the mat's
+ *  curve. Returns empty string when no extra clip is needed. */
+export function coverClipRadiusFor(
+  id: string | null | undefined,
+  size: string | null | undefined = "medium"
+): string {
+  if (id !== "rounded") return "";
+  const sz = isFrameSize(size) ? size : "medium";
+  if (sz === "thin") return "rounded-2xl";
+  if (sz === "thick") return "rounded-[2rem]";
+  return "rounded-3xl";
+}

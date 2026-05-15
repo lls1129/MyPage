@@ -49,6 +49,9 @@ export function OverlayEditor({
    *  / filter so this editor can draw the overlays + drag handles
    *  on top without knowing about decorations. */
   background,
+  /** Extra classes for the stage (e.g. corner-radius matching the
+   *  album's frame, so the image clips inside rounded mats). */
+  stageClassName,
 }: {
   overlays: CoverOverlay[];
   /** Local-state update (optimistic). Called for every drag tick. */
@@ -58,6 +61,7 @@ export function OverlayEditor({
    *  reflected so server and local state stay in sync. */
   onCommit: (next: CoverOverlay[]) => Promise<ActionResult>;
   background: React.ReactNode;
+  stageClassName?: string;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -549,6 +553,25 @@ export function OverlayEditor({
             {overlays.length} of {OVERLAY_LIMIT} · drag to reposition
           </p>
           <SaveStatusPill status={saveStatus} />
+          {/* Clear-all pill shares the status row so the row doesn't
+              wrap to just the status pill on mobile. Only rendered
+              when there's something to clear. */}
+          {overlays.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                endDrawSession();
+                setDrawMode(false);
+                setEraserMode(false);
+                setActiveAdder(null);
+                modify([]);
+              }}
+              title="remove every overlay"
+              className="inline-flex items-center rounded-pill border border-pink-200 bg-white text-pink-700 hover:border-pink-400 px-2 py-0.5 text-[10px] font-semibold"
+            >
+              ✕ clear all
+            </button>
+          ) : null}
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <UndoRedoPill
@@ -797,7 +820,8 @@ export function OverlayEditor({
         ref={stageRef}
         className={
           "relative w-full aspect-square rounded-md overflow-hidden border border-pink-100 bg-pink-50 mx-auto " +
-          (drawMode ? "cursor-crosshair touch-none" : "")
+          (drawMode ? "cursor-crosshair touch-none " : "") +
+          (stageClassName ?? "")
         }
         style={{
           maxWidth: 360,
