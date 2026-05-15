@@ -112,6 +112,35 @@ export async function rotatePhoto(id: string, direction: "left" | "right") {
   return { ok: true };
 }
 
+// Set a photo's crop rectangle. Values are clamped to [0,1] and
+// degenerate (w or h <= 0) crops are rejected.
+export async function setPhotoCrop(
+  id: string,
+  crop: { x: number; y: number; w: number; h: number }
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing photo id" };
+  const clamp = (n: number) =>
+    Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0));
+  const x = clamp(crop.x);
+  const y = clamp(crop.y);
+  const w = clamp(crop.w);
+  const h = clamp(crop.h);
+  if (w <= 0 || h <= 0)
+    return { ok: false as const, error: "crop must have positive size" };
+  if (x + w > 1.0001 || y + h > 1.0001)
+    return { ok: false as const, error: "crop runs past the image bounds" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("photos")
+    .update({ crop_x: x, crop_y: y, crop_w: w, crop_h: h })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace a photo's cover_overlays array. Same permissive shape as
 // the album cover variant — the renderer normalizes before
 // painting, so a typo or stale entry doesn't blank the photo.

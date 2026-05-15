@@ -28,11 +28,35 @@ export type Photo = {
   // cover_overlays. Untyped here (unknown[]) to keep this lib free
   // of UI-layer imports; the renderer normalizes before painting.
   cover_overlays: unknown[];
+  // Per-photo crop in source-relative units. Default (0,0,1,1) means
+  // "no crop set" — renderer shows the full image. Non-trivial values
+  // are applied via positioning math in PhotoGrid + Lightbox (similar
+  // to the album cover crop math, but free-form aspect).
+  crop_x: number;
+  crop_y: number;
+  crop_w: number;
+  crop_h: number;
 };
 
 // resolveDecoration lives in app/components/cover-decorations.ts —
 // kept there (instead of here) so client components can import it
 // without pulling in this file's server-only Supabase clients.
+
+// True when the photo hasn't had a crop set — renderer should fall
+// back to the full image instead of running the inset-image math.
+export function isTrivialPhotoCrop(p: {
+  crop_x?: number;
+  crop_y?: number;
+  crop_w?: number;
+  crop_h?: number;
+}): boolean {
+  return (
+    (p.crop_x ?? 0) === 0 &&
+    (p.crop_y ?? 0) === 0 &&
+    (p.crop_w ?? 1) === 1 &&
+    (p.crop_h ?? 1) === 1
+  );
+}
 
 export type PhotosResult =
   | { kind: "ok"; photos: Photo[] }

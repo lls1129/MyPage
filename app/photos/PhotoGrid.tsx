@@ -4,6 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
+
+// Inlined to avoid pulling photos.ts's server-only imports into a
+// client component. Same semantics as isTrivialPhotoCrop in the lib.
+function isTrivialPhotoCrop(p: Photo): boolean {
+  return (
+    (p.crop_x ?? 0) === 0 &&
+    (p.crop_y ?? 0) === 0 &&
+    (p.crop_w ?? 1) === 1 &&
+    (p.crop_h ?? 1) === 1
+  );
+}
 import type { Album } from "@/lib/supabase/albums";
 import {
   filterCssFor,
@@ -424,23 +435,61 @@ function PhotoTile({
         className="block w-full text-left"
         aria-label={photo.caption || "open photo"}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={photo.image_url}
-          alt={photo.caption || ""}
-          width={photo.width ?? undefined}
-          height={photo.height ?? undefined}
-          loading={eager ? "eager" : "lazy"}
-          decoding="async"
-          style={{
-            ...(transformStyle(photo.rotation, photo.flipped) ?? {}),
-            filter: filterCss || undefined,
-          }}
-          className={
-            "block w-full h-auto transition-transform " +
-            (photo.hidden ? "opacity-60" : "")
-          }
-        />
+        {isTrivialPhotoCrop(photo) ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photo.image_url}
+              alt={photo.caption || ""}
+              width={photo.width ?? undefined}
+              height={photo.height ?? undefined}
+              loading={eager ? "eager" : "lazy"}
+              decoding="async"
+              style={{
+                ...(transformStyle(photo.rotation, photo.flipped) ?? {}),
+                filter: filterCss || undefined,
+              }}
+              className={
+                "block w-full h-auto transition-transform " +
+                (photo.hidden ? "opacity-60" : "")
+              }
+            />
+          </>
+        ) : (
+          <div
+            className="relative w-full overflow-hidden"
+            style={{
+              aspectRatio:
+                photo.width && photo.height
+                  ? `${photo.width * photo.crop_w} / ${
+                      photo.height * photo.crop_h
+                    }`
+                  : `${photo.crop_w} / ${photo.crop_h}`,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photo.image_url}
+              alt={photo.caption || ""}
+              loading={eager ? "eager" : "lazy"}
+              decoding="async"
+              style={{
+                position: "absolute",
+                width: `${100 / photo.crop_w}%`,
+                height: "auto",
+                left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
+                top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
+                maxWidth: "none",
+                ...(transformStyle(photo.rotation, photo.flipped) ?? {}),
+                filter: filterCss || undefined,
+              }}
+              className={
+                "block transition-transform " +
+                (photo.hidden ? "opacity-60" : "")
+              }
+            />
+          </div>
+        )}
       </button>
 
       {/* Frame overlay — sits above the image, intercepts no clicks

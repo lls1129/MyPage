@@ -92,23 +92,64 @@ export default async function AstrophotoDetailPage(
           </div>
         ) : null}
 
-        <div className="rounded-lg overflow-hidden border border-skynavy-500 shadow-soft mt-3 bg-skynavy-900 relative">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={photo.image_url}
-            alt={photo.object_name || photo.caption || "astrophoto"}
-            style={(() => {
-              const parts: string[] = [];
-              if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
-              if (photo.flipped) parts.push("scaleX(-1)");
-              return parts.length > 0
-                ? { transform: parts.join(" ") }
-                : undefined;
-            })()}
-            className="w-full h-auto block transition-transform"
-          />
-          <OverlayLayer overlays={normalizeOverlays(photo.cover_overlays)} />
-        </div>
+        {(() => {
+          const trivial =
+            (photo.crop_x ?? 0) === 0 &&
+            (photo.crop_y ?? 0) === 0 &&
+            (photo.crop_w ?? 1) === 1 &&
+            (photo.crop_h ?? 1) === 1;
+          const transform = (() => {
+            const parts: string[] = [];
+            if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
+            if (photo.flipped) parts.push("scaleX(-1)");
+            return parts.length > 0 ? parts.join(" ") : undefined;
+          })();
+          if (trivial) {
+            return (
+              <div className="rounded-lg overflow-hidden border border-skynavy-500 shadow-soft mt-3 bg-skynavy-900 relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.image_url}
+                  alt={photo.object_name || photo.caption || "astrophoto"}
+                  style={transform ? { transform } : undefined}
+                  className="w-full h-auto block transition-transform"
+                />
+                <OverlayLayer
+                  overlays={normalizeOverlays(photo.cover_overlays)}
+                />
+              </div>
+            );
+          }
+          const aspect =
+            photo.width && photo.height
+              ? `${photo.width * photo.crop_w} / ${
+                  photo.height * photo.crop_h
+                }`
+              : `${photo.crop_w} / ${photo.crop_h}`;
+          return (
+            <div
+              className="rounded-lg overflow-hidden border border-skynavy-500 shadow-soft mt-3 bg-skynavy-900 relative"
+              style={{ aspectRatio: aspect }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.image_url}
+                alt={photo.object_name || photo.caption || "astrophoto"}
+                style={{
+                  position: "absolute",
+                  width: `${100 / photo.crop_w}%`,
+                  height: "auto",
+                  left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
+                  top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
+                  maxWidth: "none",
+                  transform,
+                }}
+                className="block transition-transform"
+              />
+              <OverlayLayer overlays={normalizeOverlays(photo.cover_overlays)} />
+            </div>
+          );
+        })()}
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-8">
           <header>

@@ -10,6 +10,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Photo } from "@/lib/supabase/photos";
+
+function isTrivialPhotoCrop(p: Photo): boolean {
+  return (
+    (p.crop_x ?? 0) === 0 &&
+    (p.crop_y ?? 0) === 0 &&
+    (p.crop_w ?? 1) === 1 &&
+    (p.crop_h ?? 1) === 1
+  );
+}
 import type { Album } from "@/lib/supabase/albums";
 import {
   FILTERS,
@@ -217,8 +226,13 @@ export function Lightbox({
               photo.height &&
               photo.width > 0 &&
               photo.height > 0;
+            const trivialCrop = isTrivialPhotoCrop(photo);
             const aspect = haveDims
-              ? `${photo.width} / ${photo.height}`
+              ? trivialCrop
+                ? `${photo.width} / ${photo.height}`
+                : `${(photo.width ?? 1) * photo.crop_w} / ${
+                    (photo.height ?? 1) * photo.crop_h
+                  }`
               : undefined;
             return (
               <div
@@ -243,31 +257,66 @@ export function Lightbox({
                   maxHeight: "calc(100vh - 260px)",
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={photo.image_url}
-                  alt={photo.caption || ""}
-                  style={{
-                    transform: (() => {
-                      const parts: string[] = [];
-                      if (photo.rotation)
-                        parts.push(`rotate(${photo.rotation}deg)`);
-                      if (photo.flipped) parts.push("scaleX(-1)");
-                      return parts.length > 0 ? parts.join(" ") : undefined;
-                    })(),
-                    filter: filterCss || undefined,
-                    // No-dimensions fallback needs the same vh cap
-                    // as the aspect-ratio'd wrapper so it doesn't
-                    // grow unbounded.
-                    maxHeight: haveDims ? undefined : "calc(100vh - 260px)",
-                    maxWidth: "100%",
-                  }}
-                  className={
-                    haveDims
-                      ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
-                      : "object-contain rounded-md shadow-soft transition-transform block"
-                  }
-                />
+                {trivialCrop ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.image_url}
+                      alt={photo.caption || ""}
+                      style={{
+                        transform: (() => {
+                          const parts: string[] = [];
+                          if (photo.rotation)
+                            parts.push(`rotate(${photo.rotation}deg)`);
+                          if (photo.flipped) parts.push("scaleX(-1)");
+                          return parts.length > 0
+                            ? parts.join(" ")
+                            : undefined;
+                        })(),
+                        filter: filterCss || undefined,
+                        // No-dimensions fallback needs the same vh cap
+                        // as the aspect-ratio'd wrapper so it doesn't
+                        // grow unbounded.
+                        maxHeight: haveDims
+                          ? undefined
+                          : "calc(100vh - 260px)",
+                        maxWidth: "100%",
+                      }}
+                      className={
+                        haveDims
+                          ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
+                          : "object-contain rounded-md shadow-soft transition-transform block"
+                      }
+                    />
+                  </>
+                ) : (
+                  <div className="absolute inset-0 overflow-hidden rounded-md shadow-soft">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.image_url}
+                      alt={photo.caption || ""}
+                      style={{
+                        position: "absolute",
+                        width: `${100 / photo.crop_w}%`,
+                        height: "auto",
+                        left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
+                        top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
+                        maxWidth: "none",
+                        transform: (() => {
+                          const parts: string[] = [];
+                          if (photo.rotation)
+                            parts.push(`rotate(${photo.rotation}deg)`);
+                          if (photo.flipped) parts.push("scaleX(-1)");
+                          return parts.length > 0
+                            ? parts.join(" ")
+                            : undefined;
+                        })(),
+                        filter: filterCss || undefined,
+                      }}
+                      className="block transition-transform"
+                    />
+                  </div>
+                )}
                 {haveDims && frameClass ? (
                   <span
                     aria-hidden

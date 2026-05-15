@@ -15,6 +15,7 @@ import {
   deletePhoto,
   flipPhoto,
   rotatePhoto,
+  setPhotoCrop,
   setPhotoDecorations,
   setPhotoOverlays,
   togglePhotoHidden,
@@ -28,6 +29,7 @@ import {
   frameOverlayFor,
 } from "@/app/components/cover-decorations";
 import { OverlayEditor } from "@/app/components/OverlayEditor";
+import { PhotoCropper } from "@/app/components/PhotoCropper";
 import {
   normalizeOverlays,
   type CoverOverlay,
@@ -220,6 +222,10 @@ export function UploadForm({
             cover_filter: null,
             cover_frame_width: null,
             cover_overlays: [],
+            crop_x: 0,
+            crop_y: 0,
+            crop_w: 1,
+            crop_h: 1,
           });
         } catch (err) {
           failed += 1;
@@ -702,6 +708,12 @@ type SuccessItem = {
   // Mirrors albums.cover_overlays jsonb shape. Local state during
   // upload, persisted via setPhotoOverlays.
   cover_overlays: unknown[];
+  // Per-photo crop rectangle in source-relative units. Default
+  // (0,0,1,1) = no crop set.
+  crop_x: number;
+  crop_y: number;
+  crop_w: number;
+  crop_h: number;
 };
 
 function UploadSuccessCard({
@@ -752,6 +764,7 @@ function UploadSuccessCard({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [decorPending, startDecor] = useTransition();
   const [rotatePending, startRotate] = useTransition();
+  const [cropOpen, setCropOpen] = useState(false);
   const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
     normalizeOverlays(item.cover_overlays)
   );
@@ -1029,6 +1042,20 @@ function UploadSuccessCard({
             >
               ⇋ flip
             </button>
+            <button
+              type="button"
+              onClick={() => setCropOpen(true)}
+              title="crop"
+              aria-label="crop"
+              className={
+                "rounded-pill border px-2.5 py-1 text-[11px] font-semibold " +
+                (item.crop_w < 1 || item.crop_h < 1
+                  ? "bg-pink-300 text-white border-pink-300"
+                  : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+              }
+            >
+              ✂ crop
+            </button>
           </div>
         </div>
 
@@ -1290,6 +1317,32 @@ function UploadSuccessCard({
           albumLinkHref={albumLinkHref}
           albumLinkLabel={albumLinkLabel}
           onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
+
+      {cropOpen ? (
+        <PhotoCropper
+          imageUrl={item.src}
+          initialCrop={{
+            x: item.crop_x,
+            y: item.crop_y,
+            w: item.crop_w,
+            h: item.crop_h,
+          }}
+          onCommit={async (crop) => {
+            const r = await setPhotoCrop(item.id, crop);
+            if (r.ok) {
+              onUpdate({
+                ...item,
+                crop_x: crop.x,
+                crop_y: crop.y,
+                crop_w: crop.w,
+                crop_h: crop.h,
+              });
+            }
+            return r;
+          }}
+          onClose={() => setCropOpen(false)}
         />
       ) : null}
     </div>
@@ -2109,6 +2162,7 @@ function BatchItemEditor({
   const [deletePending, startDelete] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
     normalizeOverlays(item.cover_overlays)
   );
@@ -2418,6 +2472,20 @@ function BatchItemEditor({
                 >
                   ⇋ flip
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCropOpen(true)}
+                  title="crop"
+                  aria-label="crop"
+                  className={
+                    "rounded-pill border backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold " +
+                    (item.crop_w < 1 || item.crop_h < 1
+                      ? "bg-pink-300 text-white border-pink-300"
+                      : "bg-skynavy-900/55 text-cream border-cream/30 hover:bg-skynavy-900/80")
+                  }
+                >
+                  ✂ crop
+                </button>
               </div>
             </div>
             <BatchNavArrow
@@ -2651,6 +2719,31 @@ function BatchItemEditor({
           </div>
         </div>
       </div>
+      {cropOpen ? (
+        <PhotoCropper
+          imageUrl={item.src}
+          initialCrop={{
+            x: item.crop_x,
+            y: item.crop_y,
+            w: item.crop_w,
+            h: item.crop_h,
+          }}
+          onCommit={async (crop) => {
+            const r = await setPhotoCrop(item.id, crop);
+            if (r.ok) {
+              onSaved({
+                ...item,
+                crop_x: crop.x,
+                crop_y: crop.y,
+                crop_w: crop.w,
+                crop_h: crop.h,
+              });
+            }
+            return r;
+          }}
+          onClose={() => setCropOpen(false)}
+        />
+      ) : null}
     </div>,
     document.body
   );

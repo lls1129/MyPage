@@ -406,6 +406,34 @@ export async function rotateAstrophoto(id: string, direction: "left" | "right") 
   return { ok: true };
 }
 
+// Set an astrophoto's crop rectangle. See setPhotoCrop.
+export async function setAstrophotoCrop(
+  id: string,
+  crop: { x: number; y: number; w: number; h: number }
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing astrophoto id" };
+  const clamp = (n: number) =>
+    Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0));
+  const x = clamp(crop.x);
+  const y = clamp(crop.y);
+  const w = clamp(crop.w);
+  const h = clamp(crop.h);
+  if (w <= 0 || h <= 0)
+    return { ok: false as const, error: "crop must have positive size" };
+  if (x + w > 1.0001 || y + h > 1.0001)
+    return { ok: false as const, error: "crop runs past the image bounds" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("astrophotos")
+    .update({ crop_x: x, crop_y: y, crop_w: w, crop_h: h })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/photo/${id}`);
+  return { ok: true as const };
+}
+
 // Replace an astrophoto's cover_overlays array. See setPhotoOverlays.
 export async function setAstrophotoOverlays(id: string, overlays: unknown) {
   await requireAdmin();

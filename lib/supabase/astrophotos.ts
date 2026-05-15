@@ -28,6 +28,10 @@ export type Astrophoto = {
   cover_filter: string | null;
   cover_frame_width: string | null;
   cover_overlays: unknown[];
+  crop_x: number;
+  crop_y: number;
+  crop_w: number;
+  crop_h: number;
 };
 
 export type AstrophotosResult =
