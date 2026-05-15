@@ -25,6 +25,19 @@ export type FramePreset = {
    *  that paints the frame on top of the cover. One variant per
    *  size tier — admin picks both id and size in the cover picker. */
   sizes: Record<FrameSize, string>;
+  /** Per-size positioning classes for the photo element. When set,
+   *  the renderer applies these via `absolute` so the photo sits
+   *  inside the frame's inner edge rather than bleeding past it at
+   *  corners or under solid borders. Required for solid frames
+   *  (mat, polaroid, rounded mat); omitted for decorative frames
+   *  (dashed, dotted, vignette) where the full-size photo is part
+   *  of the look (gaps in the border are meant to reveal it). */
+  insets?: Record<FrameSize, string>;
+  /** Same visual inset as `insets`, expressed as padding classes for
+   *  cases where the photo is an in-flow element (e.g. <img>) and
+   *  the wrapper carries the frame. The padding shrinks the image's
+   *  content area; the frame overlay still spans the full bounds. */
+  pads?: Record<FrameSize, string>;
 };
 
 export type FilterPreset = {
@@ -42,6 +55,16 @@ export const FRAMES: FramePreset[] = [
       thin: "border-[2px] border-pink-300 rounded-md",
       medium: "border-[4px] border-pink-300 rounded-md",
       thick: "border-[8px] border-pink-300 rounded-md",
+    },
+    insets: {
+      thin: "inset-[2px] rounded-sm",
+      medium: "inset-[4px] rounded-sm",
+      thick: "inset-[8px]",
+    },
+    pads: {
+      thin: "p-[2px]",
+      medium: "p-[4px]",
+      thick: "p-[8px]",
     },
   },
   {
@@ -82,6 +105,16 @@ export const FRAMES: FramePreset[] = [
       medium: "border-[10px] border-cream rounded-md",
       thick: "border-[18px] border-cream rounded-md",
     },
+    insets: {
+      thin: "inset-[6px]",
+      medium: "inset-[10px]",
+      thick: "inset-[18px]",
+    },
+    pads: {
+      thin: "p-[6px]",
+      medium: "p-[10px]",
+      thick: "p-[18px]",
+    },
   },
   {
     id: "polaroid",
@@ -91,6 +124,16 @@ export const FRAMES: FramePreset[] = [
       thin: "border-[4px] border-b-[12px] border-white",
       medium: "border-[6px] border-b-[18px] border-white",
       thick: "border-[10px] border-b-[30px] border-white",
+    },
+    insets: {
+      thin: "top-[4px] left-[4px] right-[4px] bottom-[12px]",
+      medium: "top-[6px] left-[6px] right-[6px] bottom-[18px]",
+      thick: "top-[10px] left-[10px] right-[10px] bottom-[30px]",
+    },
+    pads: {
+      thin: "pt-[4px] pl-[4px] pr-[4px] pb-[12px]",
+      medium: "pt-[6px] pl-[6px] pr-[6px] pb-[18px]",
+      thick: "pt-[10px] pl-[10px] pr-[10px] pb-[30px]",
     },
   },
   {
@@ -102,6 +145,16 @@ export const FRAMES: FramePreset[] = [
         "border-[4px] border-amber-200 shadow-[inset_0_0_0_2px_rgba(239,159,39,0.35)] rounded-md",
       thick:
         "border-[8px] border-amber-200 shadow-[inset_0_0_0_3px_rgba(239,159,39,0.45)] rounded-md",
+    },
+    insets: {
+      thin: "inset-[2px] rounded-sm",
+      medium: "inset-[4px] rounded-sm",
+      thick: "inset-[8px]",
+    },
+    pads: {
+      thin: "p-[2px]",
+      medium: "p-[4px]",
+      thick: "p-[8px]",
     },
   },
   {
@@ -145,6 +198,18 @@ export const FRAMES: FramePreset[] = [
       medium: "border-[12px] border-cream rounded-3xl",
       thick: "border-[20px] border-cream rounded-[2rem]",
     },
+    insets: {
+      // Inner radius ≈ outer radius − border width, so the photo's
+      // inner curve sits flush with the mat's inner edge.
+      thin: "inset-[6px] rounded-[10px]",
+      medium: "inset-[12px] rounded-xl",
+      thick: "inset-[20px] rounded-xl",
+    },
+    pads: {
+      thin: "p-[6px]",
+      medium: "p-[12px]",
+      thick: "p-[20px]",
+    },
   },
   {
     id: "lavender",
@@ -154,6 +219,16 @@ export const FRAMES: FramePreset[] = [
       medium: "border-[5px] border-lavender-300 rounded-md",
       thick:
         "border-[10px] border-lavender-300 shadow-[inset_0_0_0_2px_rgba(196,181,253,0.5)] rounded-md",
+    },
+    insets: {
+      thin: "inset-[3px] rounded-sm",
+      medium: "inset-[5px] rounded-sm",
+      thick: "inset-[10px] rounded-sm",
+    },
+    pads: {
+      thin: "p-[3px]",
+      medium: "p-[5px]",
+      thick: "p-[10px]",
     },
   },
 ];
@@ -267,19 +342,35 @@ export function filterCssFor(id: string | null | undefined): string {
   return FILTERS.find((f) => f.id === id)?.css ?? "";
 }
 
-/** Border-radius class for the cover-image container, matching the
- *  chosen frame's outer curve. Most frames use a small/no radius,
- *  but the "rounded mat" preset curves harder than the card's own
- *  `rounded-lg` clip — without a matching class on the image
- *  container, the square corners of the photo poke past the mat's
- *  curve. Returns empty string when no extra clip is needed. */
-export function coverClipRadiusFor(
+/** Positioning classes for the photo element when the chosen frame
+ *  has solid borders that should sit OUTSIDE the photo (mat, polaroid,
+ *  rounded mat, etc) — the photo shrinks to fit inside the frame's
+ *  inner edge instead of bleeding past it. Returns empty string for
+ *  decorative frames where the photo should stay at full size (so
+ *  dashed / dotted / inset-shadow gaps reveal the photo content). */
+export function frameInsetFor(
   id: string | null | undefined,
   size: string | null | undefined = "medium"
 ): string {
-  if (id !== "rounded") return "";
+  if (!id) return "";
+  const preset = FRAMES.find((f) => f.id === id);
+  if (!preset?.insets) return "";
   const sz = isFrameSize(size) ? size : "medium";
-  if (sz === "thin") return "rounded-2xl";
-  if (sz === "thick") return "rounded-[2rem]";
-  return "rounded-3xl";
+  return preset.insets[sz] ?? "";
+}
+
+/** Padding-class equivalent of {@link frameInsetFor}, for use on
+ *  wrappers around in-flow `<img>` elements (masonry photo grid,
+ *  lightbox). The padding shrinks the image's content area to sit
+ *  inside the frame while the frame overlay still spans the full
+ *  wrapper bounds. */
+export function framePadFor(
+  id: string | null | undefined,
+  size: string | null | undefined = "medium"
+): string {
+  if (!id) return "";
+  const preset = FRAMES.find((f) => f.id === id);
+  if (!preset?.pads) return "";
+  const sz = isFrameSize(size) ? size : "medium";
+  return preset.pads[sz] ?? "";
 }

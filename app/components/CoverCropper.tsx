@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  coverClipRadiusFor,
   filterCssFor,
+  frameInsetFor,
   frameOverlayFor,
 } from "./cover-decorations";
 import { type CoverOverlay } from "./cover-overlays";
@@ -535,16 +535,16 @@ export function CoverCropper({
           <div className="flex flex-col gap-1 shrink-0">
             <p className="label text-pink-600">card preview</p>
             <div
-              className={
-                "w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft " +
-                coverClipRadiusFor(frame, frameWidth)
-              }
+              className="w-32 md:w-full aspect-square rounded-lg border border-pink-100 bg-pink-50 overflow-hidden relative shadow-soft"
               style={{ containerType: "inline-size" }}
             >
               {natural ? (
                 <>
                   <div
-                    className="absolute inset-0"
+                    className={
+                      "absolute overflow-hidden " +
+                      (frameInsetFor(frame, frameWidth) || "inset-0")
+                    }
                     style={
                       isTrivial(previewCrop)
                         ? {

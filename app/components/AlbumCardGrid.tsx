@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { AlbumWithCover } from "@/lib/supabase/albums";
 import { isTrivialCrop } from "@/lib/supabase/albums";
 import {
-  coverClipRadiusFor,
   filterCssFor,
+  frameInsetFor,
   frameOverlayFor,
 } from "./cover-decorations";
 import { normalizeOverlays } from "./cover-overlays";
@@ -58,10 +58,7 @@ export function AlbumCardGrid({
             }
           >
             <div
-              className={
-                "aspect-square bg-pink-50 relative overflow-hidden " +
-                coverClipRadiusFor(a.cover_frame, a.cover_frame_width)
-              }
+              className="aspect-square bg-pink-50 relative overflow-hidden"
               // Establish a container so the overlay layer's
               // `cqw` font sizes scale against the card width.
               style={{ containerType: "inline-size" }}
@@ -71,10 +68,16 @@ export function AlbumCardGrid({
                   {/* Cover image rendered as a background-image so
                       the crop is purely CSS-driven. Filter is
                       applied here so frame overlay sits on top
-                      un-filtered. */}
+                      un-filtered. For solid frames (mat, polaroid,
+                      etc) the photo is inset so it sits inside the
+                      frame rather than bleeding past the corners. */}
                   <div
                     className={
-                      "absolute inset-0 " + (a.hidden ? "opacity-70" : "")
+                      "absolute overflow-hidden " +
+                      (frameInsetFor(a.cover_frame, a.cover_frame_width) ||
+                        "inset-0") +
+                      " " +
+                      (a.hidden ? "opacity-70" : "")
                     }
                     style={
                       isTrivialCrop(a)
@@ -121,7 +124,10 @@ export function AlbumCardGrid({
               ) : (
                 <div
                   className={
-                    "w-full h-full flex items-center justify-center bg-gradient-to-br " +
+                    "absolute overflow-hidden flex items-center justify-center bg-gradient-to-br " +
+                    (frameInsetFor(a.cover_frame, a.cover_frame_width) ||
+                      "inset-0") +
+                    " " +
                     gradientForAlbum(a.id)
                   }
                   aria-hidden
@@ -143,16 +149,20 @@ export function AlbumCardGrid({
                   hidden
                 </span>
               ) : null}
-              <span className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-skynavy-900/80 to-transparent px-3 pt-6 pb-2">
-                <p className="font-script text-cream text-lg leading-tight">
-                  {a.name}
-                </p>
-                <p className="text-[10px] text-cream/75 font-semibold">
-                  {a.count === 0
-                    ? "soon ✦"
-                    : `${a.count} photo${a.count === 1 ? "" : "s"}`}
-                </p>
-              </span>
+            </div>
+            {/* Caption strip sits below the cover so the photo
+                stays clean and busy bottom-edge photos can't fight
+                with the script title. Bordered top keeps the label
+                visually tied to the card it describes. */}
+            <div className="flex items-baseline justify-between gap-2 px-3 py-2 border-t border-pink-100/80">
+              <p className="font-script text-skynavy-900 text-lg leading-tight truncate pr-1">
+                {a.name}
+              </p>
+              <p className="text-[10px] text-ink/60 font-semibold shrink-0">
+                {a.count === 0
+                  ? "soon ✦"
+                  : `${a.count} photo${a.count === 1 ? "" : "s"}`}
+              </p>
             </div>
           </Link>
         </li>

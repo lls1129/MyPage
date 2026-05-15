@@ -10,8 +10,8 @@ import {
   FILTERS,
   FRAMES,
   FRAME_SIZES,
-  coverClipRadiusFor,
   filterCssFor,
+  frameInsetFor,
   frameOverlayFor,
 } from "./cover-decorations";
 import {
@@ -528,10 +528,6 @@ export function AlbumPageAdmin({
                 overlays={overlays}
                 onChange={setOverlays}
                 onCommit={(next) => onSetCoverOverlays(album.id, next)}
-                stageClassName={coverClipRadiusFor(
-                  album.cover_frame,
-                  album.cover_frame_width
-                )}
                 background={
                   <CoverPreviewBackground
                     imageUrl={album.cover_image_url}
@@ -908,7 +904,10 @@ function CoverPreviewBackground({
   return (
     <>
       <div
-        className="absolute inset-0"
+        className={
+          "absolute overflow-hidden " +
+          (frameInsetFor(frame, frameWidth) || "inset-0")
+        }
         style={
           trivial
             ? {
