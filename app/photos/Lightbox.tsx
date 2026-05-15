@@ -17,6 +17,7 @@ import {
   FRAME_SIZES,
   filterCssFor,
   frameInsetFor,
+  frameMatBgFor,
   frameOuterRadiusFor,
   frameOverlayFor,
   framePadFor,
@@ -132,6 +133,7 @@ export function Lightbox({
   const padClass = isSolidFrame
     ? framePadFor(decor.frame, decor.frameWidth)
     : "";
+  const matBgClass = isSolidFrame ? frameMatBgFor(decor.frame) : "";
 
   const date = photo.taken_at ?? photo.created_at;
   const dateLabel = date
@@ -222,7 +224,9 @@ export function Lightbox({
                   "relative overflow-hidden " +
                   outerRadiusClass +
                   " " +
-                  padClass
+                  padClass +
+                  " " +
+                  matBgClass
                 }
                 style={{
                   aspectRatio: aspect,

@@ -3,6 +3,50 @@
 // Both the live grid (AlbumCardGrid) and the admin's card preview
 // pull these from here so they stay in sync.
 
+// Optional styling tuners stored on albums.title_style (migration
+// 0022). All fields optional; renderer falls back to per-placement
+// defaults for missing ones.
+export type TitleStyle = {
+  /** Tailwind rounded class for placements with a card shape
+   *  (caption-bar, corner). Defaults to placement-specific value. */
+  radius?: string;
+  /** Loose t-shirt size that scales padding + font size. */
+  size?: "sm" | "md" | "lg";
+  /** 0..1 — applied to the caption-bar bg + corner chip bg so admin
+   *  can tune how strongly the label sits over the cover. */
+  opacity?: number;
+};
+
+export function readTitleStyle(raw: unknown): TitleStyle {
+  if (!raw || typeof raw !== "object") return {};
+  const o = raw as Record<string, unknown>;
+  const out: TitleStyle = {};
+  if (typeof o.radius === "string" && o.radius.length > 0) out.radius = o.radius;
+  if (o.size === "sm" || o.size === "md" || o.size === "lg") out.size = o.size;
+  if (typeof o.opacity === "number" && o.opacity >= 0 && o.opacity <= 1)
+    out.opacity = o.opacity;
+  return out;
+}
+
+const SIZE_PADDING: Record<NonNullable<TitleStyle["size"]>, string> = {
+  sm: "px-2 py-1",
+  md: "px-3 py-2",
+  lg: "px-4 py-3",
+};
+
+const SIZE_NAME_TEXT: Record<NonNullable<TitleStyle["size"]>, string> = {
+  sm: "text-base",
+  md: "text-lg",
+  lg: "text-2xl",
+};
+
+const SIZE_STACKED_NAME_TEXT: Record<NonNullable<TitleStyle["size"]>, string> =
+  {
+    sm: "text-lg",
+    md: "text-xl",
+    lg: "text-3xl",
+  };
+
 export function countLabel(count: number): string {
   return count === 0
     ? "soon ✦"
@@ -13,13 +57,22 @@ export function countLabel(count: number): string {
 export function BelowTitle({
   name,
   count,
+  style = {},
 }: {
   name: string;
   count: number;
+  style?: TitleStyle;
 }) {
+  const pad = SIZE_PADDING[style.size ?? "md"];
+  const nameText = SIZE_NAME_TEXT[style.size ?? "md"];
   return (
-    <div className="flex items-baseline justify-between gap-2 px-3 py-2">
-      <p className="font-script text-skynavy-900 text-lg leading-tight truncate pr-1">
+    <div className={"flex items-baseline justify-between gap-2 " + pad}>
+      <p
+        className={
+          "font-script text-skynavy-900 leading-tight truncate pr-1 " +
+          nameText
+        }
+      >
         {name}
       </p>
       <p className="text-[10px] text-ink/60 font-semibold shrink-0">
@@ -29,20 +82,41 @@ export function BelowTitle({
   );
 }
 
-// Polaroid-style label — a soft cream "card" that floats below the
-// cover with rounded corners + inset margins, so it reads as a
-// dedicated label rather than a flat strip joined to the cover.
+// Polaroid-style label — a soft "card" that floats below the cover
+// with rounded corners + inset margins, so it reads as a dedicated
+// label rather than a flat strip joined to the cover. Tunable via
+// `style`: radius shapes the card corners, size scales padding +
+// font, opacity sets the bg alpha.
 export function CaptionBarTitle({
   name,
   count,
+  style = {},
 }: {
   name: string;
   count: number;
+  style?: TitleStyle;
 }) {
+  const radius = style.radius ?? "rounded-lg";
+  const pad = SIZE_PADDING[style.size ?? "md"];
+  const nameText = SIZE_NAME_TEXT[style.size ?? "md"];
+  const opacity = style.opacity ?? 0.85;
   return (
     <div className="px-2 pt-2 pb-2.5">
-      <div className="flex items-baseline justify-between gap-2 bg-cream/85 border border-cream rounded-lg shadow-[0_1px_2px_rgba(64,40,82,0.08)] px-3 py-2">
-        <p className="font-script text-skynavy-900 text-lg leading-tight truncate pr-1">
+      <div
+        className={
+          "flex items-baseline justify-between gap-2 border border-cream shadow-[0_1px_2px_rgba(64,40,82,0.08)] " +
+          radius +
+          " " +
+          pad
+        }
+        style={{ backgroundColor: `rgba(255, 248, 231, ${opacity})` }}
+      >
+        <p
+          className={
+            "font-script text-skynavy-900 leading-tight truncate pr-1 " +
+            nameText
+          }
+        >
           {name}
         </p>
         <p className="text-[10px] text-pink-700 font-semibold shrink-0">
@@ -60,13 +134,22 @@ export function CaptionBarTitle({
 export function StackedTitle({
   name,
   count,
+  style = {},
 }: {
   name: string;
   count: number;
+  style?: TitleStyle;
 }) {
+  const pad = SIZE_PADDING[style.size ?? "md"];
+  const nameText = SIZE_STACKED_NAME_TEXT[style.size ?? "md"];
   return (
-    <div className="block px-3 py-2.5">
-      <p className="block font-script text-skynavy-900 text-xl leading-tight truncate">
+    <div className={"block " + pad}>
+      <p
+        className={
+          "block font-script text-skynavy-900 leading-tight truncate " +
+          nameText
+        }
+      >
         {name}
       </p>
       <hr className="border-t border-pink-100/70 my-1.5" aria-hidden />
@@ -138,12 +221,15 @@ export function HoverTitle({
 export function belowCoverTitle(
   placement: string,
   name: string,
-  count: number
+  count: number,
+  style: TitleStyle = {}
 ) {
-  if (placement === "caption-bar") return <CaptionBarTitle name={name} count={count} />;
-  if (placement === "stacked") return <StackedTitle name={name} count={count} />;
+  if (placement === "caption-bar")
+    return <CaptionBarTitle name={name} count={count} style={style} />;
+  if (placement === "stacked")
+    return <StackedTitle name={name} count={count} style={style} />;
   if (placement === "corner" || placement === "hover") return null;
-  return <BelowTitle name={name} count={count} />;
+  return <BelowTitle name={name} count={count} style={style} />;
 }
 
 // Helper: returns the title node positioned INSIDE the cover (or

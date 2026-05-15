@@ -43,6 +43,11 @@ export type FramePreset = {
    *  contents (photo, bg) along the frame's shape so we don't see a
    *  mismatched square / small-radius outline poking past curves. */
   outerRadius?: Record<FrameSize, string>;
+  /** Tailwind bg-color class to fill the wrapper underneath a solid
+   *  frame so any "mat" area not covered by the photo (e.g. object-
+   *  contain letterbox in the lightbox) blends with the frame's
+   *  color instead of showing the page bg through. */
+  matBg?: string;
 };
 
 export type FilterPreset = {
@@ -76,6 +81,7 @@ export const FRAMES: FramePreset[] = [
       medium: "rounded-md",
       thick: "rounded-md",
     },
+    matBg: "bg-pink-300",
   },
   {
     id: "dashed",
@@ -130,6 +136,7 @@ export const FRAMES: FramePreset[] = [
       medium: "rounded-md",
       thick: "rounded-md",
     },
+    matBg: "bg-cream",
   },
   {
     id: "polaroid",
@@ -155,6 +162,7 @@ export const FRAMES: FramePreset[] = [
       medium: "",
       thick: "",
     },
+    matBg: "bg-white",
   },
   {
     id: "gilt",
@@ -181,6 +189,7 @@ export const FRAMES: FramePreset[] = [
       medium: "rounded-md",
       thick: "rounded-md",
     },
+    matBg: "bg-amber-200",
   },
   {
     id: "vignette",
@@ -240,6 +249,7 @@ export const FRAMES: FramePreset[] = [
       medium: "rounded-3xl",
       thick: "rounded-[2rem]",
     },
+    matBg: "bg-cream",
   },
   {
     id: "lavender",
@@ -265,6 +275,7 @@ export const FRAMES: FramePreset[] = [
       medium: "rounded-md",
       thick: "rounded-md",
     },
+    matBg: "bg-lavender-300",
   },
 ];
 
@@ -433,4 +444,15 @@ export function frameOuterRadiusFor(
   if (!preset?.outerRadius) return "";
   const sz = isFrameSize(size) ? size : "medium";
   return preset.outerRadius[sz] ?? "";
+}
+
+/** Tailwind bg class to fill the wrapper underneath a solid frame so
+ *  any "mat" gap (e.g. object-contain letterbox in the lightbox)
+ *  shows the frame's color instead of the page bg behind it. */
+export function frameMatBgFor(
+  id: string | null | undefined
+): string {
+  if (!id) return "";
+  const preset = FRAMES.find((f) => f.id === id);
+  return preset?.matBg ?? "";
 }

@@ -3,9 +3,17 @@
 // functions just compute the next array — the caller persists it via
 // a server action. Same caps as before: 12 URLs × 6 crops each.
 
-import type { CoverCrop, CoverHistoryEntry } from "@/lib/supabase/albums";
+import type {
+  CoverCrop,
+  CoverHistoryEntry,
+  RecentCrop,
+} from "@/lib/supabase/albums";
 
-export type { CoverCrop, CoverHistoryEntry } from "@/lib/supabase/albums";
+export type {
+  CoverCrop,
+  CoverHistoryEntry,
+  RecentCrop,
+} from "@/lib/supabase/albums";
 
 export type LibraryKind = "photos" | "astrophotos";
 
@@ -36,20 +44,28 @@ export function pushUrl(
   return [moved, ...rest].slice(0, URL_LIMIT);
 }
 
-// Record a crop applied to a URL. Skips the trivial (no-crop)
-// rectangle since it's the default state — showing "no crop" as a
-// recent option isn't useful.
+// Record a crop applied to a URL, snapshotting the overlays that were
+// applied alongside it so re-pinning the crop later restores both.
+// Skips the trivial (no-crop) rectangle since it's the default state.
 export function pushCrop(
   entries: CoverHistoryEntry[],
   url: string,
-  crop: CoverCrop
+  crop: CoverCrop,
+  overlays: unknown[] = []
 ): CoverHistoryEntry[] {
   if (!url || isTrivial(crop)) return entries;
   const prior = entries.find((e) => e.url === url);
   const rest = entries.filter((e) => e.url !== url);
   const priorCrops = prior?.crops ?? [];
+  const snapshot: RecentCrop = {
+    x: crop.x,
+    y: crop.y,
+    w: crop.w,
+    h: crop.h,
+    overlays: overlays.length > 0 ? overlays : undefined,
+  };
   const crops = [
-    crop,
+    snapshot,
     ...priorCrops.filter((c) => !sameCrop(c, crop)),
   ].slice(0, CROPS_PER_URL_LIMIT);
   return [{ url, crops }, ...rest].slice(0, URL_LIMIT);
@@ -62,9 +78,11 @@ export function removeUrl(
   return entries.filter((e) => e.url !== url);
 }
 
+// Returns the recent crops for a URL with their overlay snapshots
+// intact, so the caller can restore both crop + overlays in one go.
 export function getCropsForUrl(
   entries: CoverHistoryEntry[],
   url: string
-): CoverCrop[] {
+): RecentCrop[] {
   return entries.find((e) => e.url === url)?.crops ?? [];
 }

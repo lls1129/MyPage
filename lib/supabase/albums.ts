@@ -13,7 +13,7 @@ function coerceCrop(v: unknown, fallback: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
-function isCrop(v: unknown): v is CoverCrop {
+function isRecentCrop(v: unknown): v is RecentCrop {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return (
@@ -31,7 +31,26 @@ function coerceHistory(raw: unknown): CoverHistoryEntry[] {
       if (!item || typeof item !== "object") return null;
       const o = item as Record<string, unknown>;
       if (typeof o.url !== "string" || o.url.length === 0) return null;
-      const crops = Array.isArray(o.crops) ? o.crops.filter(isCrop) : [];
+      // Each entry's `crops` array can mix two shapes: the original
+      // bare CoverCrop ({x,y,w,h}) from before overlays were tracked
+      // per crop, and the newer RecentCrop ({x,y,w,h,overlays}).
+      // Both pass isRecentCrop; the overlays field is just dropped
+      // for older shape rows, defaulting to undefined.
+      const crops = Array.isArray(o.crops)
+        ? o.crops.filter(isRecentCrop).map(
+            (c): RecentCrop => ({
+              x: c.x,
+              y: c.y,
+              w: c.w,
+              h: c.h,
+              overlays: Array.isArray(
+                (c as unknown as { overlays?: unknown }).overlays
+              )
+                ? ((c as unknown as { overlays: unknown[] }).overlays)
+                : undefined,
+            })
+          )
+        : [];
       return { url: o.url, crops };
     })
     .filter((x): x is CoverHistoryEntry => x !== null);
@@ -70,6 +89,10 @@ function normalizeAlbum(row: Record<string, unknown>): Album {
       row.title_placement.length > 0
         ? row.title_placement
         : "below",
+    title_style:
+      row.title_style && typeof row.title_style === "object"
+        ? (row.title_style as Record<string, unknown>)
+        : {},
     hidden: Boolean(row.hidden),
     created_at: row.created_at as string,
   };
@@ -94,7 +117,21 @@ export function isTrivialCrop(a: {
 
 export type CoverCrop = { x: number; y: number; w: number; h: number };
 
-export type CoverHistoryEntry = { url: string; crops: CoverCrop[] };
+// An entry in an album's cover_history.crops list. Stores the crop
+// itself plus an optional snapshot of the overlays applied at the
+// moment this crop was committed — re-applying the crop later
+// restores both. `overlays` is intentionally untyped (unknown[])
+// here so this lib stays free of UI-layer imports; the renderer
+// runs each entry through normalizeOverlays before painting.
+export type RecentCrop = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  overlays?: unknown[];
+};
+
+export type CoverHistoryEntry = { url: string; crops: RecentCrop[] };
 
 export type Album = {
   id: string;
@@ -134,6 +171,11 @@ export type Album = {
   // migration 0020 for the value set; unknown values fall back to
   // "below" in the renderer.
   title_placement: string;
+  // Optional styling tuners for the title strip. Shape documented
+  // in migration 0022. Renderer falls back to per-placement
+  // defaults for any missing field so existing rows ({}) render
+  // unchanged.
+  title_style: Record<string, unknown>;
   hidden: boolean;
   created_at: string;
 };

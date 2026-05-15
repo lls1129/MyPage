@@ -6,7 +6,11 @@ import {
   frameInsetFor,
   frameOverlayFor,
 } from "./cover-decorations";
-import { belowCoverTitle, onCoverTitle } from "./album-title";
+import {
+  belowCoverTitle,
+  onCoverTitle,
+  type TitleStyle,
+} from "./album-title";
 import { type CoverOverlay } from "./cover-overlays";
 import { OverlayLayer } from "./OverlayLayer";
 
@@ -59,13 +63,20 @@ export function CoverCropper({
   filter = null,
   overlays = [],
   titlePlacement = "below",
+  titleStyle,
   albumName,
   albumCount,
   onCommit,
+  onApplyRecent,
 }: {
   imageUrl: string;
   initialCrop: CoverCrop;
-  recentCrops?: CoverCrop[];
+  /** Recently-applied crops for this same URL, each carrying an
+   *  optional snapshot of the overlays that were on the cover when
+   *  the crop was committed. Clicking a recent crop sets the draft
+   *  box and (via onApplyRecent) restores its overlays so admin can
+   *  rewind to a previous look in one click. */
+  recentCrops?: { x: number; y: number; w: number; h: number; overlays?: unknown[] }[];
   /** Decoration preset ids — applied to the preview tile only, so the
    *  preview matches what the actual card on /photos will render. */
   frame?: string | null;
@@ -79,9 +90,20 @@ export function CoverCropper({
    *  so the preview tile mirrors the real card on /photos including
    *  the title placement. */
   titlePlacement?: string;
+  titleStyle?: TitleStyle;
   albumName?: string;
   albumCount?: number;
   onCommit: (crop: CoverCrop) => Promise<ActionResult>;
+  /** Fires when admin picks a recent crop entry — caller restores
+   *  the snapshot's overlays (and any other state) alongside the
+   *  crop draft. */
+  onApplyRecent?: (entry: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    overlays?: unknown[];
+  }) => void;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -204,7 +226,13 @@ export function CoverCropper({
     setBox(defaultBox(natural.w, natural.h));
   }
 
-  function applyRecent(c: CoverCrop) {
+  function applyRecent(c: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    overlays?: unknown[];
+  }) {
     if (!natural) return;
     // Draft only — clicking a recent crop sets the box but doesn't
     // commit until save. This matches the rule for drags/resizes.
@@ -213,6 +241,9 @@ export function CoverCropper({
       y: c.y * natural.h,
       size: Math.min(c.w * natural.w, c.h * natural.h),
     });
+    // Restore the overlays snapshot saved alongside the crop so the
+    // preview reflects the full look immediately. Caller persists.
+    onApplyRecent?.(c);
   }
 
   function startDrag(
@@ -625,7 +656,12 @@ export function CoverCropper({
             {/* Below-cover title placements render outside the
                 aspect-square cover, inside the card chrome. */}
             {albumName !== undefined && albumCount !== undefined
-              ? belowCoverTitle(titlePlacement, albumName, albumCount)
+              ? belowCoverTitle(
+                  titlePlacement,
+                  albumName,
+                  albumCount,
+                  titleStyle ?? {}
+                )
               : null}
             </div>
           </div>
@@ -684,6 +720,14 @@ export function CoverCropper({
   );
 }
 
+type RecentCropEntry = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  overlays?: unknown[];
+};
+
 function RecentCropsGrid({
   wrapperClass,
   gridClass,
@@ -695,11 +739,11 @@ function RecentCropsGrid({
 }: {
   wrapperClass: string;
   gridClass: string;
-  recentCrops: CoverCrop[];
+  recentCrops: RecentCropEntry[];
   imageUrl: string;
   previewCrop: CoverCrop;
   pending: boolean;
-  onApply: (c: CoverCrop) => void;
+  onApply: (c: RecentCropEntry) => void;
 }) {
   return (
     <div className={wrapperClass}>

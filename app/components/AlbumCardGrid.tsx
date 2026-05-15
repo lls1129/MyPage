@@ -8,7 +8,7 @@ import {
 } from "./cover-decorations";
 import { normalizeOverlays } from "./cover-overlays";
 import { OverlayLayer } from "./OverlayLayer";
-import { belowCoverTitle, onCoverTitle } from "./album-title";
+import { belowCoverTitle, onCoverTitle, readTitleStyle } from "./album-title";
 
 // Pastel gradient palette used for empty-album covers. We pick one
 // deterministically from the album id so each empty album has a stable
@@ -180,7 +180,12 @@ export function AlbumCardGrid({
               {onCoverTitle(a.title_placement, a.name, a.count)}
             </div>
             {/* Below-cover placements. */}
-            {belowCoverTitle(a.title_placement, a.name, a.count)}
+            {belowCoverTitle(
+              a.title_placement,
+              a.name,
+              a.count,
+              readTitleStyle(a.title_style)
+            )}
           </Link>
         </li>
         );

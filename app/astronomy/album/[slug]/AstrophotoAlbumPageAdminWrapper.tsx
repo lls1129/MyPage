@@ -11,6 +11,8 @@ import {
   setAstrophotoAlbumCoverOverlays,
   setAstrophotoAlbumHidden,
   setAstrophotoAlbumTitlePlacement,
+  setAstrophotoAlbumTitleStyle,
+  setAllAstrophotoAlbumsTitle,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
 
@@ -55,6 +57,12 @@ export function AstrophotoAlbumPageAdminWrapper({
       }
       onSetTitlePlacement={(id, placement) =>
         normalize(setAstrophotoAlbumTitlePlacement(id, placement))
+      }
+      onSetTitleStyle={(id, style) =>
+        normalize(setAstrophotoAlbumTitleStyle(id, style))
+      }
+      onSetAllTitle={(placement, style) =>
+        normalize(setAllAstrophotoAlbumsTitle(placement, style))
       }
       onSetHidden={(id, hidden) =>
         normalize(setAstrophotoAlbumHidden(id, hidden))

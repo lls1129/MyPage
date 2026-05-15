@@ -18,6 +18,7 @@ import {
   normalizeOverlays,
   type CoverOverlay,
 } from "./cover-overlays";
+import { readTitleStyle, type TitleStyle } from "./album-title";
 import { OverlayEditor } from "./OverlayEditor";
 import {
   getCropsForUrl,
@@ -44,6 +45,24 @@ const TITLE_PLACEMENTS = [
   { id: "hover", label: "hover only" },
 ];
 
+// Caption-bar + below-card "card" shape — radius classes the
+// renderer maps onto the title strip. Square sits flush, pill is
+// fully rounded; the others are gentle defaults that look at home
+// with the rest of the card chrome.
+const TITLE_RADIUS_OPTIONS = [
+  { id: "rounded-sm", label: "square" },
+  { id: "rounded-md", label: "soft" },
+  { id: "rounded-lg", label: "rounded" },
+  { id: "rounded-xl", label: "pill" },
+  { id: "rounded-full", label: "round" },
+];
+
+const TITLE_SIZE_OPTIONS = [
+  { id: "sm", label: "small" },
+  { id: "md", label: "medium" },
+  { id: "lg", label: "large" },
+];
+
 // Compact admin strip shown at the top of /photos/album/[slug] and
 // /astronomy/album/[slug]. Actions for the current album: rename, hide,
 // pick a cover, delete. Upload lives in the grid's pill which is
@@ -63,6 +82,8 @@ export function AlbumPageAdmin({
   onSetCoverDecorations,
   onSetCoverOverlays,
   onSetTitlePlacement,
+  onSetTitleStyle,
+  onSetAllTitle,
 }: {
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
@@ -102,6 +123,14 @@ export function AlbumPageAdmin({
   onSetTitlePlacement: (
     id: string,
     placement: string
+  ) => Promise<ActionResult>;
+  onSetTitleStyle: (
+    id: string,
+    style: Record<string, unknown>
+  ) => Promise<ActionResult>;
+  onSetAllTitle: (
+    placement: string | null,
+    style: Record<string, unknown> | null
   ) => Promise<ActionResult>;
 }) {
   // libraryKind isn't used directly here yet; kept on the signature
@@ -153,6 +182,16 @@ export function AlbumPageAdmin({
   // tunes it once and then moves on, so hiding it keeps the cover
   // panel compact for the more common overlay editing.
   const [decorOpen, setDecorOpen] = useState(false);
+  // Title-style tuners (radius, size, opacity) live alongside the
+  // title placement chip row. `applyToAll` controls whether changes
+  // also broadcast to every other album in this library.
+  const [titleStyle, setTitleStyle] = useState<TitleStyle>(() =>
+    readTitleStyle(album.title_style)
+  );
+  useEffect(() => {
+    setTitleStyle(readTitleStyle(album.title_style));
+  }, [album.title_style]);
+  const [applyToAll, setApplyToAll] = useState(false);
   useEffect(() => {
     setOverlays(normalizeOverlays(album.cover_overlays));
   }, [album.cover_overlays]);
@@ -216,10 +255,10 @@ export function AlbumPageAdmin({
 
   function pickCover(url: string | null) {
     setError(null);
-    // If admin pins a different photo, the overlays they placed for
-    // the previous cover usually don't make sense on the new one —
-    // clear them so the new cover starts fresh. Re-pinning the same
-    // URL (or just adjusting the crop) keeps overlays in place.
+    // Whether admin is pinning a *different* photo. Triggers an
+    // overlay swap below: either restore the snapshot we saved with
+    // the new URL's most-recent crop, or start fresh if there's no
+    // prior history for that URL.
     const isNewCoverUrl =
       url !== null && url !== (album.cover_image_url ?? null);
     startTransition(async () => {
@@ -231,12 +270,6 @@ export function AlbumPageAdmin({
           // Leave the picker open so admin can keep auditioning covers.
           // Clear the URL draft only when that's how it was set.
           if (url === null || url === urlDraft.trim()) setUrlDraft("");
-          if (isNewCoverUrl && overlays.length > 0) {
-            setOverlays([]);
-            onSetCoverOverlays(album.id, []).then((r) => {
-              if (!r.ok) setError(r.error);
-            });
-          }
           // Track successful pins on the album row so admin sees the
           // same recent list on every device. Skip the "clear cover"
           // case (url is null). Optimistic: update local + persist.
@@ -246,13 +279,33 @@ export function AlbumPageAdmin({
             persistHistory(next);
 
             // If admin had previously cropped this same URL, restore
-            // the most recent crop. setPhotoAlbumCover just reset the
-            // crop to trivial as part of pinning, so this re-applies
-            // it. Without this, re-picking a familiar photo would
-            // mean re-cropping from scratch.
+            // the most recent crop AND its overlay snapshot, so
+            // switching back to a familiar cover brings back what
+            // admin had on it. For a brand new URL with no prior
+            // history, overlays start empty so they don't carry over
+            // from the previous cover.
             const priorCrops = getCropsForUrl(next, url);
             if (priorCrops.length > 0) {
-              await onSetCoverCrop(album.id, priorCrops[0]);
+              const top = priorCrops[0];
+              await onSetCoverCrop(album.id, {
+                x: top.x,
+                y: top.y,
+                w: top.w,
+                h: top.h,
+              });
+              if (isNewCoverUrl) {
+                const snap = (top.overlays ?? []) as CoverOverlay[];
+                const normalized = normalizeOverlays(snap);
+                setOverlays(normalized);
+                onSetCoverOverlays(album.id, normalized).then((r) => {
+                  if (!r.ok) setError(r.error);
+                });
+              }
+            } else if (isNewCoverUrl && overlays.length > 0) {
+              setOverlays([]);
+              onSetCoverOverlays(album.id, []).then((r) => {
+                if (!r.ok) setError(r.error);
+              });
             }
           }
           router.refresh();
@@ -283,7 +336,14 @@ export function AlbumPageAdmin({
     const res = await onSetCoverCrop(album.id, crop);
     if (res.ok) {
       if (album.cover_image_url) {
-        const next = pushCrop(history, album.cover_image_url, crop);
+        // Snapshot the overlays that are currently applied alongside
+        // the crop so re-pinning this crop later restores both.
+        const next = pushCrop(
+          history,
+          album.cover_image_url,
+          crop,
+          overlays as unknown[]
+        );
         if (next !== history) {
           setHistory(next);
           persistHistory(next);
@@ -317,7 +377,30 @@ export function AlbumPageAdmin({
     setError(null);
     startTransition(async () => {
       try {
-        const res = await onSetTitlePlacement(album.id, placement);
+        const res = applyToAll
+          ? await onSetAllTitle(placement, null)
+          : await onSetTitlePlacement(album.id, placement);
+        if (!res.ok) setError(res.error);
+        else router.refresh();
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
+
+  function commitTitleStyle(next: TitleStyle) {
+    setTitleStyle(next);
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = applyToAll
+          ? await onSetAllTitle(null, next as Record<string, unknown>)
+          : await onSetTitleStyle(
+              album.id,
+              next as Record<string, unknown>
+            );
         if (!res.ok) setError(res.error);
         else router.refresh();
       } catch (e) {
@@ -501,9 +584,21 @@ export function AlbumPageAdmin({
                 filter={album.cover_filter}
                 overlays={overlays}
                 titlePlacement={album.title_placement}
+                titleStyle={titleStyle}
                 albumName={album.name}
                 albumCount={coverCandidates.length}
                 onCommit={commitCrop}
+                onApplyRecent={(entry) => {
+                  // Restore the overlays that were snapshot-ed with this
+                  // crop, so re-pinning a recent crop rewinds the full
+                  // look (crop draft + overlays) in one click.
+                  const snap = (entry.overlays ?? []) as CoverOverlay[];
+                  const normalized = normalizeOverlays(snap);
+                  setOverlays(normalized);
+                  onSetCoverOverlays(album.id, normalized).then((r) => {
+                    if (!r.ok) setError(r.error);
+                  });
+                }}
               />
 
               {/* Decorations — frame + filter chip rows. Collapsed
@@ -571,6 +666,59 @@ export function AlbumPageAdmin({
                       onPick={applyTitlePlacement}
                       disabled={pending}
                     />
+                    <SizeRow
+                      label="shape"
+                      options={TITLE_RADIUS_OPTIONS}
+                      currentId={titleStyle.radius ?? "rounded-lg"}
+                      onPick={(id) => commitTitleStyle({ ...titleStyle, radius: id })}
+                      disabled={pending}
+                    />
+                    <SizeRow
+                      label="size"
+                      options={TITLE_SIZE_OPTIONS}
+                      currentId={titleStyle.size ?? "md"}
+                      onPick={(id) =>
+                        commitTitleStyle({
+                          ...titleStyle,
+                          size: id as "sm" | "md" | "lg",
+                        })
+                      }
+                      disabled={pending}
+                    />
+                    <label className="flex items-center gap-2 text-[11px]">
+                      <span className="label text-pink-600 shrink-0 w-12">
+                        opacity
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={titleStyle.opacity ?? 0.85}
+                        onChange={(e) =>
+                          commitTitleStyle({
+                            ...titleStyle,
+                            opacity: parseFloat(e.target.value),
+                          })
+                        }
+                        className="flex-1 accent-pink-400"
+                        disabled={pending}
+                      />
+                      <span className="font-mono text-ink/65 w-10 text-right">
+                        {Math.round((titleStyle.opacity ?? 0.85) * 100)}%
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-[11px] mt-1">
+                      <input
+                        type="checkbox"
+                        checked={applyToAll}
+                        onChange={(e) => setApplyToAll(e.target.checked)}
+                        className="accent-pink-400"
+                      />
+                      <span className="text-ink/70 font-semibold">
+                        apply title changes to all albums in this library
+                      </span>
+                    </label>
                   </>
                 ) : null}
               </div>

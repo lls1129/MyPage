@@ -419,6 +419,60 @@ export async function setPhotoAlbumTitlePlacement(
   return { ok: true as const };
 }
 
+// Patch the album's title_style jsonb. Caller passes a flat object;
+// we merge with the existing value so partial updates don't clobber
+// fields the UI isn't currently editing.
+export async function setPhotoAlbumTitleStyle(
+  id: string,
+  style: Record<string, unknown>
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (!style || typeof style !== "object")
+    return { ok: false as const, error: "style must be an object" };
+  const admin = createAdminClient();
+  const { data: cur, error: readErr } = await admin
+    .from("albums")
+    .select("title_style")
+    .eq("id", id)
+    .single();
+  if (readErr) return { ok: false as const, error: readErr.message };
+  const merged = {
+    ...((cur?.title_style ?? {}) as Record<string, unknown>),
+    ...style,
+  };
+  const { error } = await admin
+    .from("albums")
+    .update({ title_style: merged })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
+// Copy a title placement + style to every photo album. Used by the
+// "apply to all albums" checkbox in the admin's title settings —
+// admin tweaks one album's look + opts in to broadcast.
+export async function setAllPhotoAlbumsTitle(
+  placement: string | null,
+  style: Record<string, unknown> | null
+) {
+  await requireAdmin();
+  const updates: Record<string, unknown> = {};
+  if (placement && placement.length > 0) updates.title_placement = placement;
+  if (style) updates.title_style = style;
+  if (Object.keys(updates).length === 0) return { ok: true as const };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update(updates)
+    .eq("kind", "photos");
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  return { ok: true as const };
+}
+
 // Replace a photo album's cover_overlays array. Client computes
 // the next array (add / remove / reposition / restyle), ships the
 // whole thing. Shape validated by the renderer's normalizer so we
