@@ -5,8 +5,24 @@ import { createPortal, useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 import type { Album } from "@/lib/supabase/albums";
-import { updatePhotoMeta, setPhotoDecorations } from "./admin-actions";
-import { FILTERS, FRAMES, FRAME_SIZES } from "../components/cover-decorations";
+import {
+  updatePhotoMeta,
+  setPhotoDecorations,
+  setPhotoOverlays,
+} from "./admin-actions";
+import {
+  FILTERS,
+  FRAMES,
+  FRAME_SIZES,
+  filterCssFor,
+  frameInsetFor,
+  frameOverlayFor,
+} from "../components/cover-decorations";
+import { OverlayEditor } from "../components/OverlayEditor";
+import {
+  normalizeOverlays,
+  type CoverOverlay,
+} from "../components/cover-overlays";
 
 export function PhotoEditModal({
   photo,
@@ -31,6 +47,9 @@ export function PhotoEditModal({
     photo.cover_frame_width
   );
   const [decorPending, startDecor] = useTransition();
+  const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
+    normalizeOverlays(photo.cover_overlays)
+  );
   const album = albums.find((a) => a.id === photo.album_id) ?? null;
   // Width picker only makes sense when there's actually a frame on
   // this photo (either explicit or inherited from the album).
@@ -195,6 +214,47 @@ export function PhotoEditModal({
             ) : null}
           </div>
 
+          {/* Per-photo overlays — stickers / captions / drawings.
+              Editor is collapsed by default so the modal stays
+              compact for the common case (caption + tags); admin
+              taps the header to expand and decorate. Background is
+              the photo itself, with the photo's effective frame
+              applied so the editor mirrors what visitors will see. */}
+          <OverlayEditor
+            overlays={overlays}
+            onChange={setOverlays}
+            onCommit={async (next) => {
+              const r = await setPhotoOverlays(photo.id, next);
+              return r.ok
+                ? ({ ok: true } as const)
+                : ({
+                    ok: false,
+                    error: r.error ?? "couldn’t save overlays.",
+                  } as const);
+            }}
+            stageInsetClass={frameInsetFor(
+              effectiveFrame ?? null,
+              frameWidth ?? album?.cover_frame_width ?? "medium"
+            )}
+            stageAspect={
+              photo.width && photo.height && photo.width > 0 && photo.height > 0
+                ? `${photo.width} / ${photo.height}`
+                : "1 / 1"
+            }
+            background={
+              <PhotoOverlayBackground
+                photo={photo}
+                frame={effectiveFrame ?? null}
+                frameWidth={frameWidth ?? album?.cover_frame_width ?? "medium"}
+                filter={
+                  filter === null
+                    ? album?.cover_filter ?? null
+                    : filter || null
+                }
+              />
+            }
+          />
+
           {error ? (
             <p className="text-xs text-pink-600 font-semibold">{error}</p>
           ) : null}
@@ -219,6 +279,62 @@ export function PhotoEditModal({
 // One decoration row for the photo edit modal. "follow album" is
 // always first; when the album itself has a value, its label hints
 // at what's inherited so admin knows the default they're following.
+// Background for the per-photo OverlayEditor — the photo itself with
+// its effective frame + filter applied, so the overlay editor's
+// preview matches what visitors will see. Used inside PhotoEditModal.
+function PhotoOverlayBackground({
+  photo,
+  frame,
+  frameWidth,
+  filter,
+}: {
+  photo: Photo;
+  frame: string | null;
+  frameWidth: string;
+  filter: string | null;
+}) {
+  const filterCss = filterCssFor(filter);
+  const transform = (() => {
+    const parts: string[] = [];
+    if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
+    if (photo.flipped) parts.push("scaleX(-1)");
+    return parts.length > 0 ? parts.join(" ") : undefined;
+  })();
+  return (
+    <>
+      <div
+        className={
+          "absolute overflow-hidden " +
+          (frameInsetFor(frame, frameWidth) || "inset-0")
+        }
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={photo.image_url}
+          alt={photo.caption || ""}
+          style={{
+            transform,
+            filter: filterCss || undefined,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+          className="block transition-transform"
+        />
+      </div>
+      {frame ? (
+        <div
+          className={
+            "absolute inset-0 pointer-events-none " +
+            frameOverlayFor(frame, frameWidth)
+          }
+          aria-hidden
+        />
+      ) : null}
+    </>
+  );
+}
+
 function DecorationRow({
   label,
   options,
