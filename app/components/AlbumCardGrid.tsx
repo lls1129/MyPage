@@ -48,17 +48,33 @@ export function AlbumCardGrid({
   if (albums.length === 0) return null;
   return (
     <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-4">
-      {albums.map((a) => (
+      {albums.map((a) => {
+        // Solid frames (mat, polaroid, rounded mat, etc) already
+        // paint their own outer outline + bg, so we hide the card's
+        // chrome (rounded-lg + bg-white + pink border) to avoid the
+        // four mismatched corners where the card's small radius
+        // peeks past the frame's bigger / square radius.
+        const isSolidFrame = !!frameInsetFor(
+          a.cover_frame,
+          a.cover_frame_width
+        );
+        return (
         <li key={a.id}>
           <Link
             href={`${basePath}/${encodeURIComponent(a.slug)}`}
             className={
-              "lift block rounded-lg overflow-hidden bg-white border shadow-soft " +
-              (a.hidden ? "border-pink-300" : "border-pink-100")
+              "lift block overflow-hidden " +
+              (isSolidFrame
+                ? ""
+                : "rounded-lg bg-white border shadow-soft " +
+                  (a.hidden ? "border-pink-300" : "border-pink-100"))
             }
           >
             <div
-              className="aspect-square bg-pink-50 relative overflow-hidden"
+              className={
+                "aspect-square relative overflow-hidden " +
+                (isSolidFrame ? "" : "bg-pink-50")
+              }
               // Establish a container so the overlay layer's
               // `cqw` font sizes scale against the card width.
               style={{ containerType: "inline-size" }}
@@ -139,10 +155,17 @@ export function AlbumCardGrid({
               )}
               {/* Stickers / captions / highlights sit above any
                   cover (or above the empty-album gradient) so the
-                  overlay layer always renders consistently. */}
+                  overlay layer always renders consistently. The
+                  layer inherits the same inset as the photo so
+                  overlays shift with the photo when admin switches
+                  to a solid frame. */}
               <OverlayLayer
                 overlays={normalizeOverlays(a.cover_overlays)}
                 className={a.hidden ? "opacity-70" : ""}
+                insetClass={frameInsetFor(
+                  a.cover_frame,
+                  a.cover_frame_width
+                )}
               />
               {a.hidden ? (
                 <span className="absolute top-1.5 left-1.5 rounded-pill bg-pink-200 text-white px-1.5 py-0.5 text-[10px] font-semibold shadow-soft">
@@ -166,7 +189,8 @@ export function AlbumCardGrid({
             </div>
           </Link>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

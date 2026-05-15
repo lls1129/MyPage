@@ -528,6 +528,10 @@ export function AlbumPageAdmin({
                 overlays={overlays}
                 onChange={setOverlays}
                 onCommit={(next) => onSetCoverOverlays(album.id, next)}
+                stageInsetClass={frameInsetFor(
+                  album.cover_frame,
+                  album.cover_frame_width
+                )}
                 background={
                   <CoverPreviewBackground
                     imageUrl={album.cover_image_url}

@@ -21,17 +21,27 @@ import {
 export function OverlayLayer({
   overlays,
   className,
+  insetClass,
 }: {
   overlays: CoverOverlay[];
   /** Optional extra classes on the wrapper (e.g. for opacity when
    *  the parent is in a "hidden" state). */
   className?: string;
+  /** Positioning classes for the wrapper. When a solid frame is
+   *  active the wrapper inherits the same inset as the photo so
+   *  overlays stay anchored to the photo's inner area rather than
+   *  the full cover bounds — switching frames shifts the photo
+   *  and the overlays together. Defaults to `inset-0`. */
+  insetClass?: string;
 }) {
   if (overlays.length === 0) return null;
   return (
     <div
       className={
-        "absolute inset-0 pointer-events-none " + (className ?? "")
+        "absolute pointer-events-none " +
+        (insetClass || "inset-0") +
+        " " +
+        (className ?? "")
       }
       aria-hidden
     >

@@ -582,7 +582,10 @@ export function CoverCropper({
                       aria-hidden
                     />
                   ) : null}
-                  <OverlayLayer overlays={overlays} />
+                  <OverlayLayer
+                    overlays={overlays}
+                    insetClass={frameInsetFor(frame, frameWidth)}
+                  />
                 </>
               ) : null}
             </div>

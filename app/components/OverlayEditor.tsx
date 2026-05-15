@@ -49,6 +49,11 @@ export function OverlayEditor({
    *  / filter so this editor can draw the overlays + drag handles
    *  on top without knowing about decorations. */
   background,
+  /** Positioning classes for the interactive stage. Caller passes
+   *  the photo's frame inset so the editable overlays + drag math
+   *  use the photo's inner area as their coordinate frame, keeping
+   *  stickers anchored to the photo when admin switches frames. */
+  stageInsetClass,
 }: {
   overlays: CoverOverlay[];
   /** Local-state update (optimistic). Called for every drag tick. */
@@ -58,6 +63,7 @@ export function OverlayEditor({
    *  reflected so server and local state stay in sync. */
   onCommit: (next: CoverOverlay[]) => Promise<ActionResult>;
   background: React.ReactNode;
+  stageInsetClass?: string;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -858,68 +864,76 @@ export function OverlayEditor({
         </div>
       ) : null}
 
-      {/* Stage — the editable cover canvas. Caller passes the
-          background (image / frame / filter) and we draw overlays
-          + drag handles on top so click-to-select works. */}
+      {/* Outer container sizes the cover preview area. The inner
+          "stage" div is inset to match the photo's frame inset so
+          overlay coordinates + drag math share the photo's frame
+          of reference. Background renders at the outer bounds so
+          the frame + photo paint at full size. */}
       <div
-        ref={stageRef}
-        className={
-          "relative w-full aspect-square rounded-md overflow-hidden border border-pink-100 bg-pink-50 mx-auto " +
-          (drawMode ? "cursor-crosshair touch-none" : "")
-        }
+        className="relative w-full aspect-square rounded-md overflow-hidden border border-pink-100 bg-pink-50 mx-auto"
         style={{
           maxWidth: 360,
           containerType: "inline-size",
         }}
-        onPointerDown={(e) => {
-          // In draw mode the stage itself captures the pointer to
-          // start a stroke. Existing overlays render with
-          // pointer-events:none so they don't intercept the press.
-          if (drawMode) startDraw(e);
-        }}
-        onPointerMove={(e) => {
-          if (drawRef.current) moveDraw(e);
-          else if (rotateRef.current) moveRotate(e);
-          else if (dragRef.current) moveDrag(e);
-        }}
-        onPointerUp={(e) => {
-          if (drawRef.current) endDraw(e);
-          else if (rotateRef.current) endRotate(e);
-          else if (dragRef.current) endDrag(e);
-        }}
-        onPointerCancel={(e) => {
-          if (drawRef.current) endDraw(e);
-          else if (rotateRef.current) endRotate(e);
-          else if (dragRef.current) endDrag(e);
-        }}
-        onClick={() => {
-          if (drawMode) return; // don't deselect mid-draw
-          setSelectedId(null);
-        }}
       >
         {background}
-        {/* Editable overlay items — duplicates the OverlayLayer
-            renderer but with drag handlers + a selection ring.
-            In draw mode they go inert so the stage receives the
-            stroke gesture instead. */}
-        {overlays.map((o) => (
-          <EditableOverlay
-            key={o.id}
-            overlay={o}
-            selected={!drawMode && o.id === selectedId}
-            interactive={!drawMode}
-            onPointerDown={(e) => startDrag(e, o)}
-          />
-        ))}
-        {/* Rotation handle for the selected overlay — a small dot
-            anchored "above" the overlay in its rotated frame.
-            Dragging it spins the overlay around its center. */}
-        {!drawMode && selected ? (
-          <RotationHandle
-            overlay={selected}
-            onPointerDown={(e) => startRotate(e, selected)}
-          />
-        ) : null}
+        <div
+          ref={stageRef}
+          className={
+            "absolute " +
+            (stageInsetClass || "inset-0") +
+            " " +
+            (drawMode ? "cursor-crosshair touch-none" : "")
+          }
+          onPointerDown={(e) => {
+            // In draw mode the stage itself captures the pointer to
+            // start a stroke. Existing overlays render with
+            // pointer-events:none so they don't intercept the press.
+            if (drawMode) startDraw(e);
+          }}
+          onPointerMove={(e) => {
+            if (drawRef.current) moveDraw(e);
+            else if (rotateRef.current) moveRotate(e);
+            else if (dragRef.current) moveDrag(e);
+          }}
+          onPointerUp={(e) => {
+            if (drawRef.current) endDraw(e);
+            else if (rotateRef.current) endRotate(e);
+            else if (dragRef.current) endDrag(e);
+          }}
+          onPointerCancel={(e) => {
+            if (drawRef.current) endDraw(e);
+            else if (rotateRef.current) endRotate(e);
+            else if (dragRef.current) endDrag(e);
+          }}
+          onClick={() => {
+            if (drawMode) return; // don't deselect mid-draw
+            setSelectedId(null);
+          }}
+        >
+          {/* Editable overlay items — duplicates the OverlayLayer
+              renderer but with drag handlers + a selection ring.
+              In draw mode they go inert so the stage receives the
+              stroke gesture instead. */}
+          {overlays.map((o) => (
+            <EditableOverlay
+              key={o.id}
+              overlay={o}
+              selected={!drawMode && o.id === selectedId}
+              interactive={!drawMode}
+              onPointerDown={(e) => startDrag(e, o)}
+            />
+          ))}
+          {/* Rotation handle for the selected overlay — a small dot
+              anchored "above" the overlay in its rotated frame.
+              Dragging it spins the overlay around its center. */}
+          {!drawMode && selected ? (
+            <RotationHandle
+              overlay={selected}
+              onPointerDown={(e) => startRotate(e, selected)}
+            />
+          ) : null}
+        </div>
       </div>
 
       {/* Selected overlay controls — only shown when something is
