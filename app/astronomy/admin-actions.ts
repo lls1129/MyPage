@@ -406,6 +406,23 @@ export async function rotateAstrophoto(id: string, direction: "left" | "right") 
   return { ok: true };
 }
 
+// Replace an astrophoto's cover_overlays array. See setPhotoOverlays.
+export async function setAstrophotoOverlays(id: string, overlays: unknown) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing astrophoto id" };
+  if (!Array.isArray(overlays))
+    return { ok: false as const, error: "overlays must be an array" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("astrophotos")
+    .update({ cover_overlays: overlays })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Toggle the astrophoto's horizontal-flip flag. See flipPhoto.
 export async function flipAstrophoto(id: string) {
   await requireAdmin();

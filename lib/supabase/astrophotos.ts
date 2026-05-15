@@ -27,6 +27,7 @@ export type Astrophoto = {
   cover_frame: string | null;
   cover_filter: string | null;
   cover_frame_width: string | null;
+  cover_overlays: unknown[];
 };
 
 export type AstrophotosResult =

@@ -54,6 +54,10 @@ export function OverlayEditor({
    *  use the photo's inner area as their coordinate frame, keeping
    *  stickers anchored to the photo when admin switches frames. */
   stageInsetClass,
+  /** Aspect-ratio CSS for the stage. Defaults to "1 / 1" (square,
+   *  matching album covers); pass the photo's natural aspect for
+   *  per-photo overlay editing so the stage matches the photo. */
+  stageAspect = "1 / 1",
 }: {
   overlays: CoverOverlay[];
   /** Local-state update (optimistic). Called for every drag tick. */
@@ -64,6 +68,7 @@ export function OverlayEditor({
   onCommit: (next: CoverOverlay[]) => Promise<ActionResult>;
   background: React.ReactNode;
   stageInsetClass?: string;
+  stageAspect?: string;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -874,12 +879,13 @@ export function OverlayEditor({
           the visible shape. */}
       <div
         className={
-          "relative w-full aspect-square overflow-hidden mx-auto " +
+          "relative w-full overflow-hidden mx-auto " +
           (stageInsetClass
             ? ""
             : "rounded-md border border-pink-100 bg-pink-50")
         }
         style={{
+          aspectRatio: stageAspect,
           maxWidth: 360,
           containerType: "inline-size",
         }}

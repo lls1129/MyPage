@@ -24,6 +24,10 @@ export type Photo = {
   // Per-photo override for the frame thickness. NULL inherits the
   // album's width. See migration 0021.
   cover_frame_width: string | null;
+  // Per-photo overlay layer — same shape as the album cover's
+  // cover_overlays. Untyped here (unknown[]) to keep this lib free
+  // of UI-layer imports; the renderer normalizes before painting.
+  cover_overlays: unknown[];
 };
 
 // resolveDecoration lives in app/components/cover-decorations.ts —
@@ -145,6 +149,9 @@ export async function fetchPhotosByIds(
         photo_ids: row.photo_ids ?? [],
         rotation: row.rotation ?? 0,
         flipped: Boolean(row.flipped),
+        cover_overlays: Array.isArray(row.cover_overlays)
+          ? row.cover_overlays
+          : [],
       } as Photo);
     }
     return map;

@@ -25,6 +25,8 @@ import {
 } from "../components/cover-decorations";
 import { setPhotoDecorations } from "./admin-actions";
 import { useRouter } from "next/navigation";
+import { OverlayLayer } from "../components/OverlayLayer";
+import { normalizeOverlays } from "../components/cover-overlays";
 
 export function Lightbox({
   photos,
@@ -274,6 +276,13 @@ export function Lightbox({
                     }
                   />
                 ) : null}
+                {/* Per-photo overlays painted at the photo area —
+                    inherits the frame inset so stickers stay
+                    anchored to the photo when admin solid-frames. */}
+                <OverlayLayer
+                  overlays={normalizeOverlays(photo.cover_overlays)}
+                  insetClass={frameInsetFor(decor.frame, decor.frameWidth)}
+                />
               </div>
             );
           })()}

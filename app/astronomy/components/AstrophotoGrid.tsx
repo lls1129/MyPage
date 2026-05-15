@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import type { Astrophoto } from "@/lib/supabase/astrophotos";
 import type { Album } from "@/lib/supabase/albums";
 import { AstrophotoEditModal } from "./AstrophotoEditModal";
+import { OverlayLayer } from "../../components/OverlayLayer";
+import { normalizeOverlays } from "../../components/cover-overlays";
 import {
   toggleAstrophotoHidden,
   rotateAstrophoto,
@@ -188,6 +190,10 @@ export function AstrophotoGrid({
                         "absolute inset-0 w-full h-full object-cover transition-transform " +
                         (p.hidden ? "opacity-60" : "")
                       }
+                    />
+                    <OverlayLayer
+                      overlays={normalizeOverlays(p.cover_overlays)}
+                      className={p.hidden ? "opacity-60" : ""}
                     />
                   </div>
                   <div className="p-4">

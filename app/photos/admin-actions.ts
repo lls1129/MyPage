@@ -112,6 +112,25 @@ export async function rotatePhoto(id: string, direction: "left" | "right") {
   return { ok: true };
 }
 
+// Replace a photo's cover_overlays array. Same permissive shape as
+// the album cover variant — the renderer normalizes before
+// painting, so a typo or stale entry doesn't blank the photo.
+export async function setPhotoOverlays(id: string, overlays: unknown) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing photo id" };
+  if (!Array.isArray(overlays))
+    return { ok: false as const, error: "overlays must be an array" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("photos")
+    .update({ cover_overlays: overlays })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Toggle the photo's horizontal-flip flag. CSS scaleX(-1) is
 // composed on display alongside rotation; the file in storage is
 // never rewritten.

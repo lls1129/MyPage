@@ -210,6 +210,7 @@ export function UploadForm({
             cover_frame: null,
             cover_filter: null,
             cover_frame_width: null,
+            cover_overlays: [],
           });
         } catch (err) {
           failed += 1;
@@ -688,6 +689,10 @@ type SuccessItem = {
   cover_frame: string | null;
   cover_filter: string | null;
   cover_frame_width: string | null;
+  // Per-photo overlay layer — stickers / captions / drawings.
+  // Mirrors albums.cover_overlays jsonb shape. Local state during
+  // upload, persisted via setPhotoOverlays.
+  cover_overlays: unknown[];
 };
 
 function UploadSuccessCard({

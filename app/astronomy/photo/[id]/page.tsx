@@ -6,6 +6,8 @@ import { getAstrophoto, type Astrophoto } from "@/lib/supabase/astrophotos";
 import { listAlbums } from "@/lib/supabase/albums";
 import { getCurrentAdmin } from "@/lib/supabase/server";
 import { AdminBar } from "./AdminBar";
+import { OverlayLayer } from "../../../components/OverlayLayer";
+import { normalizeOverlays } from "../../../components/cover-overlays";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +92,7 @@ export default async function AstrophotoDetailPage(
           </div>
         ) : null}
 
-        <div className="rounded-lg overflow-hidden border border-skynavy-500 shadow-soft mt-3 bg-skynavy-900">
+        <div className="rounded-lg overflow-hidden border border-skynavy-500 shadow-soft mt-3 bg-skynavy-900 relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={photo.image_url}
@@ -105,6 +107,7 @@ export default async function AstrophotoDetailPage(
             })()}
             className="w-full h-auto block transition-transform"
           />
+          <OverlayLayer overlays={normalizeOverlays(photo.cover_overlays)} />
         </div>
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-8">

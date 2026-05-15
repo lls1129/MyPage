@@ -15,6 +15,8 @@ import {
 } from "../components/cover-decorations";
 import { Lightbox } from "./Lightbox";
 import { PhotoEditModal } from "./PhotoEditModal";
+import { OverlayLayer } from "../components/OverlayLayer";
+import { normalizeOverlays } from "../components/cover-overlays";
 import {
   togglePhotoHidden,
   rotatePhoto,
@@ -449,6 +451,16 @@ function PhotoTile({
           aria-hidden
         />
       ) : null}
+
+      {/* Per-photo overlays (stickers / captions / drawings).
+          Positioned to match the photo's inner area when a solid
+          frame is applied — same insetClass pattern as album
+          covers, so decorations stay anchored to the photo. */}
+      <OverlayLayer
+        overlays={normalizeOverlays(photo.cover_overlays)}
+        className={photo.hidden ? "opacity-60" : ""}
+        insetClass={frameInsetFor(frame, frameWidth)}
+      />
 
       {photo.hidden ? (
         <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide font-bold rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 border border-lavender-200">
