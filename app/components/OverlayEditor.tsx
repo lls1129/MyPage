@@ -1065,30 +1065,48 @@ function SaveStatusPill({
 }: {
   status: "saved" | "unsaved" | "saving" | "error";
 }) {
-  if (status === "saved") {
-    return (
-      <span className="text-[10px] text-lavender-600 font-semibold">
-        ✓ saved
-      </span>
-    );
-  }
+  // All states share the same pill shell + fixed width so flipping
+  // saved → unsaved → saving mid-draw doesn't reflow the toolbar
+  // (which on mobile pushes the stage up and down under the finger).
+  const base =
+    "inline-flex items-center justify-center rounded-pill border px-1.5 py-0.5 text-[10px] font-semibold text-center";
+  const widthStyle = { width: 64, flex: "0 0 auto" } as const;
   if (status === "saving") {
     return (
-      <span className="text-[10px] text-pink-600 font-semibold">
+      <span
+        className={base + " bg-white text-pink-600 border-pink-200"}
+        style={widthStyle}
+      >
         saving…
       </span>
     );
   }
   if (status === "unsaved") {
     return (
-      <span className="rounded-pill bg-amber-200/90 text-amber-900 px-1.5 py-0.5 text-[10px] font-semibold border border-amber-300/80">
+      <span
+        className={base + " bg-amber-200/90 text-amber-900 border-amber-300/80"}
+        style={widthStyle}
+      >
         unsaved
       </span>
     );
   }
+  if (status === "error") {
+    return (
+      <span
+        className={base + " bg-pink-200 text-white border-pink-200"}
+        style={widthStyle}
+      >
+        failed
+      </span>
+    );
+  }
   return (
-    <span className="rounded-pill bg-pink-200 text-white px-1.5 py-0.5 text-[10px] font-semibold">
-      save failed
+    <span
+      className={base + " bg-white text-lavender-600 border-lavender-200"}
+      style={widthStyle}
+    >
+      ✓ saved
     </span>
   );
 }
