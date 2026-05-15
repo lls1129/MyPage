@@ -151,6 +151,26 @@ export async function setAstrophotoAlbumCoverDecorations(
   return { ok: true as const };
 }
 
+// Set the album's title placement. See setPhotoAlbumTitlePlacement.
+export async function setAstrophotoAlbumTitlePlacement(
+  id: string,
+  placement: string
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (typeof placement !== "string" || placement.length === 0)
+    return { ok: false as const, error: "missing title placement" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ title_placement: placement })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/astronomy");
+  revalidatePath(`/astronomy/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace an astrophoto album's cover_overlays array. See
 // setPhotoAlbumCoverOverlays for design rationale.
 export async function setAstrophotoAlbumCoverOverlays(

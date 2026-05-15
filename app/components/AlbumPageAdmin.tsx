@@ -31,6 +31,19 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 
 type CoverCandidate = { id: string; image_url: string };
 
+// Where the album's name + count strip render on the card. Default
+// is "below"; the other placements give admin different aesthetics
+// for different album styles (polaroid bar, museum stacked, etc).
+// Migration 0020 stores the value as a free-form text column; the
+// renderer falls back to "below" for unknown values.
+const TITLE_PLACEMENTS = [
+  { id: "below", label: "below" },
+  { id: "caption-bar", label: "caption bar" },
+  { id: "stacked", label: "stacked" },
+  { id: "corner", label: "on cover" },
+  { id: "hover", label: "hover only" },
+];
+
 // Compact admin strip shown at the top of /photos/album/[slug] and
 // /astronomy/album/[slug]. Actions for the current album: rename, hide,
 // pick a cover, delete. Upload lives in the grid's pill which is
@@ -49,6 +62,7 @@ export function AlbumPageAdmin({
   onSetCoverHistory,
   onSetCoverDecorations,
   onSetCoverOverlays,
+  onSetTitlePlacement,
 }: {
   album: Album;
   /** /photos or /astronomy — where to land after a successful delete. */
@@ -84,6 +98,10 @@ export function AlbumPageAdmin({
   onSetCoverOverlays: (
     id: string,
     overlays: CoverOverlay[]
+  ) => Promise<ActionResult>;
+  onSetTitlePlacement: (
+    id: string,
+    placement: string
   ) => Promise<ActionResult>;
 }) {
   // libraryKind isn't used directly here yet; kept on the signature
@@ -279,6 +297,21 @@ export function AlbumPageAdmin({
         else router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "couldn’t reach the server.");
+      }
+    });
+  }
+
+  function applyTitlePlacement(placement: string) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await onSetTitlePlacement(album.id, placement);
+        if (!res.ok) setError(res.error);
+        else router.refresh();
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
       }
     });
   }
@@ -516,6 +549,13 @@ export function AlbumPageAdmin({
                         disabled={pending}
                       />
                     ) : null}
+                    <SizeRow
+                      label="title"
+                      options={TITLE_PLACEMENTS}
+                      currentId={album.title_placement}
+                      onPick={applyTitlePlacement}
+                      disabled={pending}
+                    />
                   </>
                 ) : null}
               </div>

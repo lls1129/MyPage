@@ -390,6 +390,28 @@ export async function setPhotoAlbumCoverDecorations(
   return { ok: true as const };
 }
 
+// Set the album's title placement (where name+count renders on the
+// card). Accepts any string; the renderer falls back to "below" for
+// unknown values so a typo can't blank the title.
+export async function setPhotoAlbumTitlePlacement(
+  id: string,
+  placement: string
+) {
+  await requireAdmin();
+  if (!id) return { ok: false as const, error: "missing album id" };
+  if (typeof placement !== "string" || placement.length === 0)
+    return { ok: false as const, error: "missing title placement" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("albums")
+    .update({ title_placement: placement })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Replace a photo album's cover_overlays array. Client computes
 // the next array (add / remove / reposition / restyle), ships the
 // whole thing. Shape validated by the renderer's normalizer so we

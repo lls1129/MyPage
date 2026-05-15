@@ -10,6 +10,7 @@ import {
   setPhotoAlbumCoverHistory,
   setPhotoAlbumCoverOverlays,
   setPhotoAlbumHidden,
+  setPhotoAlbumTitlePlacement,
 } from "../../admin-actions";
 import { AlbumPageAdmin } from "../../../components/AlbumPageAdmin";
 
@@ -51,6 +52,9 @@ export function PhotoAlbumPageAdminWrapper({
       }
       onSetCoverOverlays={(id, overlays) =>
         normalize(setPhotoAlbumCoverOverlays(id, overlays))
+      }
+      onSetTitlePlacement={(id, placement) =>
+        normalize(setPhotoAlbumTitlePlacement(id, placement))
       }
       onSetHidden={(id, hidden) => normalize(setPhotoAlbumHidden(id, hidden))}
     />

@@ -65,6 +65,11 @@ function normalizeAlbum(row: Record<string, unknown>): Album {
     cover_overlays: Array.isArray(row.cover_overlays)
       ? (row.cover_overlays as unknown[])
       : [],
+    title_placement:
+      typeof row.title_placement === "string" &&
+      row.title_placement.length > 0
+        ? row.title_placement
+        : "below",
     hidden: Boolean(row.hidden),
     created_at: row.created_at as string,
   };
@@ -125,6 +130,10 @@ export type Album = {
   // documented in app/components/cover-overlays.ts. Untyped here
   // (unknown[]) to keep the lib free of UI-layer imports.
   cover_overlays: unknown[];
+  // Where the album's name + count render on its card. See
+  // migration 0020 for the value set; unknown values fall back to
+  // "below" in the renderer.
+  title_placement: string;
   hidden: boolean;
   created_at: string;
 };
