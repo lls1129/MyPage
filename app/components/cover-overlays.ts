@@ -48,14 +48,21 @@ export type HighlightOverlay = {
   color: OverlayColor;
 };
 
-// Freehand stroke — admin doodles. Stored as a list of disjoint
-// `segments`, each a sequence of 0..1 normalized points captured
-// during one pen-down → pen-up cycle. Multiple segments per
-// overlay let a whole drawing session (admin entering draw mode,
-// laying down N strokes, then exiting) live in a single layer
-// instead of eating a slot per stroke. Dragging shifts every
-// point in every segment by the same delta; rotation / scale
-// apply via SVG transform on the wrapper.
+// One pen-down → pen-up sub-stroke inside a StrokeOverlay layer.
+// Each segment carries its own color + width so admin can flip
+// colors / brush thickness mid-session and still keep all the
+// strokes in a single overlay slot.
+export type StrokeSegment = {
+  points: [number, number][];
+  color: OverlayColor;
+  width: number; // 0..0.08 — stroke thickness as fraction of cover width
+};
+
+// Freehand stroke — admin doodles. Holds a list of segments, each
+// with its own color + width. A whole drawing session (admin
+// entering draw mode, laying down N strokes regardless of how
+// often they change color / brush, then exiting) lives in this
+// one overlay layer.
 export type StrokeOverlay = {
   id: string;
   type: "stroke";
@@ -63,9 +70,7 @@ export type StrokeOverlay = {
   y: number;
   scale: number;
   rotation: number;
-  segments: [number, number][][];
-  color: OverlayColor;
-  width: number; // 0..0.05 — stroke thickness as fraction of cover width
+  segments: StrokeSegment[];
 };
 
 export type CoverOverlay =
@@ -245,32 +250,66 @@ export function normalizeOverlays(raw: unknown): CoverOverlay[] {
         color: isColor(o.color) ? o.color : "pink",
       });
     } else if (o.type === "stroke") {
-      // Accept both the new multi-segment shape and the legacy
-      // single-points shape from before sessions were a thing.
-      // Legacy rows render unchanged once parsed back as a single
-      // segment.
-      let segments: [number, number][][] = [];
-      if (Array.isArray(o.segments)) {
-        for (const seg of o.segments as unknown[]) {
-          if (!Array.isArray(seg)) continue;
-          const pts = parseStrokePoints(seg);
-          if (pts.length > 0) segments.push(pts);
-        }
-      } else if (Array.isArray(o.points)) {
-        const pts = parseStrokePoints(o.points);
-        if (pts.length > 0) segments = [pts];
-      }
-      if (segments.length === 0) continue;
-      const rawWidth =
+      // Accept three shapes:
+      //   newest — segments: [{ points, color, width }]
+      //   middle — segments: [number, number][][]  (uniform style
+      //            inherited from overlay-level color + width)
+      //   oldest — points:   [number, number][]    (single segment)
+      // The newest shape lets a single layer hold strokes with
+      // different colors / widths; the older shapes get coerced
+      // up with the overlay's color/width applied uniformly.
+      const fallbackColor: OverlayColor = isColor(o.color)
+        ? (o.color as OverlayColor)
+        : "pink";
+      const fallbackWidth =
         Number.isFinite(o.width as number) && (o.width as number) > 0
           ? Math.min(0.08, Math.max(0.002, o.width as number))
           : 0.015;
+      let segments: StrokeSegment[] = [];
+      if (Array.isArray(o.segments)) {
+        for (const seg of o.segments as unknown[]) {
+          // New shape: { points, color, width }
+          if (
+            seg &&
+            typeof seg === "object" &&
+            Array.isArray((seg as { points?: unknown }).points)
+          ) {
+            const s = seg as Record<string, unknown>;
+            const pts = parseStrokePoints(s.points);
+            if (pts.length === 0) continue;
+            const color = isColor(s.color)
+              ? (s.color as OverlayColor)
+              : fallbackColor;
+            const width =
+              Number.isFinite(s.width as number) && (s.width as number) > 0
+                ? Math.min(0.08, Math.max(0.002, s.width as number))
+                : fallbackWidth;
+            segments.push({ points: pts, color, width });
+            continue;
+          }
+          // Middle shape: bare points array per segment.
+          if (Array.isArray(seg)) {
+            const pts = parseStrokePoints(seg);
+            if (pts.length > 0)
+              segments.push({
+                points: pts,
+                color: fallbackColor,
+                width: fallbackWidth,
+              });
+          }
+        }
+      } else if (Array.isArray(o.points)) {
+        const pts = parseStrokePoints(o.points);
+        if (pts.length > 0)
+          segments = [
+            { points: pts, color: fallbackColor, width: fallbackWidth },
+          ];
+      }
+      if (segments.length === 0) continue;
       out.push({
         ...base,
         type: "stroke",
         segments,
-        color: isColor(o.color) ? o.color : "pink",
-        width: rawWidth,
       });
     }
   }
@@ -304,37 +343,22 @@ export const STAR_PATH =
 /** Diamond — 4-sided polygon (rotated square) in a 100×100 viewBox. */
 export const DIAMOND_PATH = "M50 6 L94 50 L50 94 L6 50 Z";
 
-/** Build an SVG `d` from one or more segments of normalized points.
- *  Coordinates are multiplied to a 100×100 viewBox to keep stroke
- *  widths proportional. Each segment becomes its own `M`-rooted
- *  subpath so the painted line lifts at the gap between strokes
- *  instead of connecting them. Single-point segments degrade to a
- *  tiny line so `stroke-linecap: round` paints them as dots. */
-export function strokeSegmentsToPath(
-  segments: [number, number][][]
-): string {
-  let out = "";
-  for (const seg of segments) {
-    if (seg.length === 0) continue;
-    const scaled = seg.map(([x, y]) => [x * 100, y * 100] as const);
-    if (scaled.length === 1) {
-      const [x, y] = scaled[0];
-      out += `M ${x} ${y} L ${x + 0.01} ${y + 0.01} `;
-      continue;
-    }
-    out += `M ${scaled[0][0]} ${scaled[0][1]}`;
-    for (let i = 1; i < scaled.length; i++) {
-      out += ` L ${scaled[i][0]} ${scaled[i][1]}`;
-    }
-    out += " ";
-  }
-  return out.trim();
-}
-
-/** Legacy single-segment helper kept for any caller that still
- *  feeds a flat point list. Delegates to the multi-segment form. */
+/** Build an SVG `d` from a single segment's points. Coordinates
+ *  are multiplied to a 100×100 viewBox to keep stroke widths
+ *  proportional. Single-point segments degrade to a tiny line so
+ *  `stroke-linecap: round` paints them as dots. */
 export function strokePointsToPath(points: [number, number][]): string {
-  return strokeSegmentsToPath([points]);
+  if (points.length === 0) return "";
+  const scaled = points.map(([x, y]) => [x * 100, y * 100] as const);
+  if (scaled.length === 1) {
+    const [x, y] = scaled[0];
+    return `M ${x} ${y} L ${x + 0.01} ${y + 0.01}`;
+  }
+  let d = `M ${scaled[0][0]} ${scaled[0][1]}`;
+  for (let i = 1; i < scaled.length; i++) {
+    d += ` L ${scaled[i][0]} ${scaled[i][1]}`;
+  }
+  return d;
 }
 
 /** Make a fresh overlay id without pulling in a crypto lib.

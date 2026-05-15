@@ -12,10 +12,11 @@ import {
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
   STICKER_QUICK_PICKS,
-  strokeSegmentsToPath,
+  strokePointsToPath,
   type CoverOverlay,
   type HighlightShape,
   type OverlayColor,
+  type StrokeSegment,
 } from "./cover-overlays";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -394,28 +395,26 @@ export function OverlayEditor({
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     bookmark();
-    // If a stroke from this draw session already exists with the
-    // current color + width, append a new segment to it instead
-    // of starting a fresh overlay layer. drawSessionRef tracks
-    // which layer the current session is appending to; null means
-    // "first stroke of the session, create a new layer".
+    // While a draw session is active, every new stroke appends a
+    // segment to the same overlay — regardless of whether the
+    // admin changed color or brush width mid-session, since each
+    // segment carries its own style now. The session ends only
+    // when admin toggles draw off or switches tools (handled by
+    // endDrawSession in the pill onClicks).
     const existing = drawSessionRef.current
       ? overlays.find((o) => o.id === drawSessionRef.current!.id)
       : null;
-    const sameStyle =
-      existing &&
-      existing.type === "stroke" &&
-      existing.color === drawColor &&
-      Math.abs(existing.width - drawWidth) < 1e-6;
-    if (sameStyle) {
+    const newSeg: StrokeSegment = {
+      points: [[p.x, p.y]],
+      color: drawColor,
+      width: drawWidth,
+    };
+    if (existing && existing.type === "stroke") {
       const id = existing.id;
       drawRef.current = { id };
       const next = overlays.map((o) =>
         o.id === id && o.type === "stroke"
-          ? {
-              ...o,
-              segments: [...o.segments, [[p.x, p.y]] as [number, number][]],
-            }
+          ? { ...o, segments: [...o.segments, newSeg] }
           : o
       );
       onChange(next);
@@ -433,9 +432,7 @@ export function OverlayEditor({
         y: 0.5,
         scale: 1,
         rotation: 0,
-        segments: [[[p.x, p.y]]],
-        color: drawColor,
-        width: drawWidth,
+        segments: [newSeg],
       };
       onChange([...overlays, stroke]);
     }
@@ -450,15 +447,17 @@ export function OverlayEditor({
     const cur = overlays.find((o) => o.id === d.id);
     if (!cur || cur.type !== "stroke") return;
     const lastSeg = cur.segments[cur.segments.length - 1];
-    if (!lastSeg || lastSeg.length === 0) return;
-    const last = lastSeg[lastSeg.length - 1];
+    if (!lastSeg || lastSeg.points.length === 0) return;
+    const last = lastSeg.points[lastSeg.points.length - 1];
     const dx = p.x - last[0];
     const dy = p.y - last[1];
     if (dx * dx + dy * dy < 0.000025) return; // 0.5% threshold
     const next = overlays.map((o) => {
       if (o.id !== d.id || o.type !== "stroke") return o;
       const segments = o.segments.map((s, i) =>
-        i === o.segments.length - 1 ? ([...s, [p.x, p.y]] as [number, number][]) : s
+        i === o.segments.length - 1
+          ? { ...s, points: [...s.points, [p.x, p.y]] as [number, number][] }
+          : s
       );
       return { ...o, segments };
     });
@@ -476,8 +475,8 @@ export function OverlayEditor({
     // overlay with zero segments, drop the overlay entirely.
     const stroke = overlays.find((o) => o.id === d.id);
     if (stroke && stroke.type === "stroke") {
-      const lastSeg = stroke.segments[stroke.segments.length - 1] ?? [];
-      const lastOk = lastSeg.length >= 2;
+      const lastSeg = stroke.segments[stroke.segments.length - 1];
+      const lastOk = lastSeg ? lastSeg.points.length >= 2 : false;
       if (!lastOk) {
         const trimmed = stroke.segments.slice(0, -1);
         if (trimmed.length === 0) {
@@ -571,6 +570,7 @@ export function OverlayEditor({
             active={activeAdder === "sticker"}
             disabled={overlays.length >= OVERLAY_LIMIT || drawMode || eraserMode}
             onClick={() => {
+              endDrawSession();
               setDrawMode(false);
               setEraserMode(false);
               setActiveAdder((a) => (a === "sticker" ? null : "sticker"));
@@ -581,6 +581,7 @@ export function OverlayEditor({
             active={activeAdder === "caption"}
             disabled={overlays.length >= OVERLAY_LIMIT || drawMode || eraserMode}
             onClick={() => {
+              endDrawSession();
               setDrawMode(false);
               setEraserMode(false);
               setActiveAdder((a) => (a === "caption" ? null : "caption"));
@@ -591,6 +592,7 @@ export function OverlayEditor({
             active={activeAdder === "highlight"}
             disabled={overlays.length >= OVERLAY_LIMIT || drawMode || eraserMode}
             onClick={() => {
+              endDrawSession();
               setDrawMode(false);
               setEraserMode(false);
               setActiveAdder((a) =>
@@ -636,6 +638,7 @@ export function OverlayEditor({
             fixedWidth={110}
             onClick={() => {
               setActiveAdder(null);
+              endDrawSession();
               setDrawMode(false);
               setEraserMode((v) => !v);
             }}
@@ -754,13 +757,7 @@ export function OverlayEditor({
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => {
-                    setDrawColor(c.id);
-                    // Different color = new layer next stroke,
-                    // so the existing session's color stays
-                    // consistent.
-                    endDrawSession();
-                  }}
+                  onClick={() => setDrawColor(c.id)}
                   className={
                     "rounded-pill border px-2 py-0.5 text-[10px] font-semibold transition " +
                     (active
@@ -783,10 +780,7 @@ export function OverlayEditor({
               min={0.005}
               max={0.05}
               step={0.005}
-              onChange={(e) => {
-                setDrawWidth(parseFloat(e.target.value));
-                endDrawSession();
-              }}
+              onChange={(e) => setDrawWidth(parseFloat(e.target.value))}
               className="flex-1 accent-pink-400"
             />
             <span className="font-mono text-ink/65 w-12 text-right">
@@ -949,14 +943,12 @@ function EditableOverlay({
     );
   }
   if (o.type === "stroke") {
-    const svg = OVERLAY_SHAPE_SVG[o.color];
-    const strokeWidth = Math.max(o.width * 100, 0.4);
     const center = (() => {
       let sx = 0;
       let sy = 0;
       let n = 0;
       for (const seg of o.segments) {
-        for (const [x, y] of seg) {
+        for (const [x, y] of seg.points) {
           sx += x;
           sy += y;
           n++;
@@ -989,19 +981,25 @@ function EditableOverlay({
             -center.x * 100
           } ${-center.y * 100})`}
         >
-          <path
-            d={strokeSegmentsToPath(o.segments)}
-            fill="none"
-            stroke={svg.stroke}
-            strokeOpacity={0.92}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-            // Make the entire path width grab the pointer for drag/
-            // select, even though the painted line is thinner.
-            pointerEvents={interactive ? "stroke" : "none"}
-          />
+          {o.segments.map((seg, i) => {
+            const svg = OVERLAY_SHAPE_SVG[seg.color];
+            return (
+              <path
+                key={i}
+                d={strokePointsToPath(seg.points)}
+                fill="none"
+                stroke={svg.stroke}
+                strokeOpacity={0.92}
+                strokeWidth={Math.max(seg.width * 100, 0.4)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+                // Make the entire path width grab the pointer for drag/
+                // select, even though the painted line is thinner.
+                pointerEvents={interactive ? "stroke" : "none"}
+              />
+            );
+          })}
         </g>
       </svg>
     );
@@ -1288,21 +1286,7 @@ function SelectedControls({
         </>
       ) : null}
 
-      {o.type === "stroke" ? (
-        <SliderRow
-          label="brush"
-          value={o.width}
-          min={0.005}
-          max={0.05}
-          step={0.005}
-          onChange={(width) => onChange({ width })}
-          format={(v) => `${Math.round(v * 1000) / 10}%`}
-        />
-      ) : null}
-
-      {o.type === "caption" ||
-      o.type === "highlight" ||
-      o.type === "stroke" ? (
+      {o.type === "caption" || o.type === "highlight" ? (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[10px] text-ink/70 font-semibold mr-1 w-12 shrink-0">
             color
@@ -1326,6 +1310,12 @@ function SelectedControls({
             );
           })}
         </div>
+      ) : null}
+
+      {o.type === "stroke" ? (
+        <p className="text-[10px] text-ink/55">
+          color + brush width are set per stroke in draw mode.
+        </p>
       ) : null}
 
       {o.type === "caption" ? (

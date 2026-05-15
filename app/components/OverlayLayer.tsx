@@ -12,7 +12,7 @@ import {
   OVERLAY_SHAPE_SVG,
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
-  strokeSegmentsToPath,
+  strokePointsToPath,
   type CoverOverlay,
   type HighlightOverlay,
   type StrokeOverlay,
@@ -144,9 +144,7 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
 // stroke width stays proportional regardless of the rendered
 // size. The SVG fills the parent's full bounds (inset-0).
 function StrokeRender({ o }: { o: StrokeOverlay }) {
-  const svg = OVERLAY_SHAPE_SVG[o.color];
-  const strokeWidth = Math.max(o.width * 100, 0.4);
-  const center = strokeCenter(o.segments);
+  const center = strokeCenter(o);
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -161,30 +159,33 @@ function StrokeRender({ o }: { o: StrokeOverlay }) {
           -center.x * 100
         } ${-center.y * 100})`}
       >
-        <path
-          d={strokeSegmentsToPath(o.segments)}
-          fill="none"
-          stroke={svg.stroke}
-          strokeOpacity={0.92}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
+        {o.segments.map((seg, i) => {
+          const svg = OVERLAY_SHAPE_SVG[seg.color];
+          return (
+            <path
+              key={i}
+              d={strokePointsToPath(seg.points)}
+              fill="none"
+              stroke={svg.stroke}
+              strokeOpacity={0.92}
+              strokeWidth={Math.max(seg.width * 100, 0.4)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
       </g>
     </svg>
   );
 }
 
-function strokeCenter(segments: [number, number][][]): {
-  x: number;
-  y: number;
-} {
+function strokeCenter(o: StrokeOverlay): { x: number; y: number } {
   let sx = 0;
   let sy = 0;
   let n = 0;
-  for (const seg of segments) {
-    for (const [x, y] of seg) {
+  for (const seg of o.segments) {
+    for (const [x, y] of seg.points) {
       sx += x;
       sy += y;
       n++;
