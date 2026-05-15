@@ -127,12 +127,19 @@ export function AlbumCardGrid({
                     aria-label={a.name}
                   />
                   {/* Frame overlay — purely decorative, doesn't
-                      shift the cover layout or intercept clicks. */}
+                      shift the cover layout or intercept clicks.
+                      Opacity admin-tunable per album (default 1). */}
                   {a.cover_frame ? (
                     <div
                       className={
                         "absolute inset-0 pointer-events-none " +
                         frameOverlayFor(a.cover_frame, a.cover_frame_width)
+                      }
+                      style={
+                        a.cover_frame_opacity !== null &&
+                        a.cover_frame_opacity !== 1
+                          ? { opacity: a.cover_frame_opacity }
+                          : undefined
                       }
                       aria-hidden
                     />

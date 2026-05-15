@@ -45,11 +45,11 @@ const TITLE_PLACEMENTS = [
   { id: "hover", label: "hover only" },
 ];
 
-// Caption-bar + below-card "card" shape — radius classes the
-// renderer maps onto the title strip. Square sits flush, pill is
-// fully rounded; the others are gentle defaults that look at home
-// with the rest of the card chrome.
+// "Card" shape for placements that draw a container around the
+// label. `none` skips the container entirely (text-only). Other
+// values map directly onto the title strip via Tailwind.
 const TITLE_RADIUS_OPTIONS = [
+  { id: "none", label: "none" },
   { id: "rounded-sm", label: "square" },
   { id: "rounded-md", label: "soft" },
   { id: "rounded-lg", label: "rounded" },
@@ -68,6 +68,16 @@ const TITLE_SIZE_OPTIONS = [
 // commits mid-drag and feeling sluggish.
 const TITLE_OPACITY_OPTIONS = [
   { id: "25", label: "25%" },
+  { id: "50", label: "50%" },
+  { id: "70", label: "70%" },
+  { id: "85", label: "85%" },
+  { id: "100", label: "solid" },
+];
+
+// Discrete opacity levels for the frame overlay — same pattern as
+// the title opacity picker.
+const FRAME_OPACITY_OPTIONS = [
+  { id: "30", label: "30%" },
   { id: "50", label: "50%" },
   { id: "70", label: "70%" },
   { id: "85", label: "85%" },
@@ -125,6 +135,7 @@ export function AlbumPageAdmin({
       frame?: string | null;
       filter?: string | null;
       frame_width?: string;
+      frame_opacity?: number | null;
     }
   ) => Promise<ActionResult>;
   onSetCoverOverlays: (
@@ -371,6 +382,7 @@ export function AlbumPageAdmin({
     frame?: string | null;
     filter?: string | null;
     frame_width?: string;
+    frame_opacity?: number | null;
   }) {
     setError(null);
     startTransition(async () => {
@@ -592,6 +604,7 @@ export function AlbumPageAdmin({
                 recentCrops={recentCrops}
                 frame={album.cover_frame}
                 frameWidth={album.cover_frame_width}
+                frameOpacity={album.cover_frame_opacity}
                 filter={album.cover_filter}
                 overlays={overlays}
                 titlePlacement={album.title_placement}
@@ -692,6 +705,21 @@ export function AlbumPageAdmin({
                         disabled={pending}
                       />
                     ) : null}
+                    {album.cover_frame ? (
+                      <SizeRow
+                        label="frame α"
+                        options={FRAME_OPACITY_OPTIONS}
+                        currentId={String(
+                          Math.round((album.cover_frame_opacity ?? 1) * 100)
+                        )}
+                        onPick={(id) =>
+                          applyDecoration({
+                            frame_opacity: parseInt(id, 10) / 100,
+                          })
+                        }
+                        disabled={pending}
+                      />
+                    ) : null}
                     <SizeRow
                       label="title"
                       options={TITLE_PLACEMENTS}
@@ -711,7 +739,7 @@ export function AlbumPageAdmin({
                       <SizeRow
                         label="shape"
                         options={TITLE_RADIUS_OPTIONS}
-                        currentId={titleStyle.radius ?? "rounded-lg"}
+                        currentId={titleStyle.radius ?? "none"}
                         onPick={(id) =>
                           commitTitleStyle({ ...titleStyle, radius: id })
                         }
@@ -812,6 +840,7 @@ export function AlbumPageAdmin({
                     }}
                     frame={album.cover_frame}
                     frameWidth={album.cover_frame_width}
+                    frameOpacity={album.cover_frame_opacity}
                     filter={album.cover_filter}
                   />
                 }
@@ -1155,12 +1184,14 @@ function CoverPreviewBackground({
   crop,
   frame,
   frameWidth,
+  frameOpacity,
   filter,
 }: {
   imageUrl: string | null;
   crop: { x: number; y: number; w: number; h: number };
   frame: string | null;
   frameWidth: string;
+  frameOpacity: number | null;
   filter: string | null;
 }) {
   const trivial =
@@ -1207,6 +1238,11 @@ function CoverPreviewBackground({
           className={
             "absolute inset-0 pointer-events-none " +
             frameOverlayFor(frame, frameWidth)
+          }
+          style={
+            frameOpacity !== null && frameOpacity !== 1
+              ? { opacity: frameOpacity }
+              : undefined
           }
           aria-hidden
         />

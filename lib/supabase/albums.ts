@@ -81,6 +81,15 @@ function normalizeAlbum(row: Record<string, unknown>): Album {
       row.cover_frame_width.length > 0
         ? row.cover_frame_width
         : "medium",
+    cover_frame_opacity:
+      typeof row.cover_frame_opacity === "number" &&
+      row.cover_frame_opacity >= 0 &&
+      row.cover_frame_opacity <= 1
+        ? row.cover_frame_opacity
+        : typeof row.cover_frame_opacity === "string" &&
+          !isNaN(parseFloat(row.cover_frame_opacity))
+        ? Math.max(0, Math.min(1, parseFloat(row.cover_frame_opacity)))
+        : null,
     cover_overlays: Array.isArray(row.cover_overlays)
       ? (row.cover_overlays as unknown[])
       : [],
@@ -162,6 +171,9 @@ export type Album = {
   // pre-0018 rendering. Photos that inherit (or override) this
   // album's frame also inherit this width.
   cover_frame_width: string;
+  // 0..1 applied to the frame overlay's CSS opacity. NULL = fully
+  // opaque (the pre-0023 default). See migration 0023.
+  cover_frame_opacity: number | null;
   // Free-form overlay layer on top of the cover: stickers,
   // captions, highlights. Stored as a jsonb array; shape is
   // documented in app/components/cover-overlays.ts. Untyped here

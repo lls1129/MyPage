@@ -60,6 +60,7 @@ export function CoverCropper({
   recentCrops = [],
   frame = null,
   frameWidth = "medium",
+  frameOpacity = null,
   filter = null,
   overlays = [],
   titlePlacement = "below",
@@ -81,6 +82,7 @@ export function CoverCropper({
    *  preview matches what the actual card on /photos will render. */
   frame?: string | null;
   frameWidth?: string;
+  frameOpacity?: number | null;
   filter?: string | null;
   /** Live overlay list for the preview tile. Echoes whatever the
    *  overlay editor is showing so admin sees crop + decoration +
@@ -636,6 +638,11 @@ export function CoverCropper({
                       className={
                         "absolute inset-0 pointer-events-none " +
                         frameOverlayFor(frame, frameWidth)
+                      }
+                      style={
+                        frameOpacity !== null && frameOpacity !== 1
+                          ? { opacity: frameOpacity }
+                          : undefined
                       }
                       aria-hidden
                     />

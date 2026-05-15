@@ -125,10 +125,9 @@ export function CaptionBarTitle({
 
 // Two rows, museum-label style. Name in larger script on top, then
 // a thin divider, then the count in muted small caps on its own
-// row. The divider makes the two-line structure unambiguous even
-// when the count text is short ("soon ✦"). `style.radius` shapes
-// the label's outer card (square → pill → round) so admin can pick
-// a look that matches the rest of the cover treatment.
+// row. When `style.radius` is set to a real value (anything other
+// than "none" / unset) the label is wrapped in a tinted card with
+// that radius. Default is plain text — no card chrome at all.
 export function StackedTitle({
   name,
   count,
@@ -140,7 +139,26 @@ export function StackedTitle({
 }) {
   const pad = SIZE_PADDING[style.size ?? "md"];
   const nameText = SIZE_STACKED_NAME_TEXT[style.size ?? "md"];
-  const radius = style.radius ?? "rounded-md";
+  const radius = style.radius && style.radius !== "none" ? style.radius : null;
+  const body = (
+    <>
+      <p
+        className={
+          "block font-script text-skynavy-900 leading-tight truncate " +
+          nameText
+        }
+      >
+        {name}
+      </p>
+      <hr className="border-t border-pink-100/70 my-1.5" aria-hidden />
+      <p className="block text-[10px] text-ink/60 font-semibold uppercase tracking-wider">
+        {countLabel(count)}
+      </p>
+    </>
+  );
+  if (!radius) {
+    return <div className={"block " + pad}>{body}</div>;
+  }
   return (
     <div className="px-2 pt-2 pb-2.5">
       <div
@@ -151,18 +169,7 @@ export function StackedTitle({
           pad
         }
       >
-        <p
-          className={
-            "block font-script text-skynavy-900 leading-tight truncate " +
-            nameText
-          }
-        >
-          {name}
-        </p>
-        <hr className="border-t border-pink-100/70 my-1.5" aria-hidden />
-        <p className="block text-[10px] text-ink/60 font-semibold uppercase tracking-wider">
-          {countLabel(count)}
-        </p>
+        {body}
       </div>
     </div>
   );
