@@ -710,6 +710,34 @@ function UploadSuccessCard({
   const [hidePending, startHide] = useTransition();
   const [deletePending, startDelete] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [decorPending, startDecor] = useTransition();
+
+  function applyDecoration(patch: {
+    frame?: string | null;
+    filter?: string | null;
+  }) {
+    setSaveError(null);
+    // Optimistic: bubble the new value up so the thumbnail re-renders
+    // right away while the server call is in flight.
+    onUpdate({
+      ...item,
+      cover_frame:
+        "frame" in patch ? patch.frame ?? null : item.cover_frame,
+      cover_filter:
+        "filter" in patch ? patch.filter ?? null : item.cover_filter,
+    });
+    startDecor(async () => {
+      try {
+        const res = await setPhotoDecorations(item.id, patch);
+        if (!res.ok)
+          setSaveError(res.error ?? "couldn’t save decoration.");
+      } catch (e) {
+        setSaveError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
 
   function toggleHidden() {
     const next = !item.hidden;
@@ -958,6 +986,29 @@ function UploadSuccessCard({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Per-photo decoration overrides — frame + filter. Mirror
+              of the batch editor's row, light theme to match the
+              success card. "follow album" inherits whatever the
+              chosen album has; admin can override per photo. */}
+          <div className="flex flex-col gap-2 rounded-md bg-pink-50/60 border border-pink-100 p-2.5">
+            <SingleDecorationRow
+              label="frame"
+              options={FRAMES.map((f) => ({ id: f.id, label: f.label }))}
+              currentId={item.cover_frame}
+              albumValue={currentAlbum?.cover_frame ?? null}
+              disabled={decorPending}
+              onPick={(id) => applyDecoration({ frame: id })}
+            />
+            <SingleDecorationRow
+              label="filter"
+              options={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
+              currentId={item.cover_filter}
+              albumValue={currentAlbum?.cover_filter ?? null}
+              disabled={decorPending}
+              onPick={(id) => applyDecoration({ filter: id })}
+            />
           </div>
 
           {saveError ? (
@@ -1297,6 +1348,92 @@ function DeleteNoticeBanner({
         ✕
       </button>
     </div>
+  );
+}
+
+// Light-themed decoration chip row for the single-photo success
+// card. Same semantic triad as BatchDecorationRow / PhotoEditModal
+// (null = inherit album, "" = explicit none, id = preset override),
+// just styled to sit on a pink/cream card instead of the dark
+// batch-editor overlay.
+function SingleDecorationRow({
+  label,
+  options,
+  currentId,
+  albumValue,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  options: { id: string; label: string }[];
+  currentId: string | null;
+  albumValue: string | null;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+}) {
+  const inheritLabel =
+    albumValue && options.find((o) => o.id === albumValue)
+      ? `follow album · ${options.find((o) => o.id === albumValue)?.label}`
+      : "follow album";
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="label text-pink-600 shrink-0 w-12">{label}</span>
+      <LightChip
+        active={currentId === null}
+        disabled={disabled}
+        onClick={() => onPick(null)}
+      >
+        {inheritLabel}
+      </LightChip>
+      <LightChip
+        active={currentId === ""}
+        disabled={disabled}
+        onClick={() => onPick("")}
+      >
+        none
+      </LightChip>
+      {options.map((opt) => {
+        const selected = currentId === opt.id;
+        return (
+          <LightChip
+            key={opt.id}
+            active={selected}
+            disabled={disabled}
+            onClick={() => onPick(selected ? null : opt.id)}
+          >
+            {opt.label}
+          </LightChip>
+        );
+      })}
+    </div>
+  );
+}
+
+function LightChip({
+  children,
+  active,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-60 " +
+        (active
+          ? "bg-pink-300 text-white border-pink-300"
+          : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+      }
+    >
+      {children}
+    </button>
   );
 }
 
