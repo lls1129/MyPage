@@ -221,7 +221,7 @@ export function Lightbox({
             return (
               <div
                 className={
-                  "relative overflow-hidden " +
+                  "relative overflow-hidden flex items-center justify-center " +
                   outerRadiusClass +
                   " " +
                   padClass +
@@ -229,7 +229,16 @@ export function Lightbox({
                   matBgClass
                 }
                 style={{
-                  aspectRatio: aspect,
+                  // When admin sized a solid frame's mat the wrapper
+                  // sizes from the photo's natural aspect via the
+                  // img itself; without an aspect-ratio the wrapper
+                  // grows to fit the centered photo + symmetric
+                  // padding, so landscape photos don't end up with
+                  // a thicker mat on top than on bottom (which
+                  // happened when aspect-ratio was set on the
+                  // padded outer box and content-aspect drifted
+                  // from photo-aspect).
+                  aspectRatio: padClass ? undefined : aspect,
                   maxWidth: "100%",
                   // Hard viewport cap so tall portrait photos don't
                   // balloon the layout. ~260px reserves room for top
@@ -250,16 +259,12 @@ export function Lightbox({
                       ? `rotate(${photo.rotation}deg)`
                       : undefined,
                     filter: filterCss || undefined,
-                    // No-dimensions fallback needs the same vh cap
-                    // as the aspect-ratio'd wrapper so it doesn't
-                    // grow unbounded.
-                    maxHeight: haveDims ? undefined : "calc(100vh - 260px)",
                     maxWidth: "100%",
+                    maxHeight: "100%",
                   }}
                   className={
-                    haveDims
-                      ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
-                      : "object-contain rounded-md shadow-soft transition-transform block"
+                    "block max-w-full max-h-full rounded-md shadow-soft transition-transform " +
+                    (padClass || !haveDims ? "" : "w-full h-full object-contain")
                   }
                 />
                 {haveDims && frameClass ? (

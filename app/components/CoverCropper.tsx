@@ -648,7 +648,13 @@ export function CoverCropper({
                       the preview we force the hover variant visible
                       so admin can see the placement at rest too. */}
                   {albumName !== undefined && albumCount !== undefined
-                    ? onCoverTitle(titlePlacement, albumName, albumCount, true)
+                    ? onCoverTitle(
+                        titlePlacement,
+                        albumName,
+                        albumCount,
+                        titleStyle ?? {},
+                        true
+                      )
                     : null}
                 </>
               ) : null}

@@ -85,8 +85,7 @@ export function BelowTitle({
 // Polaroid-style label — a soft "card" that floats below the cover
 // with rounded corners + inset margins, so it reads as a dedicated
 // label rather than a flat strip joined to the cover. Tunable via
-// `style`: radius shapes the card corners, size scales padding +
-// font, opacity sets the bg alpha.
+// `style`: size scales padding + font, opacity sets the bg alpha.
 export function CaptionBarTitle({
   name,
   count,
@@ -96,7 +95,6 @@ export function CaptionBarTitle({
   count: number;
   style?: TitleStyle;
 }) {
-  const radius = style.radius ?? "rounded-lg";
   const pad = SIZE_PADDING[style.size ?? "md"];
   const nameText = SIZE_NAME_TEXT[style.size ?? "md"];
   const opacity = style.opacity ?? 0.85;
@@ -104,9 +102,7 @@ export function CaptionBarTitle({
     <div className="px-2 pt-2 pb-2.5">
       <div
         className={
-          "flex items-baseline justify-between gap-2 border border-cream shadow-[0_1px_2px_rgba(64,40,82,0.08)] " +
-          radius +
-          " " +
+          "flex items-baseline justify-between gap-2 border border-cream shadow-[0_1px_2px_rgba(64,40,82,0.08)] rounded-lg " +
           pad
         }
         style={{ backgroundColor: `rgba(255, 248, 231, ${opacity})` }}
@@ -130,7 +126,9 @@ export function CaptionBarTitle({
 // Two rows, museum-label style. Name in larger script on top, then
 // a thin divider, then the count in muted small caps on its own
 // row. The divider makes the two-line structure unambiguous even
-// when the count text is short ("soon ✦").
+// when the count text is short ("soon ✦"). `style.radius` shapes
+// the label's outer card (square → pill → round) so admin can pick
+// a look that matches the rest of the cover treatment.
 export function StackedTitle({
   name,
   count,
@@ -142,20 +140,30 @@ export function StackedTitle({
 }) {
   const pad = SIZE_PADDING[style.size ?? "md"];
   const nameText = SIZE_STACKED_NAME_TEXT[style.size ?? "md"];
+  const radius = style.radius ?? "rounded-md";
   return (
-    <div className={"block " + pad}>
-      <p
+    <div className="px-2 pt-2 pb-2.5">
+      <div
         className={
-          "block font-script text-skynavy-900 leading-tight truncate " +
-          nameText
+          "block bg-cream/40 border border-pink-100/70 " +
+          radius +
+          " " +
+          pad
         }
       >
-        {name}
-      </p>
-      <hr className="border-t border-pink-100/70 my-1.5" aria-hidden />
-      <p className="block text-[10px] text-ink/60 font-semibold uppercase tracking-wider">
-        {countLabel(count)}
-      </p>
+        <p
+          className={
+            "block font-script text-skynavy-900 leading-tight truncate " +
+            nameText
+          }
+        >
+          {name}
+        </p>
+        <hr className="border-t border-pink-100/70 my-1.5" aria-hidden />
+        <p className="block text-[10px] text-ink/60 font-semibold uppercase tracking-wider">
+          {countLabel(count)}
+        </p>
+      </div>
     </div>
   );
 }
@@ -163,17 +171,41 @@ export function StackedTitle({
 // Tucked into the cover's bottom-left — a small soft chip with a
 // backdrop blur so it reads cleanly over busy photos without a
 // full gradient. Caller is responsible for the positioning context
-// (it uses `absolute`).
+// (it uses `absolute`). Tunable via `style`: size scales chip
+// padding + font, opacity sets the chip bg alpha.
 export function CornerTitle({
   name,
   count,
+  style = {},
 }: {
   name: string;
   count: number;
+  style?: TitleStyle;
 }) {
+  const opacity = style.opacity ?? 0.85;
+  const sizeKey = style.size ?? "md";
+  const pad =
+    sizeKey === "sm"
+      ? "px-1.5 py-0.5"
+      : sizeKey === "lg"
+      ? "px-2.5 py-1.5"
+      : "px-2 py-1";
+  const nameText =
+    sizeKey === "sm" ? "text-sm" : sizeKey === "lg" ? "text-lg" : "text-base";
   return (
-    <span className="absolute left-2 bottom-2 right-2 flex items-baseline gap-2 rounded-md bg-cream/85 backdrop-blur-sm px-2 py-1 shadow-soft">
-      <span className="font-script text-skynavy-900 text-base leading-none truncate flex-1">
+    <span
+      className={
+        "absolute left-2 bottom-2 right-2 flex items-baseline gap-2 rounded-md backdrop-blur-sm shadow-soft " +
+        pad
+      }
+      style={{ backgroundColor: `rgba(255, 248, 231, ${opacity})` }}
+    >
+      <span
+        className={
+          "font-script text-skynavy-900 leading-none truncate flex-1 " +
+          nameText
+        }
+      >
         {name}
       </span>
       <span className="text-[10px] text-ink/60 font-semibold shrink-0">
@@ -187,25 +219,39 @@ export function CornerTitle({
 // hovering (or focusing) on the card surfaces the title. Pass
 // `alwaysVisible` to show it without hover (used by the admin's
 // card preview so admin can see what the placement looks like).
+// Tunable via `style`: opacity sets the gradient peak alpha.
 export function HoverTitle({
   name,
   count,
   alwaysVisible = false,
+  style = {},
 }: {
   name: string;
   count: number;
   alwaysVisible?: boolean;
+  style?: TitleStyle;
 }) {
+  const opacity = style.opacity ?? 0.85;
+  const sizeKey = style.size ?? "md";
+  const nameText =
+    sizeKey === "sm" ? "text-base" : sizeKey === "lg" ? "text-xl" : "text-lg";
   return (
     <span
       className={
-        "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-skynavy-900/85 to-transparent px-3 pt-6 pb-2 transition-opacity " +
+        "pointer-events-none absolute inset-x-0 bottom-0 px-3 pt-6 pb-2 transition-opacity " +
         (alwaysVisible
           ? "opacity-100"
           : "opacity-0 group-hover:opacity-100 focus-within:opacity-100")
       }
+      style={{
+        backgroundImage: `linear-gradient(to top, rgba(64, 40, 82, ${opacity}), transparent)`,
+      }}
     >
-      <p className="font-script text-cream text-lg leading-tight truncate">
+      <p
+        className={
+          "font-script text-cream leading-tight truncate " + nameText
+        }
+      >
         {name}
       </p>
       <p className="text-[10px] text-cream/75 font-semibold">
@@ -239,10 +285,19 @@ export function onCoverTitle(
   placement: string,
   name: string,
   count: number,
+  style: TitleStyle = {},
   alwaysVisible = false
 ) {
-  if (placement === "corner") return <CornerTitle name={name} count={count} />;
+  if (placement === "corner")
+    return <CornerTitle name={name} count={count} style={style} />;
   if (placement === "hover")
-    return <HoverTitle name={name} count={count} alwaysVisible={alwaysVisible} />;
+    return (
+      <HoverTitle
+        name={name}
+        count={count}
+        alwaysVisible={alwaysVisible}
+        style={style}
+      />
+    );
   return null;
 }

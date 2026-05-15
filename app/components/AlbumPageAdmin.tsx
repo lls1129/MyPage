@@ -63,6 +63,17 @@ const TITLE_SIZE_OPTIONS = [
   { id: "lg", label: "large" },
 ];
 
+// Discrete opacity levels — clicking is snappy (each step writes the
+// album row once) where a continuous slider was firing dozens of
+// commits mid-drag and feeling sluggish.
+const TITLE_OPACITY_OPTIONS = [
+  { id: "25", label: "25%" },
+  { id: "50", label: "50%" },
+  { id: "70", label: "70%" },
+  { id: "85", label: "85%" },
+  { id: "100", label: "solid" },
+];
+
 // Compact admin strip shown at the top of /photos/album/[slug] and
 // /astronomy/album/[slug]. Actions for the current album: rename, hide,
 // pick a cover, delete. Upload lives in the grid's pill which is
@@ -589,9 +600,31 @@ export function AlbumPageAdmin({
                 albumCount={coverCandidates.length}
                 onCommit={commitCrop}
                 onApplyRecent={(entry) => {
-                  // Restore the overlays that were snapshot-ed with this
-                  // crop, so re-pinning a recent crop rewinds the full
-                  // look (crop draft + overlays) in one click.
+                  if (!album.cover_image_url) return;
+                  // Snapshot the state we're leaving — the crop that
+                  // was just on the album, plus whatever overlays are
+                  // currently applied — so admin can rewind to it
+                  // later. Without this step, overlays added after a
+                  // crop commit get lost when admin switches crops.
+                  const currentCrop = {
+                    x: album.cover_crop_x,
+                    y: album.cover_crop_y,
+                    w: album.cover_crop_w,
+                    h: album.cover_crop_h,
+                  };
+                  const saved = pushCrop(
+                    history,
+                    album.cover_image_url,
+                    currentCrop,
+                    overlays as unknown[]
+                  );
+                  if (saved !== history) {
+                    setHistory(saved);
+                    persistHistory(saved);
+                  }
+                  // Restore the overlays that were snapshot-ed with the
+                  // recent crop, so re-pinning rewinds the full look
+                  // (crop draft + overlays) in one click.
                   const snap = (entry.overlays ?? []) as CoverOverlay[];
                   const normalized = normalizeOverlays(snap);
                   setOverlays(normalized);
@@ -666,13 +699,25 @@ export function AlbumPageAdmin({
                       onPick={applyTitlePlacement}
                       disabled={pending}
                     />
-                    <SizeRow
-                      label="shape"
-                      options={TITLE_RADIUS_OPTIONS}
-                      currentId={titleStyle.radius ?? "rounded-lg"}
-                      onPick={(id) => commitTitleStyle({ ...titleStyle, radius: id })}
-                      disabled={pending}
-                    />
+                    {/* Tuner visibility per placement:
+                          shape   — only the stacked label (its
+                                    container shape changes with the
+                                    chosen radius)
+                          size    — everywhere (scales padding +
+                                    font on every variant)
+                          opacity — placements that have a tinted bg
+                                    (caption-bar, corner, hover) */}
+                    {album.title_placement === "stacked" ? (
+                      <SizeRow
+                        label="shape"
+                        options={TITLE_RADIUS_OPTIONS}
+                        currentId={titleStyle.radius ?? "rounded-lg"}
+                        onPick={(id) =>
+                          commitTitleStyle({ ...titleStyle, radius: id })
+                        }
+                        disabled={pending}
+                      />
+                    ) : null}
                     <SizeRow
                       label="size"
                       options={TITLE_SIZE_OPTIONS}
@@ -685,29 +730,24 @@ export function AlbumPageAdmin({
                       }
                       disabled={pending}
                     />
-                    <label className="flex items-center gap-2 text-[11px]">
-                      <span className="label text-pink-600 shrink-0 w-12">
-                        opacity
-                      </span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={titleStyle.opacity ?? 0.85}
-                        onChange={(e) =>
+                    {album.title_placement === "caption-bar" ||
+                    album.title_placement === "corner" ||
+                    album.title_placement === "hover" ? (
+                      <SizeRow
+                        label="opacity"
+                        options={TITLE_OPACITY_OPTIONS}
+                        currentId={String(
+                          Math.round((titleStyle.opacity ?? 0.85) * 100)
+                        )}
+                        onPick={(id) =>
                           commitTitleStyle({
                             ...titleStyle,
-                            opacity: parseFloat(e.target.value),
+                            opacity: parseInt(id, 10) / 100,
                           })
                         }
-                        className="flex-1 accent-pink-400"
                         disabled={pending}
                       />
-                      <span className="font-mono text-ink/65 w-10 text-right">
-                        {Math.round((titleStyle.opacity ?? 0.85) * 100)}%
-                      </span>
-                    </label>
+                    ) : null}
                     <label className="flex items-center gap-2 text-[11px] mt-1">
                       <input
                         type="checkbox"
@@ -730,7 +770,33 @@ export function AlbumPageAdmin({
               <OverlayEditor
                 overlays={overlays}
                 onChange={setOverlays}
-                onCommit={(next) => onSetCoverOverlays(album.id, next)}
+                onCommit={(next) => {
+                  // Mirror the overlay state into the current crop's
+                  // history snapshot so admin's recent-crops list
+                  // always shows the latest decorations alongside
+                  // each crop. Skipped for trivial crops (pushCrop
+                  // itself filters those — they're never listed as
+                  // "recent").
+                  if (album.cover_image_url) {
+                    const currentCrop = {
+                      x: album.cover_crop_x,
+                      y: album.cover_crop_y,
+                      w: album.cover_crop_w,
+                      h: album.cover_crop_h,
+                    };
+                    const nextHistory = pushCrop(
+                      history,
+                      album.cover_image_url,
+                      currentCrop,
+                      next as unknown[]
+                    );
+                    if (nextHistory !== history) {
+                      setHistory(nextHistory);
+                      persistHistory(nextHistory);
+                    }
+                  }
+                  return onSetCoverOverlays(album.id, next);
+                }}
                 stageInsetClass={frameInsetFor(
                   album.cover_frame,
                   album.cover_frame_width

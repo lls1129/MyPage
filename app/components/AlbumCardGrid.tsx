@@ -177,7 +177,12 @@ export function AlbumCardGrid({
                   ON the cover. They stay inside the aspect-square
                   div so they sit in the cover's coordinate space
                   rather than below it. */}
-              {onCoverTitle(a.title_placement, a.name, a.count)}
+              {onCoverTitle(
+                a.title_placement,
+                a.name,
+                a.count,
+                readTitleStyle(a.title_style)
+              )}
             </div>
             {/* Below-cover placements. */}
             {belowCoverTitle(
