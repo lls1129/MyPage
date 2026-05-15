@@ -12,7 +12,7 @@ import {
   OVERLAY_SHAPE_SVG,
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
-  strokePointsToPath,
+  strokeSegmentsToPath,
   type CoverOverlay,
   type HighlightOverlay,
   type StrokeOverlay,
@@ -145,11 +145,8 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
 // size. The SVG fills the parent's full bounds (inset-0).
 function StrokeRender({ o }: { o: StrokeOverlay }) {
   const svg = OVERLAY_SHAPE_SVG[o.color];
-  // Stroke width in viewBox units (0..100 maps to 0..1 fraction).
   const strokeWidth = Math.max(o.width * 100, 0.4);
-  // Scale + rotate around the bounding-box center of the points
-  // so admin's drag-rotate / scale-slider feels natural.
-  const center = strokeCenter(o.points);
+  const center = strokeCenter(o.segments);
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -165,7 +162,7 @@ function StrokeRender({ o }: { o: StrokeOverlay }) {
         } ${-center.y * 100})`}
       >
         <path
-          d={strokePointsToPath(o.points)}
+          d={strokeSegmentsToPath(o.segments)}
           fill="none"
           stroke={svg.stroke}
           strokeOpacity={0.92}
@@ -179,13 +176,20 @@ function StrokeRender({ o }: { o: StrokeOverlay }) {
   );
 }
 
-function strokeCenter(points: [number, number][]): { x: number; y: number } {
-  if (points.length === 0) return { x: 0.5, y: 0.5 };
+function strokeCenter(segments: [number, number][][]): {
+  x: number;
+  y: number;
+} {
   let sx = 0;
   let sy = 0;
-  for (const [x, y] of points) {
-    sx += x;
-    sy += y;
+  let n = 0;
+  for (const seg of segments) {
+    for (const [x, y] of seg) {
+      sx += x;
+      sy += y;
+      n++;
+    }
   }
-  return { x: sx / points.length, y: sy / points.length };
+  if (n === 0) return { x: 0.5, y: 0.5 };
+  return { x: sx / n, y: sy / n };
 }

@@ -48,12 +48,14 @@ export type HighlightOverlay = {
   color: OverlayColor;
 };
 
-// Freehand stroke — admin doodles. Points are 0..1 normalized
-// coordinates in the cover's space (NOT relative to a centroid),
-// kept ordered as captured during the drag. Dragging shifts all
-// points together; rotation/scale apply via SVG transform on the
-// wrapper at render time. Path-mode `stroke-linecap: round` keeps
-// short strokes / single dots visible.
+// Freehand stroke — admin doodles. Stored as a list of disjoint
+// `segments`, each a sequence of 0..1 normalized points captured
+// during one pen-down → pen-up cycle. Multiple segments per
+// overlay let a whole drawing session (admin entering draw mode,
+// laying down N strokes, then exiting) live in a single layer
+// instead of eating a slot per stroke. Dragging shifts every
+// point in every segment by the same delta; rotation / scale
+// apply via SVG transform on the wrapper.
 export type StrokeOverlay = {
   id: string;
   type: "stroke";
@@ -61,7 +63,7 @@ export type StrokeOverlay = {
   y: number;
   scale: number;
   rotation: number;
-  points: [number, number][];
+  segments: [number, number][][];
   color: OverlayColor;
   width: number; // 0..0.05 — stroke thickness as fraction of cover width
 };
@@ -72,8 +74,12 @@ export type CoverOverlay =
   | HighlightOverlay
   | StrokeOverlay;
 
-/** App-level cap so a runaway state can't bloat the row. */
-export const OVERLAY_LIMIT = 10;
+/** App-level cap so a runaway state can't bloat the row. With
+ *  multi-segment strokes folding a whole drawing session into one
+ *  overlay, 25 leaves room for plenty of mixed sticker / caption
+ *  / highlight / drawing combinations without pushing the
+ *  serialised array to absurd sizes. */
+export const OVERLAY_LIMIT = 25;
 
 /** Curated set of small decorations admin can drop in with one tap.
  *  Admin can also type any other emoji via the input below. */
@@ -238,18 +244,23 @@ export function normalizeOverlays(raw: unknown): CoverOverlay[] {
         height: clamp01(o.height as number) || 0.3,
         color: isColor(o.color) ? o.color : "pink",
       });
-    } else if (o.type === "stroke" && Array.isArray(o.points)) {
-      const pts: [number, number][] = [];
-      for (const p of o.points) {
-        if (
-          Array.isArray(p) &&
-          typeof p[0] === "number" &&
-          typeof p[1] === "number"
-        ) {
-          pts.push([clamp01(p[0]), clamp01(p[1])]);
+    } else if (o.type === "stroke") {
+      // Accept both the new multi-segment shape and the legacy
+      // single-points shape from before sessions were a thing.
+      // Legacy rows render unchanged once parsed back as a single
+      // segment.
+      let segments: [number, number][][] = [];
+      if (Array.isArray(o.segments)) {
+        for (const seg of o.segments as unknown[]) {
+          if (!Array.isArray(seg)) continue;
+          const pts = parseStrokePoints(seg);
+          if (pts.length > 0) segments.push(pts);
         }
+      } else if (Array.isArray(o.points)) {
+        const pts = parseStrokePoints(o.points);
+        if (pts.length > 0) segments = [pts];
       }
-      if (pts.length === 0) continue;
+      if (segments.length === 0) continue;
       const rawWidth =
         Number.isFinite(o.width as number) && (o.width as number) > 0
           ? Math.min(0.08, Math.max(0.002, o.width as number))
@@ -257,13 +268,28 @@ export function normalizeOverlays(raw: unknown): CoverOverlay[] {
       out.push({
         ...base,
         type: "stroke",
-        points: pts,
+        segments,
         color: isColor(o.color) ? o.color : "pink",
         width: rawWidth,
       });
     }
   }
   return out.slice(0, OVERLAY_LIMIT);
+}
+
+function parseStrokePoints(raw: unknown): [number, number][] {
+  if (!Array.isArray(raw)) return [];
+  const pts: [number, number][] = [];
+  for (const p of raw) {
+    if (
+      Array.isArray(p) &&
+      typeof p[0] === "number" &&
+      typeof p[1] === "number"
+    ) {
+      pts.push([clamp01(p[0]), clamp01(p[1])]);
+    }
+  }
+  return pts;
 }
 
 /** Heart path used by the highlight renderer. Sized to viewBox
@@ -278,24 +304,37 @@ export const STAR_PATH =
 /** Diamond — 4-sided polygon (rotated square) in a 100×100 viewBox. */
 export const DIAMOND_PATH = "M50 6 L94 50 L50 94 L6 50 Z";
 
-/** Build an SVG `d` from a normalized point list. Coordinates are
- *  multiplied to a 100×100 viewBox to keep stroke widths
- *  proportional. Single-point strokes degrade to a tiny circle
- *  (just an `M`+`L` of zero length renders fine with linecap=round
- *  on most browsers, but adding an explicit second point keeps it
- *  visible everywhere). */
+/** Build an SVG `d` from one or more segments of normalized points.
+ *  Coordinates are multiplied to a 100×100 viewBox to keep stroke
+ *  widths proportional. Each segment becomes its own `M`-rooted
+ *  subpath so the painted line lifts at the gap between strokes
+ *  instead of connecting them. Single-point segments degrade to a
+ *  tiny line so `stroke-linecap: round` paints them as dots. */
+export function strokeSegmentsToPath(
+  segments: [number, number][][]
+): string {
+  let out = "";
+  for (const seg of segments) {
+    if (seg.length === 0) continue;
+    const scaled = seg.map(([x, y]) => [x * 100, y * 100] as const);
+    if (scaled.length === 1) {
+      const [x, y] = scaled[0];
+      out += `M ${x} ${y} L ${x + 0.01} ${y + 0.01} `;
+      continue;
+    }
+    out += `M ${scaled[0][0]} ${scaled[0][1]}`;
+    for (let i = 1; i < scaled.length; i++) {
+      out += ` L ${scaled[i][0]} ${scaled[i][1]}`;
+    }
+    out += " ";
+  }
+  return out.trim();
+}
+
+/** Legacy single-segment helper kept for any caller that still
+ *  feeds a flat point list. Delegates to the multi-segment form. */
 export function strokePointsToPath(points: [number, number][]): string {
-  if (points.length === 0) return "";
-  const scaled = points.map(([x, y]) => [x * 100, y * 100] as const);
-  if (scaled.length === 1) {
-    const [x, y] = scaled[0];
-    return `M ${x} ${y} L ${x + 0.01} ${y + 0.01}`;
-  }
-  let d = `M ${scaled[0][0]} ${scaled[0][1]}`;
-  for (let i = 1; i < scaled.length; i++) {
-    d += ` L ${scaled[i][0]} ${scaled[i][1]}`;
-  }
-  return d;
+  return strokeSegmentsToPath([points]);
 }
 
 /** Make a fresh overlay id without pulling in a crypto lib.

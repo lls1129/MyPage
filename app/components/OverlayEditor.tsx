@@ -12,7 +12,7 @@ import {
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
   STICKER_QUICK_PICKS,
-  strokePointsToPath,
+  strokeSegmentsToPath,
   type CoverOverlay,
   type HighlightShape,
   type OverlayColor,
@@ -65,6 +65,12 @@ export function OverlayEditor({
    *  appended to the array on pointerdown and updated in place on
    *  every pointermove sample. */
   const drawRef = useRef<{ id: string } | null>(null);
+  /** ID of the stroke overlay that's accumulating segments during
+   *  the current draw session — one entry into draw mode, no
+   *  color / width changes since. Subsequent strokes append a new
+   *  segment to this overlay rather than creating a new layer.
+   *  Null between sessions. */
+  const drawSessionRef = useRef<{ id: string } | null>(null);
   /** Snapshot of overlays at the start of a drag / rotate / draw
    *  gesture, used so undo can restore the pre-gesture state in
    *  one click instead of replaying each pointermove sample. */
@@ -383,26 +389,56 @@ export function OverlayEditor({
   }
 
   function startDraw(e: React.PointerEvent) {
-    if (overlays.length >= OVERLAY_LIMIT) return;
     const p = pointerToStageFraction(e);
     if (!p) return;
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     bookmark();
-    const id = newOverlayId();
-    drawRef.current = { id };
-    const stroke: CoverOverlay = {
-      id,
-      type: "stroke",
-      x: 0.5,
-      y: 0.5,
-      scale: 1,
-      rotation: 0,
-      points: [[p.x, p.y]],
-      color: drawColor,
-      width: drawWidth,
-    };
-    onChange([...overlays, stroke]);
+    // If a stroke from this draw session already exists with the
+    // current color + width, append a new segment to it instead
+    // of starting a fresh overlay layer. drawSessionRef tracks
+    // which layer the current session is appending to; null means
+    // "first stroke of the session, create a new layer".
+    const existing = drawSessionRef.current
+      ? overlays.find((o) => o.id === drawSessionRef.current!.id)
+      : null;
+    const sameStyle =
+      existing &&
+      existing.type === "stroke" &&
+      existing.color === drawColor &&
+      Math.abs(existing.width - drawWidth) < 1e-6;
+    if (sameStyle) {
+      const id = existing.id;
+      drawRef.current = { id };
+      const next = overlays.map((o) =>
+        o.id === id && o.type === "stroke"
+          ? {
+              ...o,
+              segments: [...o.segments, [[p.x, p.y]] as [number, number][]],
+            }
+          : o
+      );
+      onChange(next);
+    } else {
+      // Cap only blocks brand-new layers — additional segments
+      // appended to the active session never push the count.
+      if (overlays.length >= OVERLAY_LIMIT) return;
+      const id = newOverlayId();
+      drawRef.current = { id };
+      drawSessionRef.current = { id };
+      const stroke: CoverOverlay = {
+        id,
+        type: "stroke",
+        x: 0.5,
+        y: 0.5,
+        scale: 1,
+        rotation: 0,
+        segments: [[[p.x, p.y]]],
+        color: drawColor,
+        width: drawWidth,
+      };
+      onChange([...overlays, stroke]);
+    }
     setSaveStatus("unsaved");
   }
 
@@ -411,18 +447,21 @@ export function OverlayEditor({
     if (!d) return;
     const p = pointerToStageFraction(e);
     if (!p) return;
-    // Find current stroke + skip-tiny-moves filter.
     const cur = overlays.find((o) => o.id === d.id);
     if (!cur || cur.type !== "stroke") return;
-    const last = cur.points[cur.points.length - 1];
+    const lastSeg = cur.segments[cur.segments.length - 1];
+    if (!lastSeg || lastSeg.length === 0) return;
+    const last = lastSeg[lastSeg.length - 1];
     const dx = p.x - last[0];
     const dy = p.y - last[1];
     if (dx * dx + dy * dy < 0.000025) return; // 0.5% threshold
-    const next = overlays.map((o) =>
-      o.id === d.id && o.type === "stroke"
-        ? { ...o, points: [...o.points, [p.x, p.y]] as [number, number][] }
-        : o
-    );
+    const next = overlays.map((o) => {
+      if (o.id !== d.id || o.type !== "stroke") return o;
+      const segments = o.segments.map((s, i) =>
+        i === o.segments.length - 1 ? ([...s, [p.x, p.y]] as [number, number][]) : s
+      );
+      return { ...o, segments };
+    });
     onChange(next);
     setSaveStatus("unsaved");
   }
@@ -432,24 +471,45 @@ export function OverlayEditor({
     if (!d) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     drawRef.current = null;
-    // Strip any stroke that ended with no real movement (single
-    // tap with no drag) so an accidental click doesn't litter the
-    // overlay list with invisible dots.
+    // If the just-ended segment is degenerate (no real movement),
+    // strip it before persisting. If that leaves the stroke
+    // overlay with zero segments, drop the overlay entirely.
     const stroke = overlays.find((o) => o.id === d.id);
-    const finished =
-      stroke && stroke.type === "stroke" && stroke.points.length >= 2;
-    if (finished) {
-      // Real stroke — commit via the bookmark so undo rolls back
-      // the entire gesture in one step.
-      commitWithBookmark(overlays);
-    } else {
-      // Empty stroke — discard. Clear the bookmark to avoid
-      // pushing a stale snapshot, and reset state locally.
-      historyBookmark.current = null;
-      const next = overlays.filter((o) => o.id !== d.id);
-      onChange(next);
-      setSaveStatus("saved");
+    if (stroke && stroke.type === "stroke") {
+      const lastSeg = stroke.segments[stroke.segments.length - 1] ?? [];
+      const lastOk = lastSeg.length >= 2;
+      if (!lastOk) {
+        const trimmed = stroke.segments.slice(0, -1);
+        if (trimmed.length === 0) {
+          // Whole layer is empty — discard. If this was a brand
+          // new session (started by this stroke), clear the
+          // session ref too so the next stroke starts fresh.
+          historyBookmark.current = null;
+          if (drawSessionRef.current?.id === d.id) {
+            drawSessionRef.current = null;
+          }
+          const next = overlays.filter((o) => o.id !== d.id);
+          onChange(next);
+          setSaveStatus("saved");
+          return;
+        }
+        const next = overlays.map((o) =>
+          o.id === d.id && o.type === "stroke"
+            ? { ...o, segments: trimmed }
+            : o
+        );
+        commitWithBookmark(next);
+        return;
+      }
     }
+    commitWithBookmark(overlays);
+  }
+
+  // End the active drawing session — next pointer-down in draw
+  // mode will create a fresh layer. Called when admin exits draw
+  // mode or changes color / brush width.
+  function endDrawSession() {
+    drawSessionRef.current = null;
   }
 
   function applyRotationFromPointer(e: React.PointerEvent, id: string) {
@@ -559,7 +619,14 @@ export function OverlayEditor({
             onClick={() => {
               setActiveAdder(null);
               setEraserMode(false);
-              setDrawMode((v) => !v);
+              setDrawMode((v) => {
+                const next = !v;
+                // Exiting draw mode (or re-entering it) closes
+                // out the current drawing session so the next
+                // stroke starts a fresh overlay layer.
+                if (!next || v) endDrawSession();
+                return next;
+              });
             }}
           />
           <AdderPill
@@ -687,7 +754,13 @@ export function OverlayEditor({
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => setDrawColor(c.id)}
+                  onClick={() => {
+                    setDrawColor(c.id);
+                    // Different color = new layer next stroke,
+                    // so the existing session's color stays
+                    // consistent.
+                    endDrawSession();
+                  }}
                   className={
                     "rounded-pill border px-2 py-0.5 text-[10px] font-semibold transition " +
                     (active
@@ -710,7 +783,10 @@ export function OverlayEditor({
               min={0.005}
               max={0.05}
               step={0.005}
-              onChange={(e) => setDrawWidth(parseFloat(e.target.value))}
+              onChange={(e) => {
+                setDrawWidth(parseFloat(e.target.value));
+                endDrawSession();
+              }}
               className="flex-1 accent-pink-400"
             />
             <span className="font-mono text-ink/65 w-12 text-right">
@@ -876,14 +952,18 @@ function EditableOverlay({
     const svg = OVERLAY_SHAPE_SVG[o.color];
     const strokeWidth = Math.max(o.width * 100, 0.4);
     const center = (() => {
-      if (o.points.length === 0) return { x: 0.5, y: 0.5 };
       let sx = 0;
       let sy = 0;
-      for (const [x, y] of o.points) {
-        sx += x;
-        sy += y;
+      let n = 0;
+      for (const seg of o.segments) {
+        for (const [x, y] of seg) {
+          sx += x;
+          sy += y;
+          n++;
+        }
       }
-      return { x: sx / o.points.length, y: sy / o.points.length };
+      if (n === 0) return { x: 0.5, y: 0.5 };
+      return { x: sx / n, y: sy / n };
     })();
     return (
       <svg
@@ -910,7 +990,7 @@ function EditableOverlay({
           } ${-center.y * 100})`}
         >
           <path
-            d={strokePointsToPath(o.points)}
+            d={strokeSegmentsToPath(o.segments)}
             fill="none"
             stroke={svg.stroke}
             strokeOpacity={0.92}
@@ -1146,7 +1226,9 @@ function SelectedControls({
             : o.type === "caption"
             ? `caption · "${o.text}"`
             : o.type === "stroke"
-            ? `drawing · ${o.points.length} pts`
+            ? `drawing · ${o.segments.length} stroke${
+                o.segments.length === 1 ? "" : "s"
+              }`
             : `${o.shape} highlight`}
         </span>
         <button
