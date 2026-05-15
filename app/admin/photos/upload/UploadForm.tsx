@@ -13,6 +13,7 @@ import {
 import { signPhotoUpload, insertPhotoRow } from "./actions";
 import {
   deletePhoto,
+  rotatePhoto,
   setPhotoDecorations,
   togglePhotoHidden,
   updatePhotoMeta,
@@ -184,6 +185,7 @@ export function UploadForm({
             hidden: sharedHidden,
             width: dims?.width ?? null,
             height: dims?.height ?? null,
+            rotation: 0,
             // No per-photo override at upload time — photo inherits
             // its album's decoration. Admin can override later via
             // the batch editor or PhotoEditModal.
@@ -656,6 +658,9 @@ type SuccessItem = {
   hidden: boolean;
   width: number | null;
   height: number | null;
+  // Persisted rotation in degrees (0 / 90 / 180 / 270). Applied as a
+  // CSS transform in renderers; the source pixels are never rewritten.
+  rotation: number;
   // Per-photo decoration overrides. null = inherit album,
   // "" = explicit none, id = preset override. Same semantics as
   // PhotoEditModal — see app/components/cover-decorations.ts.
@@ -711,6 +716,28 @@ function UploadSuccessCard({
   const [deletePending, startDelete] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [decorPending, startDecor] = useTransition();
+  const [rotatePending, startRotate] = useTransition();
+
+  function applyRotate(direction: "left" | "right") {
+    setSaveError(null);
+    // Compute optimistically so the preview snaps immediately;
+    // the server runs the same math (rotatePhoto reads the current
+    // rotation and writes the next one) so the values stay in sync.
+    const cur = ((item.rotation ?? 0) + 360) % 360;
+    const next = direction === "right" ? (cur + 90) % 360 : (cur + 270) % 360;
+    onUpdate({ ...item, rotation: next });
+    startRotate(async () => {
+      try {
+        const res = await rotatePhoto(item.id, direction);
+        if (!res.ok)
+          setSaveError(res.error ?? "couldn’t rotate.");
+      } catch (e) {
+        setSaveError(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
 
   function applyDecoration(patch: {
     frame?: string | null;
@@ -884,29 +911,62 @@ function UploadSuccessCard({
 
       {/* Photo + edit panel */}
       <div className="flex flex-col md:flex-row md:items-start gap-4">
-        <button
-          type="button"
-          onClick={() => setPreviewOpen(true)}
-          aria-label="open larger preview"
-          className="shrink-0 mx-auto md:mx-0 rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors"
-          style={{
-            aspectRatio: aspect,
-            width: haveDims ? "auto" : "100%",
-            maxWidth: "min(100%, 260px)",
-            maxHeight: "240px",
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={item.src}
-            alt={item.caption || "uploaded photo"}
-            className={
-              haveDims
-                ? "block w-full h-full object-cover"
-                : "block max-w-full max-h-[240px] object-contain mx-auto"
-            }
-          />
-        </button>
+        <div className="shrink-0 mx-auto md:mx-0 flex flex-col gap-1.5 items-center">
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            aria-label="open larger preview"
+            className="rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors"
+            style={{
+              aspectRatio: aspect,
+              width: haveDims ? "auto" : "100%",
+              maxWidth: "min(100%, 260px)",
+              maxHeight: "240px",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.src}
+              alt={item.caption || "uploaded photo"}
+              style={
+                item.rotation
+                  ? { transform: `rotate(${item.rotation}deg)` }
+                  : undefined
+              }
+              className={
+                haveDims
+                  ? "block w-full h-full object-cover transition-transform"
+                  : "block max-w-full max-h-[240px] object-contain mx-auto transition-transform"
+              }
+            />
+          </button>
+          {/* Rotate pair — sit under the thumbnail so admin can fix
+              EXIF-orientation issues without leaving the upload flow.
+              Action is persisted via rotatePhoto; CSS transform
+              renders the rotated visual without rewriting pixels. */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => applyRotate("left")}
+              disabled={rotatePending}
+              title="rotate 90° counter-clockwise"
+              aria-label="rotate left"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ↺ rotate
+            </button>
+            <button
+              type="button"
+              onClick={() => applyRotate("right")}
+              disabled={rotatePending}
+              title="rotate 90° clockwise"
+              aria-label="rotate right"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ↻ rotate
+            </button>
+          </div>
+        </div>
 
         {/* Inline edit panel — fills the right side on desktop,
             stacks below the thumbnail on mobile. Lets admin tidy
@@ -1111,6 +1171,7 @@ function UploadSuccessCard({
           src={item.src}
           aspect={aspect}
           caption={item.caption}
+          rotation={item.rotation}
           albumLinkHref={albumLinkHref}
           albumLinkLabel={albumLinkLabel}
           onClose={() => setPreviewOpen(false)}
@@ -1128,6 +1189,7 @@ function PreviewOverlay({
   src,
   aspect,
   caption,
+  rotation,
   albumLinkHref,
   albumLinkLabel,
   onClose,
@@ -1135,6 +1197,7 @@ function PreviewOverlay({
   src: string;
   aspect?: string;
   caption: string;
+  rotation?: number;
   albumLinkHref: string;
   albumLinkLabel: string;
   onClose: () => void;
@@ -1201,10 +1264,15 @@ function PreviewOverlay({
             <img
               src={src}
               alt={caption || "uploaded photo"}
+              style={
+                rotation
+                  ? { transform: `rotate(${rotation}deg)` }
+                  : undefined
+              }
               className={
                 aspect
-                  ? "block w-full h-full object-contain rounded-md shadow-soft"
-                  : "block max-h-[calc(100vh-220px)] max-w-full object-contain rounded-md shadow-soft"
+                  ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
+                  : "block max-h-[calc(100vh-220px)] max-w-full object-contain rounded-md shadow-soft transition-transform"
               }
             />
           </div>
@@ -1745,7 +1813,12 @@ function UploadSuccessGrid({
               <img
                 src={it.src}
                 alt={it.caption || "uploaded photo"}
-                className="w-full h-full object-cover"
+                style={
+                  it.rotation
+                    ? { transform: `rotate(${it.rotation}deg)` }
+                    : undefined
+                }
+                className="w-full h-full object-cover transition-transform"
               />
               {it.hidden ? (
                 <span className="absolute top-1.5 left-1.5 rounded-pill bg-lavender-100/95 text-lavender-800 px-1.5 py-0.5 text-[9px] font-semibold border border-lavender-200">
@@ -1872,9 +1945,28 @@ function BatchItemEditor({
   const [hidePending, startHide] = useTransition();
   const [navPending, startNav] = useTransition();
   const [decorPending, startDecor] = useTransition();
+  const [rotatePending, startRotateBatch] = useTransition();
   const [deletePending, startDelete] = useTransition();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  function applyRotate(direction: "left" | "right") {
+    setErr(null);
+    const cur = ((item.rotation ?? 0) + 360) % 360;
+    const next =
+      direction === "right" ? (cur + 90) % 360 : (cur + 270) % 360;
+    onSaved({ ...item, rotation: next });
+    startRotateBatch(async () => {
+      try {
+        const res = await rotatePhoto(item.id, direction);
+        if (!res.ok) setErr(res.error ?? "couldn’t rotate.");
+      } catch (e) {
+        setErr(
+          e instanceof Error ? e.message : "couldn’t reach the server."
+        );
+      }
+    });
+  }
 
   function applyDecoration(patch: {
     frame?: string | null;
@@ -2102,12 +2194,42 @@ function BatchItemEditor({
               <img
                 src={item.src}
                 alt={item.caption || "uploaded photo"}
+                style={
+                  item.rotation
+                    ? { transform: `rotate(${item.rotation}deg)` }
+                    : undefined
+                }
                 className={
                   aspect
-                    ? "block w-full h-full object-contain rounded-md shadow-soft"
-                    : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft"
+                    ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
+                    : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft transition-transform"
                 }
               />
+              {/* Rotate pair sits at the bottom-center of the photo
+                  so admin can fix orientation without leaving the
+                  batch editor. */}
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => applyRotate("left")}
+                  disabled={rotatePending}
+                  title="rotate 90° counter-clockwise"
+                  aria-label="rotate left"
+                  className="rounded-pill bg-skynavy-900/55 text-cream border border-cream/30 backdrop-blur-sm hover:bg-skynavy-900/80 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+                >
+                  ↺ rotate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyRotate("right")}
+                  disabled={rotatePending}
+                  title="rotate 90° clockwise"
+                  aria-label="rotate right"
+                  className="rounded-pill bg-skynavy-900/55 text-cream border border-cream/30 backdrop-blur-sm hover:bg-skynavy-900/80 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+                >
+                  ↻ rotate
+                </button>
+              </div>
             </div>
             <BatchNavArrow
               direction="next"
