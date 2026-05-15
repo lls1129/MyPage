@@ -493,13 +493,15 @@ export function OverlayEditor({
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <UndoRedoPill
-            label="↶"
+            glyph="↶"
+            label="undo"
             title="undo last change"
             disabled={history.length === 0}
             onClick={undo}
           />
           <UndoRedoPill
-            label="↷"
+            glyph="↷"
+            label="redo"
             title="redo"
             disabled={future.length === 0}
             onClick={redo}
@@ -541,13 +543,19 @@ export function OverlayEditor({
               swaps the stage into the right capture mode. The
               draw / drawing labels share a min-width so toggling
               doesn't shift the row layout on mobile. */}
+          {/* Label always reads "draw" / "erase" so the glyph
+              width doesn't change between states — the active /
+              inactive distinction is carried entirely by the
+              pink fill on `active=true`. Avoids the ✓-vs-✎
+              width swap that was reflowing the toolbar on iOS
+              even with a min-width clamp. */}
           <AdderPill
-            label={drawMode ? "✓ drawing" : "✎ draw"}
+            label="✎ draw"
             active={drawMode}
             disabled={
               (overlays.length >= OVERLAY_LIMIT && !drawMode) || eraserMode
             }
-            minWidth="5.25rem"
+            fixedWidth={110}
             onClick={() => {
               setActiveAdder(null);
               setEraserMode(false);
@@ -555,10 +563,10 @@ export function OverlayEditor({
             }}
           />
           <AdderPill
-            label={eraserMode ? "✓ erasing" : "🩹 erase"}
+            label="🩹 erase"
             active={eraserMode}
             disabled={drawMode}
-            minWidth="5.25rem"
+            fixedWidth={110}
             onClick={() => {
               setActiveAdder(null);
               setDrawMode(false);
@@ -1008,11 +1016,13 @@ function SaveStatusPill({
 }
 
 function UndoRedoPill({
+  glyph,
   label,
   title,
   disabled,
   onClick,
 }: {
+  glyph: string;
   label: string;
   title: string;
   disabled: boolean;
@@ -1025,9 +1035,12 @@ function UndoRedoPill({
       disabled={disabled}
       title={title}
       aria-label={title}
-      className="rounded-full w-7 h-7 inline-flex items-center justify-center text-sm font-semibold bg-white text-pink-800 border border-pink-200 hover:border-pink-400 disabled:opacity-40 disabled:cursor-not-allowed"
+      className="inline-flex items-center gap-1 rounded-pill px-2.5 py-0.5 text-[11px] font-semibold bg-white text-pink-800 border border-pink-200 hover:border-pink-400 disabled:opacity-40 disabled:cursor-not-allowed"
     >
-      {label}
+      <span aria-hidden className="text-sm leading-none">
+        {glyph}
+      </span>
+      <span>{label}</span>
     </button>
   );
 }
@@ -1080,24 +1093,31 @@ function AdderPill({
   active,
   disabled,
   onClick,
-  minWidth,
+  fixedWidth,
 }: {
   label: string;
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
-  /** When set, fixes the button width so toggling labels (e.g.
-   *  "✎ draw" vs "✓ drawing") doesn't shift the row layout. */
-  minWidth?: string;
+  /** When set, locks the button to this width (in px) so toggling
+   *  labels with different glyph widths (notably emoji vs. text)
+   *  can't change the button size and reflow the toolbar.
+   *  width — not min-width — because iOS emoji renderers paint
+   *  "✓" wide enough to overshoot a min-width clamp. */
+  fixedWidth?: number;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={minWidth ? { minWidth } : undefined}
+      style={
+        fixedWidth
+          ? { width: `${fixedWidth}px`, flex: "0 0 auto" }
+          : undefined
+      }
       className={
-        "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 text-center " +
+        "rounded-pill border px-2.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 text-center overflow-hidden whitespace-nowrap " +
         (active
           ? "bg-pink-300 text-white border-pink-300"
           : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
