@@ -29,9 +29,9 @@ export function BelowTitle({
   );
 }
 
-// Polaroid-style strip — tinted bg + a bit more padding so the
-// caption reads as part of the same card rather than a separate
-// label.
+// Polaroid-style label — a soft cream "card" that floats below the
+// cover with rounded corners + inset margins, so it reads as a
+// dedicated label rather than a flat strip joined to the cover.
 export function CaptionBarTitle({
   name,
   count,
@@ -40,19 +40,23 @@ export function CaptionBarTitle({
   count: number;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 bg-cream/70 px-3 py-2.5">
-      <p className="font-script text-skynavy-900 text-lg leading-tight truncate pr-1">
-        {name}
-      </p>
-      <p className="text-[10px] text-pink-700 font-semibold shrink-0">
-        {countLabel(count)}
-      </p>
+    <div className="px-2 pt-2 pb-2.5">
+      <div className="flex items-baseline justify-between gap-2 bg-cream/85 border border-cream rounded-lg shadow-[0_1px_2px_rgba(64,40,82,0.08)] px-3 py-2">
+        <p className="font-script text-skynavy-900 text-lg leading-tight truncate pr-1">
+          {name}
+        </p>
+        <p className="text-[10px] text-pink-700 font-semibold shrink-0">
+          {countLabel(count)}
+        </p>
+      </div>
     </div>
   );
 }
 
-// Two rows — name on top in slightly larger script, count under
-// it like a museum label. Best for short names + clean covers.
+// Two rows, museum-label style. Name in larger script on top, then
+// a thin divider, then the count in muted small caps on its own
+// row. The divider makes the two-line structure unambiguous even
+// when the count text is short ("soon ✦").
 export function StackedTitle({
   name,
   count,
@@ -61,11 +65,12 @@ export function StackedTitle({
   count: number;
 }) {
   return (
-    <div className="flex flex-col gap-0.5 px-3 py-2.5">
-      <p className="font-script text-skynavy-900 text-xl leading-tight truncate">
+    <div className="block px-3 py-2.5">
+      <p className="block font-script text-skynavy-900 text-xl leading-tight truncate">
         {name}
       </p>
-      <p className="text-[10px] text-ink/55 font-semibold tracking-wide">
+      <hr className="border-t border-pink-100/70 my-1.5" aria-hidden />
+      <p className="block text-[10px] text-ink/60 font-semibold uppercase tracking-wider">
         {countLabel(count)}
       </p>
     </div>

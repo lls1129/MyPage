@@ -216,6 +216,12 @@ export function AlbumPageAdmin({
 
   function pickCover(url: string | null) {
     setError(null);
+    // If admin pins a different photo, the overlays they placed for
+    // the previous cover usually don't make sense on the new one —
+    // clear them so the new cover starts fresh. Re-pinning the same
+    // URL (or just adjusting the crop) keeps overlays in place.
+    const isNewCoverUrl =
+      url !== null && url !== (album.cover_image_url ?? null);
     startTransition(async () => {
       try {
         const res = await onSetCover(album.id, url);
@@ -225,6 +231,12 @@ export function AlbumPageAdmin({
           // Leave the picker open so admin can keep auditioning covers.
           // Clear the URL draft only when that's how it was set.
           if (url === null || url === urlDraft.trim()) setUrlDraft("");
+          if (isNewCoverUrl && overlays.length > 0) {
+            setOverlays([]);
+            onSetCoverOverlays(album.id, []).then((r) => {
+              if (!r.ok) setError(r.error);
+            });
+          }
           // Track successful pins on the album row so admin sees the
           // same recent list on every device. Skip the "clear cover"
           // case (url is null). Optimistic: update local + persist.

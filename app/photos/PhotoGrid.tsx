@@ -10,6 +10,7 @@ import {
   frameInsetFor,
   frameOuterRadiusFor,
   frameOverlayFor,
+  framePadFor,
   resolveDecoration,
 } from "../components/cover-decorations";
 import { Lightbox } from "./Lightbox";
@@ -378,17 +379,24 @@ function PhotoTile({
   // Solid frames paint their own outer outline + shape, so we drop
   // the wrapper's pink border + bg-pink-50 + small rounded-md and
   // adopt the frame's outer radius so the photo clips along the
-  // frame's curve. Decorative frames (and frame-less photos) keep
-  // the original wrapper chrome.
+  // frame's curve. Padding shrinks the photo so it fits inside the
+  // frame's inner edge (rather than under the painted border) —
+  // safe now because the bg is transparent for solid frames so the
+  // padded area shows the frame's cream paint, not pink. Decorative
+  // frames keep the original wrapper chrome with no padding so the
+  // border sits decoratively on top of a full-size photo.
   const isSolidFrame = !!frameInsetFor(frame, frameWidth);
   const outerRadiusClass =
     frameOuterRadiusFor(frame, frameWidth) ||
     (isSolidFrame ? "" : "rounded-md");
+  const padClass = isSolidFrame ? framePadFor(frame, frameWidth) : "";
   return (
     <div
       className={
         "group block w-full mb-4 break-inside-avoid relative overflow-hidden lift " +
         outerRadiusClass +
+        " " +
+        padClass +
         " " +
         (isSolidFrame
           ? "shadow-soft "

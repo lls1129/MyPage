@@ -16,8 +16,10 @@ import {
   FRAMES,
   FRAME_SIZES,
   filterCssFor,
+  frameInsetFor,
   frameOuterRadiusFor,
   frameOverlayFor,
+  framePadFor,
   resolveDecoration,
 } from "../components/cover-decorations";
 import { setPhotoDecorations } from "./admin-actions";
@@ -126,6 +128,10 @@ export function Lightbox({
     decor.frame,
     decor.frameWidth
   );
+  const isSolidFrame = !!frameInsetFor(decor.frame, decor.frameWidth);
+  const padClass = isSolidFrame
+    ? framePadFor(decor.frame, decor.frameWidth)
+    : "";
 
   const date = photo.taken_at ?? photo.created_at;
   const dateLabel = date
@@ -212,7 +218,12 @@ export function Lightbox({
               : undefined;
             return (
               <div
-                className={"relative overflow-hidden " + outerRadiusClass}
+                className={
+                  "relative overflow-hidden " +
+                  outerRadiusClass +
+                  " " +
+                  padClass
+                }
                 style={{
                   aspectRatio: aspect,
                   maxWidth: "100%",
