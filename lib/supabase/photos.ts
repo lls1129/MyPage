@@ -36,6 +36,10 @@ export type Photo = {
   crop_y: number;
   crop_w: number;
   crop_h: number;
+  // Manual sort order (migration 0027). Applied only when the
+  // viewer's sort mode is "manual"; any other sort uses existing
+  // columns (taken_at, created_at, caption).
+  sort_order: number;
 };
 
 // resolveDecoration lives in app/components/cover-decorations.ts —

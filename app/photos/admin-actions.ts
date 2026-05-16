@@ -326,6 +326,47 @@ export async function deletePhotos(ids: string[]) {
   };
 }
 
+// Reorder one photo relative to a neighbor — admin clicks ↑ or ↓
+// on a tile in manual-sort mode and we swap sort_order between the
+// two ids. Client computes which neighbor to swap with (since the
+// client owns the displayed order).
+export async function swapPhotoOrder(idA: string, idB: string) {
+  await requireAdmin();
+  if (!idA || !idB || idA === idB)
+    return { ok: false as const, error: "need two distinct photo ids" };
+  const admin = createAdminClient();
+  const { data: rows, error } = await admin
+    .from("photos")
+    .select("id, sort_order")
+    .in("id", [idA, idB]);
+  if (error) return { ok: false as const, error: error.message };
+  if (!rows || rows.length !== 2)
+    return { ok: false as const, error: "couldn't find both photos" };
+  const a = rows.find((r) => r.id === idA);
+  const b = rows.find((r) => r.id === idB);
+  if (!a || !b)
+    return { ok: false as const, error: "couldn't find both photos" };
+  const aOrder = (a.sort_order as number) ?? 0;
+  const bOrder = (b.sort_order as number) ?? 0;
+  // If both happen to be 0 (or equal), seed them with distinct
+  // values so the swap is well-defined and the very next swap is
+  // a real swap, not another collision.
+  const nextA = aOrder === bOrder ? bOrder + 10 : bOrder;
+  const nextB = aOrder === bOrder ? aOrder : aOrder;
+  const [{ error: e1 }, { error: e2 }] = await Promise.all([
+    admin.from("photos").update({ sort_order: nextA }).eq("id", idA),
+    admin.from("photos").update({ sort_order: nextB }).eq("id", idB),
+  ]);
+  if (e1 || e2)
+    return {
+      ok: false as const,
+      error: (e1 ?? e2)?.message ?? "swap failed",
+    };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Bulk hide / unhide. Single batched update — RLS hides hidden rows
 // from non-admin views automatically once written.
 export async function setPhotosHidden(ids: string[], hidden: boolean) {

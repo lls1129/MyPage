@@ -35,8 +35,31 @@ import {
   deletePhotos,
   setPhotosHidden,
   setPhotosAlbum,
+  swapPhotoOrder,
   convertPhotoToAstrophoto,
 } from "./admin-actions";
+
+// Sort modes for the photo grid. Default "uploaded" preserves the
+// pre-0027 ordering (most-recent upload first). "manual" sorts by
+// sort_order, ascending — only meaningful once admin has nudged at
+// least one photo via the ↑ / ↓ tile buttons.
+type SortMode = "uploaded" | "taken" | "caption" | "manual";
+
+const SORT_OPTIONS: { id: SortMode; label: string }[] = [
+  { id: "uploaded", label: "newest uploaded" },
+  { id: "taken", label: "newest taken" },
+  { id: "caption", label: "caption a→z" },
+  { id: "manual", label: "manual order" },
+];
+
+const SORT_STORAGE_KEY = "photo-grid-sort";
+
+function readStoredSort(): SortMode {
+  if (typeof window === "undefined") return "uploaded";
+  const raw = window.localStorage.getItem(SORT_STORAGE_KEY);
+  if (raw === "taken" || raw === "caption" || raw === "manual") return raw;
+  return "uploaded";
+}
 
 function transformStyle(
   rotation: number | null | undefined,
@@ -75,6 +98,15 @@ export function PhotoGrid({
   const [showHidden, setShowHidden] = useState<boolean>(wantsAllVisible);
   const [pending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
+  // Sort mode lives in localStorage so the choice persists across
+  // page loads / tab switches. Default "uploaded" matches the
+  // pre-0027 server-side order.
+  const [sortMode, setSortMode] = useState<SortMode>("uploaded");
+  useEffect(() => setSortMode(readStoredSort()), []);
+  useEffect(() => {
+    if (typeof window !== "undefined")
+      window.localStorage.setItem(SORT_STORAGE_KEY, sortMode);
+  }, [sortMode]);
   // Multi-select / mass-action state. When selectMode is on, photo
   // tiles render with a check overlay and clicking toggles selection
   // instead of opening the lightbox. The action bar at the bottom of
@@ -117,10 +149,46 @@ export function PhotoGrid({
     return Array.from(set).sort();
   }, [visible]);
 
-  const filtered = useMemo(
-    () => (tag === "all" ? visible : visible.filter((p) => p.tags.includes(tag))),
+  const tagFiltered = useMemo(
+    () =>
+      tag === "all" ? visible : visible.filter((p) => p.tags.includes(tag)),
     [visible, tag]
   );
+
+  // Apply the chosen sort. Photos arrive from the server ordered by
+  // created_at desc, so "uploaded" is a no-op; the other modes do a
+  // client-side resort. Compares the relevant field with safe
+  // fallbacks for nulls / missing values so a single bad row doesn't
+  // collapse the order.
+  const filtered = useMemo(() => {
+    const list = [...tagFiltered];
+    if (sortMode === "taken") {
+      list.sort((a, b) => {
+        const at = a.taken_at ? Date.parse(a.taken_at) : 0;
+        const bt = b.taken_at ? Date.parse(b.taken_at) : 0;
+        return bt - at; // newest first
+      });
+    } else if (sortMode === "caption") {
+      list.sort((a, b) => {
+        const ac = (a.caption ?? "").toLowerCase();
+        const bc = (b.caption ?? "").toLowerCase();
+        return ac < bc ? -1 : ac > bc ? 1 : 0;
+      });
+    } else if (sortMode === "manual") {
+      list.sort((a, b) => {
+        const av = a.sort_order ?? 0;
+        const bv = b.sort_order ?? 0;
+        if (av !== bv) return av - bv;
+        // Tie-break by created_at desc so untouched rows keep their
+        // upload-order until admin nudges them.
+        return (
+          (b.created_at ? Date.parse(b.created_at) : 0) -
+          (a.created_at ? Date.parse(a.created_at) : 0)
+        );
+      });
+    }
+    return list;
+  }, [tagFiltered, sortMode]);
 
   // Lookup map for resolving per-photo decoration fallback to the
   // photo's album. Computed once per `albums` change.
@@ -244,6 +312,20 @@ export function PhotoGrid({
               </span>
             </button>
           ) : null}
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-pink-700 font-semibold">
+            <span className="text-pink-600">sort</span>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="bg-white border border-pink-200 rounded-pill px-2.5 py-1 text-[12px] font-semibold focus:outline-none focus:border-pink-400"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
           {actionError ? (
             <span className="text-xs text-pink-600 font-semibold">
               {actionError}
@@ -285,6 +367,19 @@ export function PhotoGrid({
           selectMode={selectMode}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelected}
+          manualOrder={sortMode === "manual"}
+          onMoveUp={(i) => {
+            if (i <= 0) return;
+            const a = filtered[i];
+            const b = filtered[i - 1];
+            runAction(() => swapPhotoOrder(a.id, b.id));
+          }}
+          onMoveDown={(i) => {
+            if (i >= filtered.length - 1) return;
+            const a = filtered[i];
+            const b = filtered[i + 1];
+            runAction(() => swapPhotoOrder(a.id, b.id));
+          }}
           onOpen={(i) => setOpenIdx(i)}
           onEdit={onEdit}
           onToggleHidden={onToggleHidden}
@@ -400,6 +495,9 @@ function MasonryGrid({
   selectMode,
   selectedIds,
   onToggleSelect,
+  manualOrder,
+  onMoveUp,
+  onMoveDown,
   onOpen,
   onEdit,
   onToggleHidden,
@@ -414,6 +512,9 @@ function MasonryGrid({
   selectMode: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
+  manualOrder: boolean;
+  onMoveUp: (i: number) => void;
+  onMoveDown: (i: number) => void;
   onOpen: (i: number) => void;
   onEdit: (p: Photo) => void;
   onToggleHidden: (p: Photo) => void;
@@ -457,6 +558,11 @@ function MasonryGrid({
                 selectMode={selectMode}
                 selected={selectedIds.has(photo.id)}
                 onToggleSelect={() => onToggleSelect(photo.id)}
+                manualOrder={manualOrder}
+                isFirst={globalIndex === 0}
+                isLast={globalIndex === photos.length - 1}
+                onMoveUp={() => onMoveUp(globalIndex)}
+                onMoveDown={() => onMoveDown(globalIndex)}
                 eager={globalIndex < 6}
                 onOpen={() => onOpen(globalIndex)}
                 onEdit={() => onEdit(photo)}
@@ -483,6 +589,11 @@ function PhotoTile({
   selectMode,
   selected,
   onToggleSelect,
+  manualOrder,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
   eager,
   onOpen,
   onEdit,
@@ -500,6 +611,11 @@ function PhotoTile({
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
+  manualOrder: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   eager: boolean;
   onOpen: () => void;
   onEdit: () => void;
@@ -662,6 +778,29 @@ function PhotoTile({
         <span className="pointer-events-none absolute inset-x-0 bottom-0 px-3 py-2 bg-gradient-to-t from-skynavy-900/80 via-skynavy-900/40 to-transparent text-cream text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
           {photo.caption}
         </span>
+      ) : null}
+
+      {/* Manual-sort ↑↓ chips — only shown when admin picked the
+          "manual order" sort, since these only edit sort_order
+          (irrelevant in other modes). Sit at the bottom-left so
+          they don't clash with the admin action cluster top-right. */}
+      {isAdmin && manualOrder && !selectMode ? (
+        <div className="absolute bottom-2 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <IconBtn
+            label="move earlier"
+            onClick={onMoveUp}
+            disabled={busy || isFirst}
+          >
+            ↑
+          </IconBtn>
+          <IconBtn
+            label="move later"
+            onClick={onMoveDown}
+            disabled={busy || isLast}
+          >
+            ↓
+          </IconBtn>
+        </div>
       ) : null}
 
       {isAdmin ? (

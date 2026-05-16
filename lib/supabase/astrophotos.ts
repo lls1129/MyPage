@@ -32,6 +32,7 @@ export type Astrophoto = {
   crop_y: number;
   crop_w: number;
   crop_h: number;
+  sort_order: number;
 };
 
 export type AstrophotosResult =
