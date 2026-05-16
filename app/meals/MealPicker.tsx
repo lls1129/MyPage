@@ -11,6 +11,7 @@ import {
   setMealsFavoritesPublic,
   type ExternalSnapshot,
 } from "./actions";
+import { MealUploader } from "./MealUploader";
 
 const MOODS = ["any", "cozy", "light", "fast", "fancy", "spicy", "slow"] as const;
 type Mood = (typeof MOODS)[number];
@@ -746,19 +747,34 @@ export function MealPicker({
         {current ? (
           <>
             <div className="flex flex-col md:flex-row md:items-start gap-5 md:gap-7">
-              {hasDisplayImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={displayedImage as string}
-                  alt={current.name}
-                  loading="lazy"
-                  className="w-full md:w-60 md:shrink-0 aspect-square object-cover rounded-lg border border-pink-100"
-                />
-              ) : (
-                <div className="w-32 h-32 md:w-36 md:h-36 md:shrink-0 mx-auto md:mx-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-5xl">
-                  {current.glyph || "🍽"}
-                </div>
-              )}
+              <div className="flex flex-col gap-2 md:w-60 md:shrink-0">
+                {hasDisplayImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={displayedImage as string}
+                    alt={current.name}
+                    loading="lazy"
+                    className="w-full aspect-square object-cover rounded-lg border border-pink-100"
+                  />
+                ) : (
+                  <div className="w-32 h-32 md:w-36 md:h-36 mx-auto md:mx-0 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center text-5xl">
+                    {current.glyph || "🍽"}
+                  </div>
+                )}
+                {/* Admin: drop in a custom photo (overrides whatever
+                    the lookup chain pulled in). Library meals only —
+                    external snapshots get their thumbnail from the
+                    source and aren't editable inline. */}
+                {isAdmin && current.source !== "themealdb" ? (
+                  <MealUploader
+                    mealId={current.id}
+                    currentImageUrl={current.image_url}
+                    onUploaded={(url) => {
+                      setCurrent({ ...current, image_url: url });
+                    }}
+                  />
+                ) : null}
+              </div>
 
               <div className="min-w-0 flex-1 flex flex-col gap-4">
                 <div>

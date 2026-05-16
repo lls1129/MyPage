@@ -160,6 +160,29 @@ export async function removeMeal(opts: {
   return { ok: true as const };
 }
 
+// Update a meal's image_url. Used by the inline meal uploader to
+// pin an admin-uploaded photo over the default TheMealDB / Wikipedia
+// thumbnail. For now only library meals support this; the external
+// snapshots get their image_url from the source and aren't editable
+// inline. Passing null clears the override back to whatever the
+// table defaulted to (typically empty).
+export async function setMealImage(opts: {
+  mealId: string;
+  imageUrl: string | null;
+}) {
+  await requireAdmin();
+  if (!opts.mealId)
+    return { ok: false as const, message: "missing meal id" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("meals")
+    .update({ image_url: opts.imageUrl })
+    .eq("id", opts.mealId);
+  if (error) return { ok: false as const, message: error.message };
+  revalidatePath("/meals");
+  return { ok: true as const };
+}
+
 export async function restoreMeal(opts: {
   mealId: string;
   isExternal: boolean;
