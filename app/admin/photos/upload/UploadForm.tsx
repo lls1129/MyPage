@@ -975,75 +975,37 @@ function UploadSuccessCard({
         </div>
       </div>
 
-      {/* Photo + edit panel — left column holds the thumbnail +
-          orientation / crop pills; right column has metadata + the
-          overlay editor. On desktop we widen the left column and
-          center it vertically so the small thumbnail doesn't leave
-          a tall gap of whitespace below it. */}
-      <div className="flex flex-col md:flex-row md:items-center gap-4">
-        <div className="shrink-0 mx-auto md:mx-0 flex flex-col gap-1.5 items-center md:w-[320px]">
-          {(() => {
-            const trivialCrop =
-              item.crop_x === 0 &&
-              item.crop_y === 0 &&
-              item.crop_w === 1 &&
-              item.crop_h === 1;
-            // Wrapper aspect = photo aspect for trivial crop, or
-            // cropped aspect when admin trimmed via the cropper.
-            const wrapperAspect = haveDims
-              ? trivialCrop
-                ? `${item.width} / ${item.height}`
-                : `${(item.width ?? 1) * item.crop_w} / ${
-                    (item.height ?? 1) * item.crop_h
-                  }`
-              : undefined;
-            return (
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(true)}
-                aria-label="open larger preview"
-                className="rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors relative"
-                style={{
-                  aspectRatio: wrapperAspect,
-                  width: haveDims ? "100%" : "100%",
-                  maxWidth: "min(100%, 320px)",
-                  maxHeight: "360px",
-                }}
-              >
-                {trivialCrop ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.src}
-                      alt={item.caption || "uploaded photo"}
-                      style={composeTransform(item.rotation, item.flipped)}
-                      className={
-                        haveDims
-                          ? "block w-full h-full object-cover transition-transform"
-                          : "block max-w-full max-h-[320px] object-contain mx-auto transition-transform"
-                      }
-                    />
-                  </>
-                ) : (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={item.src}
-                    alt={item.caption || "uploaded photo"}
-                    style={{
-                      position: "absolute",
-                      width: `${100 / item.crop_w}%`,
-                      height: "auto",
-                      left: `${(-item.crop_x / item.crop_w) * 100}%`,
-                      top: `${(-item.crop_y / item.crop_h) * 100}%`,
-                      maxWidth: "none",
-                      ...(composeTransform(item.rotation, item.flipped) ?? {}),
-                    }}
-                    className="block transition-transform"
-                  />
-                )}
-              </button>
-            );
-          })()}
+      {/* Photo + edit panel — small static thumbnail + orientation /
+          crop pills on the left; metadata on the right. A wider
+          dedicated live preview that reflects crop + filter + frame
+          + overlays sits in its own panel below the row (mobile)
+          or as a right column (desktop) — see LivePreview below. */}
+      <div className="flex flex-col md:flex-row md:items-start gap-4">
+        <div className="shrink-0 mx-auto md:mx-0 flex flex-col gap-1.5 items-center">
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            aria-label="open larger preview"
+            className="rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors"
+            style={{
+              aspectRatio: aspect,
+              width: haveDims ? "auto" : "100%",
+              maxWidth: "min(100%, 240px)",
+              maxHeight: "220px",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.src}
+              alt={item.caption || "uploaded photo"}
+              style={composeTransform(item.rotation, item.flipped)}
+              className={
+                haveDims
+                  ? "block w-full h-full object-cover transition-transform"
+                  : "block max-w-full max-h-[220px] object-contain mx-auto transition-transform"
+              }
+            />
+          </button>
           {/* Rotate + flip pair — sit under the thumbnail so admin
               can fix EXIF-orientation issues and mirror without
               leaving the upload flow. Actions are persisted; CSS
@@ -1204,12 +1166,14 @@ function UploadSuccessCard({
             />
           </div>
 
-          {/* Per-photo overlays — collapsed by default. Same editor
-              as the album cover / PhotoEditModal so admin can drop
-              stickers / drawings on a photo at upload time. */}
+          {/* Per-photo overlays — opens expanded inside the upload
+              flow because its stage doubles as the dedicated live
+              preview (shows crop + rotation + flip + filter + frame
+              + overlays composed together). */}
           <OverlayEditor
             overlays={overlays}
             onChange={setOverlays}
+            defaultOpen
             onCommit={async (next) => {
               const r = await setPhotoOverlays(item.id, next);
               return r.ok
@@ -1229,7 +1193,7 @@ function UploadSuccessCard({
             )}
             stageAspect={
               item.width && item.height && item.width > 0 && item.height > 0
-                ? `${item.width} / ${item.height}`
+                ? `${item.width * item.crop_w} / ${item.height * item.crop_h}`
                 : "1 / 1"
             }
             background={
@@ -1628,7 +1592,7 @@ function DeleteNoticeBanner({
 }
 
 // Background for the per-photo OverlayEditor inside the upload
-// flow — renders the just-uploaded image with its effective
+// flow — renders the just-uploaded image with its effective crop +
 // rotation / flip / filter / frame applied, so the editor's
 // preview matches what visitors will see in the lightbox.
 function SuccessOverlayBackground({
@@ -1643,6 +1607,11 @@ function SuccessOverlayBackground({
   filter: string | null;
 }) {
   const filterCss = filterCssFor(filter);
+  const trivialCrop =
+    item.crop_x === 0 &&
+    item.crop_y === 0 &&
+    item.crop_w === 1 &&
+    item.crop_h === 1;
   return (
     <>
       <div
@@ -1650,21 +1619,35 @@ function SuccessOverlayBackground({
           "absolute overflow-hidden " +
           (frameInsetFor(frame, frameWidth) || "inset-0")
         }
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={item.src}
-          alt={item.caption || "uploaded photo"}
-          style={{
-            ...(composeTransform(item.rotation, item.flipped) ?? {}),
-            filter: filterCss || undefined,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-          }}
-          className="block transition-transform"
-        />
-      </div>
+        style={
+          trivialCrop
+            ? {
+                backgroundImage: `url("${item.src}")`,
+                backgroundRepeat: "no-repeat",
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                filter: filterCss || undefined,
+                ...(composeTransform(item.rotation, item.flipped) ?? {}),
+              }
+            : {
+                backgroundImage: `url("${item.src}")`,
+                backgroundRepeat: "no-repeat",
+                backgroundSize: `${100 / item.crop_w}% ${100 / item.crop_h}%`,
+                backgroundPosition: `${
+                  item.crop_w >= 1
+                    ? 0
+                    : (item.crop_x * 100) / (1 - item.crop_w)
+                }% ${
+                  item.crop_h >= 1
+                    ? 0
+                    : (item.crop_y * 100) / (1 - item.crop_h)
+                }%`,
+                filter: filterCss || undefined,
+                ...(composeTransform(item.rotation, item.flipped) ?? {}),
+              }
+        }
+        aria-label={item.caption || "uploaded photo"}
+      />
       {frame ? (
         <div
           className={
@@ -2620,10 +2603,12 @@ function BatchItemEditor({
             />
 
             {/* Per-photo overlay editor — same as the single-card
-                version, collapsed by default. */}
+                version, opens expanded since its stage is the
+                dedicated live preview. */}
             <OverlayEditor
               overlays={overlays}
               onChange={setOverlays}
+              defaultOpen
               onCommit={async (next) => {
                 const r = await setPhotoOverlays(item.id, next);
                 return r.ok
@@ -2646,7 +2631,9 @@ function BatchItemEditor({
                 item.height &&
                 item.width > 0 &&
                 item.height > 0
-                  ? `${item.width} / ${item.height}`
+                  ? `${item.width * item.crop_w} / ${
+                      item.height * item.crop_h
+                    }`
                   : "1 / 1"
               }
               background={

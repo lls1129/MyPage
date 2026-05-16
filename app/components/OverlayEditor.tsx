@@ -58,6 +58,12 @@ export function OverlayEditor({
    *  matching album covers); pass the photo's natural aspect for
    *  per-photo overlay editing so the stage matches the photo. */
   stageAspect = "1 / 1",
+  /** Start the editor expanded instead of the default one-line
+   *  collapsed header. Useful when the editor is acting as the
+   *  dedicated live preview surface (e.g. inside the upload flow,
+   *  where the editor's stage doubles as the only place admin
+   *  sees crop / filter / frame composed together). */
+  defaultOpen = false,
 }: {
   overlays: CoverOverlay[];
   /** Local-state update (optimistic). Called for every drag tick. */
@@ -69,6 +75,7 @@ export function OverlayEditor({
   background: React.ReactNode;
   stageInsetClass?: string;
   stageAspect?: string;
+  defaultOpen?: boolean;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -90,7 +97,9 @@ export function OverlayEditor({
   // Editor starts collapsed — the album page already shows the
   // small cover preview in the cropper, and admin only opens the
   // overlay editor when they want to add / move decorations.
-  const [open, setOpen] = useState(false);
+  // Callers can override with defaultOpen={true} when the editor
+  // doubles as the dedicated live preview (upload flow).
+  const [open, setOpen] = useState(defaultOpen);
   const [drawMode, setDrawMode] = useState(false);
   const [eraserMode, setEraserMode] = useState(false);
   const [drawColor, setDrawColor] = useState<OverlayColor>("pink");
