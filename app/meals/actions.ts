@@ -160,6 +160,41 @@ export async function removeMeal(opts: {
   return { ok: true as const };
 }
 
+// Update a meal's restaurant info (migration 0028). Library meals
+// only — external snapshots come from TheMealDB and don't carry
+// admin-edited fields. All three columns are nullable; pass null
+// to clear any individual field. Trimmed empty strings are stored
+// as null so the renderer treats "empty" consistently.
+export async function setMealRestaurant(opts: {
+  mealId: string;
+  name?: string | null;
+  url?: string | null;
+  location?: string | null;
+}) {
+  await requireAdmin();
+  if (!opts.mealId)
+    return { ok: false as const, message: "missing meal id" };
+  const norm = (v: string | null | undefined): string | null => {
+    if (v === undefined || v === null) return null;
+    const t = v.trim();
+    return t.length > 0 ? t : null;
+  };
+  const updates: Record<string, string | null> = {};
+  if ("name" in opts) updates.restaurant_name = norm(opts.name);
+  if ("url" in opts) updates.restaurant_url = norm(opts.url);
+  if ("location" in opts)
+    updates.restaurant_location = norm(opts.location);
+  if (Object.keys(updates).length === 0) return { ok: true as const };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("meals")
+    .update(updates)
+    .eq("id", opts.mealId);
+  if (error) return { ok: false as const, message: error.message };
+  revalidatePath("/meals");
+  return { ok: true as const };
+}
+
 // Update a meal's image_url. Used by the inline meal uploader to
 // pin an admin-uploaded photo over the default TheMealDB / Wikipedia
 // thumbnail. For now only library meals support this; the external

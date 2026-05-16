@@ -13,6 +13,12 @@ export type Meal = {
   ingredients_detail: string[];
   instructions: string | null;
   image_url: string | null;
+  // Optional restaurant where the admin has tried this dish (migration
+  // 0028). All nullable — the meal card just omits the restaurant
+  // strip when nothing is set.
+  restaurant_name: string | null;
+  restaurant_url: string | null;
+  restaurant_location: string | null;
   hidden: boolean;
   created_at: string;
   source?: "library" | "themealdb";
@@ -103,6 +109,9 @@ export async function listExternalMeals(): Promise<Meal[]> {
       ingredients_detail: row.ingredients_detail ?? [],
       instructions: row.instructions ?? null,
       image_url: row.image_url ?? null,
+      restaurant_name: null,
+      restaurant_url: null,
+      restaurant_location: null,
       hidden: false,
       created_at: row.created_at,
       source: "themealdb" as const,

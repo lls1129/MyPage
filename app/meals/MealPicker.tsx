@@ -6,6 +6,7 @@ import { fetchSurpriseMeal, findMealImage } from "@/lib/meals/themealdb";
 import {
   removeMeal,
   restoreMeal,
+  setMealRestaurant,
   setMealStatus,
   setMealsListPublic,
   setMealsFavoritesPublic,
@@ -826,6 +827,18 @@ export function MealPicker({
                   }
                 />
 
+                {/* Restaurant info — admin gets an inline editor;
+                    visitors see a small "tried at" label when set.
+                    Library meals only — external snapshots come
+                    from TheMealDB and don't carry these fields. */}
+                {current.source !== "themealdb" ? (
+                  <MealRestaurant
+                    meal={current}
+                    isAdmin={isAdmin}
+                    onUpdated={(patch) => setCurrent({ ...current, ...patch })}
+                  />
+                ) : null}
+
                 {current.ingredients_detail.length > 0 ? (
                   <div>
                     <p className="label text-pink-600 mb-2">ingredients</p>
@@ -1048,6 +1061,239 @@ function TrashPanel({
         only the most recent 3 are kept — older removals are purged for good.
       </p>
     </section>
+  );
+}
+
+// Restaurant strip for a meal — small read-only label for visitors,
+// expandable inline editor for admin. Edits commit via the
+// setMealRestaurant server action; parent updates local state via
+// onUpdated so the UI reflects the change without a refresh.
+function MealRestaurant({
+  meal,
+  isAdmin,
+  onUpdated,
+}: {
+  meal: Meal;
+  isAdmin: boolean;
+  onUpdated: (patch: Partial<Meal>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(meal.restaurant_name ?? "");
+  const [url, setUrl] = useState(meal.restaurant_url ?? "");
+  const [location, setLocation] = useState(meal.restaurant_location ?? "");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Re-sync the form fields when the parent swaps to a different meal.
+  useEffect(() => {
+    setName(meal.restaurant_name ?? "");
+    setUrl(meal.restaurant_url ?? "");
+    setLocation(meal.restaurant_location ?? "");
+    setEditing(false);
+    setError(null);
+  }, [meal.id, meal.restaurant_name, meal.restaurant_url, meal.restaurant_location]);
+
+  const hasAny =
+    !!meal.restaurant_name ||
+    !!meal.restaurant_url ||
+    !!meal.restaurant_location;
+
+  async function save() {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await setMealRestaurant({
+        mealId: meal.id,
+        name,
+        url,
+        location,
+      });
+      if (!res.ok) {
+        setError(res.message ?? "couldn't save");
+        return;
+      }
+      const norm = (v: string) => {
+        const t = v.trim();
+        return t.length > 0 ? t : null;
+      };
+      onUpdated({
+        restaurant_name: norm(name),
+        restaurant_url: norm(url),
+        restaurant_location: norm(location),
+      });
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function clearAll() {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await setMealRestaurant({
+        mealId: meal.id,
+        name: null,
+        url: null,
+        location: null,
+      });
+      if (!res.ok) {
+        setError(res.message ?? "couldn't clear");
+        return;
+      }
+      onUpdated({
+        restaurant_name: null,
+        restaurant_url: null,
+        restaurant_location: null,
+      });
+      setName("");
+      setUrl("");
+      setLocation("");
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  // Visitor view: read-only label, only shown when something is set.
+  if (!isAdmin) {
+    if (!hasAny) return null;
+    const label = meal.restaurant_name ?? "tried at…";
+    const subtitle = meal.restaurant_location ?? null;
+    return (
+      <div className="flex items-baseline gap-2 flex-wrap text-[12px] text-lavender-700">
+        <span className="font-semibold text-pink-600 uppercase tracking-wide text-[10px]">
+          tried at
+        </span>
+        {meal.restaurant_url ? (
+          <a
+            href={meal.restaurant_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-pink-700 hover:text-pink-800 underline-offset-2 hover:underline"
+          >
+            {label}
+          </a>
+        ) : (
+          <span className="font-semibold text-ink/80">{label}</span>
+        )}
+        {subtitle ? (
+          <span className="text-ink/60">· {subtitle}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  // Admin: compact summary chip until they tap to expand.
+  if (!editing) {
+    return (
+      <div className="flex items-baseline gap-2 flex-wrap text-[12px]">
+        <span className="font-semibold text-pink-600 uppercase tracking-wide text-[10px]">
+          tried at
+        </span>
+        {hasAny ? (
+          <>
+            {meal.restaurant_url ? (
+              <a
+                href={meal.restaurant_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-pink-700 hover:text-pink-800 underline-offset-2 hover:underline"
+              >
+                {meal.restaurant_name ?? "(no name)"}
+              </a>
+            ) : (
+              <span className="font-semibold text-ink/80">
+                {meal.restaurant_name ?? "(no name)"}
+              </span>
+            )}
+            {meal.restaurant_location ? (
+              <span className="text-ink/60">· {meal.restaurant_location}</span>
+            ) : null}
+          </>
+        ) : (
+          <span className="text-ink/55">not set</span>
+        )}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2 py-0.5 text-[10px] font-semibold"
+        >
+          {hasAny ? "✎ edit" : "+ add"}
+        </button>
+      </div>
+    );
+  }
+
+  // Admin: expanded editor.
+  return (
+    <div className="flex flex-col gap-2 rounded-md bg-pink-50/60 border border-pink-100 p-2.5">
+      <p className="label text-pink-600">tried at</p>
+      <input
+        type="text"
+        placeholder="restaurant name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        disabled={pending}
+        className="bg-white border border-pink-200 rounded-sm px-2.5 py-1 text-[12px] text-ink focus:outline-none focus:border-pink-400"
+      />
+      <input
+        type="url"
+        placeholder="https://restaurant-url.com (optional)"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        disabled={pending}
+        className="bg-white border border-pink-200 rounded-sm px-2.5 py-1 text-[12px] text-ink focus:outline-none focus:border-pink-400"
+      />
+      <input
+        type="text"
+        placeholder="location (city / neighborhood) — optional"
+        value={location}
+        onChange={(e) => setLocation(e.target.value)}
+        disabled={pending}
+        className="bg-white border border-pink-200 rounded-sm px-2.5 py-1 text-[12px] text-ink focus:outline-none focus:border-pink-400"
+      />
+      {error ? (
+        <p className="text-[11px] text-pink-600 font-semibold">{error}</p>
+      ) : null}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending}
+          className="rounded-pill bg-pink-300 text-white border border-pink-300 hover:bg-pink-400 hover:border-pink-400 px-3 py-0.5 text-[11px] font-semibold disabled:opacity-60"
+        >
+          {pending ? "saving…" : "save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setEditing(false);
+            setName(meal.restaurant_name ?? "");
+            setUrl(meal.restaurant_url ?? "");
+            setLocation(meal.restaurant_location ?? "");
+            setError(null);
+          }}
+          disabled={pending}
+          className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-0.5 text-[11px] font-semibold disabled:opacity-60"
+        >
+          cancel
+        </button>
+        {hasAny ? (
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={pending}
+            className="rounded-pill bg-white text-pink-700 border border-pink-200 hover:border-pink-400 px-3 py-0.5 text-[11px] font-semibold disabled:opacity-60"
+          >
+            ✕ clear
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
