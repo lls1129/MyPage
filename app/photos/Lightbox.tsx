@@ -257,14 +257,21 @@ export function Lightbox({
                   maxHeight: "calc(100vh - 260px)",
                 }}
               >
-                {trivialCrop ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={photo.image_url}
-                      alt={photo.caption || ""}
-                      style={{
-                        transform: (() => {
+                {/* In-flow photo. For trivial crop it's the visible
+                    image (rotation + flip + filter applied); for a
+                    cropped photo we keep it but mark it invisible so
+                    the wrapper still has a sized in-flow child —
+                    without that the aspect-ratio'd wrapper collapses
+                    to 0 inside the flex parent and only the frame
+                    edge remains visible. Same src either way → no
+                    extra network request. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.image_url}
+                  alt={photo.caption || ""}
+                  style={{
+                    transform: trivialCrop
+                      ? (() => {
                           const parts: string[] = [];
                           if (photo.rotation)
                             parts.push(`rotate(${photo.rotation}deg)`);
@@ -272,29 +279,26 @@ export function Lightbox({
                           return parts.length > 0
                             ? parts.join(" ")
                             : undefined;
-                        })(),
-                        filter: filterCss || undefined,
-                        // No-dimensions fallback needs the same vh cap
-                        // as the aspect-ratio'd wrapper so it doesn't
-                        // grow unbounded.
-                        maxHeight: haveDims
-                          ? undefined
-                          : "calc(100vh - 260px)",
-                        maxWidth: "100%",
-                      }}
-                      className={
-                        haveDims
-                          ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
-                          : "object-contain rounded-md shadow-soft transition-transform block"
-                      }
-                    />
-                  </>
-                ) : (
+                        })()
+                      : undefined,
+                    filter: trivialCrop ? filterCss || undefined : undefined,
+                    visibility: trivialCrop ? undefined : "hidden",
+                    maxHeight: haveDims ? undefined : "calc(100vh - 260px)",
+                    maxWidth: "100%",
+                  }}
+                  className={
+                    haveDims
+                      ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
+                      : "object-contain rounded-md shadow-soft transition-transform block"
+                  }
+                />
+                {!trivialCrop ? (
                   <div className="absolute inset-0 overflow-hidden rounded-md shadow-soft">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={photo.image_url}
-                      alt={photo.caption || ""}
+                      alt=""
+                      aria-hidden
                       style={{
                         position: "absolute",
                         width: `${100 / photo.crop_w}%`,
@@ -316,7 +320,7 @@ export function Lightbox({
                       className="block transition-transform"
                     />
                   </div>
-                )}
+                ) : null}
                 {haveDims && frameClass ? (
                   <span
                     aria-hidden

@@ -975,33 +975,75 @@ function UploadSuccessCard({
         </div>
       </div>
 
-      {/* Photo + edit panel */}
-      <div className="flex flex-col md:flex-row md:items-start gap-4">
-        <div className="shrink-0 mx-auto md:mx-0 flex flex-col gap-1.5 items-center">
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            aria-label="open larger preview"
-            className="rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors"
-            style={{
-              aspectRatio: aspect,
-              width: haveDims ? "auto" : "100%",
-              maxWidth: "min(100%, 260px)",
-              maxHeight: "240px",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={item.src}
-              alt={item.caption || "uploaded photo"}
-              style={composeTransform(item.rotation, item.flipped)}
-              className={
-                haveDims
-                  ? "block w-full h-full object-cover transition-transform"
-                  : "block max-w-full max-h-[240px] object-contain mx-auto transition-transform"
-              }
-            />
-          </button>
+      {/* Photo + edit panel — left column holds the thumbnail +
+          orientation / crop pills; right column has metadata + the
+          overlay editor. On desktop we widen the left column and
+          center it vertically so the small thumbnail doesn't leave
+          a tall gap of whitespace below it. */}
+      <div className="flex flex-col md:flex-row md:items-center gap-4">
+        <div className="shrink-0 mx-auto md:mx-0 flex flex-col gap-1.5 items-center md:w-[320px]">
+          {(() => {
+            const trivialCrop =
+              item.crop_x === 0 &&
+              item.crop_y === 0 &&
+              item.crop_w === 1 &&
+              item.crop_h === 1;
+            // Wrapper aspect = photo aspect for trivial crop, or
+            // cropped aspect when admin trimmed via the cropper.
+            const wrapperAspect = haveDims
+              ? trivialCrop
+                ? `${item.width} / ${item.height}`
+                : `${(item.width ?? 1) * item.crop_w} / ${
+                    (item.height ?? 1) * item.crop_h
+                  }`
+              : undefined;
+            return (
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                aria-label="open larger preview"
+                className="rounded-md border border-pink-100 overflow-hidden bg-pink-50/40 cursor-zoom-in hover:border-pink-200 transition-colors relative"
+                style={{
+                  aspectRatio: wrapperAspect,
+                  width: haveDims ? "100%" : "100%",
+                  maxWidth: "min(100%, 320px)",
+                  maxHeight: "360px",
+                }}
+              >
+                {trivialCrop ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={item.src}
+                      alt={item.caption || "uploaded photo"}
+                      style={composeTransform(item.rotation, item.flipped)}
+                      className={
+                        haveDims
+                          ? "block w-full h-full object-cover transition-transform"
+                          : "block max-w-full max-h-[320px] object-contain mx-auto transition-transform"
+                      }
+                    />
+                  </>
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={item.src}
+                    alt={item.caption || "uploaded photo"}
+                    style={{
+                      position: "absolute",
+                      width: `${100 / item.crop_w}%`,
+                      height: "auto",
+                      left: `${(-item.crop_x / item.crop_w) * 100}%`,
+                      top: `${(-item.crop_y / item.crop_h) * 100}%`,
+                      maxWidth: "none",
+                      ...(composeTransform(item.rotation, item.flipped) ?? {}),
+                    }}
+                    className="block transition-transform"
+                  />
+                )}
+              </button>
+            );
+          })()}
           {/* Rotate + flip pair — sit under the thumbnail so admin
               can fix EXIF-orientation issues and mirror without
               leaving the upload flow. Actions are persisted; CSS
