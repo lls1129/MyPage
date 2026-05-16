@@ -1006,61 +1006,6 @@ function UploadSuccessCard({
               }
             />
           </button>
-          {/* Rotate + flip pair — sit under the thumbnail so admin
-              can fix EXIF-orientation issues and mirror without
-              leaving the upload flow. Actions are persisted; CSS
-              transforms render the visual without rewriting pixels. */}
-          <div className="flex items-center gap-1.5 flex-wrap justify-center">
-            <button
-              type="button"
-              onClick={() => applyRotate("left")}
-              disabled={rotatePending}
-              title="rotate 90° counter-clockwise"
-              aria-label="rotate left"
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ↺ rotate
-            </button>
-            <button
-              type="button"
-              onClick={() => applyRotate("right")}
-              disabled={rotatePending}
-              title="rotate 90° clockwise"
-              aria-label="rotate right"
-              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
-            >
-              ↻ rotate
-            </button>
-            <button
-              type="button"
-              onClick={applyFlip}
-              disabled={rotatePending}
-              title="flip horizontally"
-              aria-label="flip horizontally"
-              className={
-                "rounded-pill border px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60 " +
-                (item.flipped
-                  ? "bg-pink-300 text-white border-pink-300"
-                  : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
-              }
-            >
-              ⇋ flip
-            </button>
-            <button
-              type="button"
-              onClick={() => setCropOpen(true)}
-              title="crop"
-              aria-label="crop"
-              className={
-                "rounded-pill border px-2.5 py-1 text-[11px] font-semibold " +
-                (item.crop_w < 1 || item.crop_h < 1
-                  ? "bg-pink-300 text-white border-pink-300"
-                  : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
-              }
-            >
-              ✂ crop
-            </button>
-          </div>
         </div>
 
         {/* Inline edit panel — fills the right side on desktop,
@@ -1164,6 +1109,62 @@ function UploadSuccessCard({
               disabled={decorPending}
               onPick={(id) => applyDecoration({ filter: id })}
             />
+          </div>
+
+          {/* Rotate / flip / crop pills sit just above the overlay
+              editor so they're co-located with the live preview —
+              the static thumbnail above doesn't reflect these
+              transforms anyway, but the editor's stage does. */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => applyRotate("left")}
+              disabled={rotatePending}
+              title="rotate 90° counter-clockwise"
+              aria-label="rotate left"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ↺ rotate
+            </button>
+            <button
+              type="button"
+              onClick={() => applyRotate("right")}
+              disabled={rotatePending}
+              title="rotate 90° clockwise"
+              aria-label="rotate right"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ↻ rotate
+            </button>
+            <button
+              type="button"
+              onClick={applyFlip}
+              disabled={rotatePending}
+              title="flip horizontally"
+              aria-label="flip horizontally"
+              className={
+                "rounded-pill border px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60 " +
+                (item.flipped
+                  ? "bg-pink-300 text-white border-pink-300"
+                  : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+              }
+            >
+              ⇋ flip
+            </button>
+            <button
+              type="button"
+              onClick={() => setCropOpen(true)}
+              title="crop"
+              aria-label="crop"
+              className={
+                "rounded-pill border px-2.5 py-1 text-[11px] font-semibold " +
+                (item.crop_w < 1 || item.crop_h < 1
+                  ? "bg-pink-300 text-white border-pink-300"
+                  : "bg-white text-pink-800 border-pink-200 hover:border-pink-400")
+              }
+            >
+              ✂ crop
+            </button>
           </div>
 
           {/* Per-photo overlays — opens expanded inside the upload
@@ -2458,60 +2459,6 @@ function BatchItemEditor({
                     : "block max-h-[calc(100vh-360px)] max-w-full object-contain rounded-md shadow-soft transition-transform"
                 }
               />
-              {/* Rotate + flip pair sits at the bottom-center of the
-                  photo so admin can fix orientation without leaving
-                  the batch editor. */}
-              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 flex-wrap justify-center">
-                <button
-                  type="button"
-                  onClick={() => applyRotate("left")}
-                  disabled={rotatePending}
-                  title="rotate 90° counter-clockwise"
-                  aria-label="rotate left"
-                  className="rounded-pill bg-skynavy-900/55 text-cream border border-cream/30 backdrop-blur-sm hover:bg-skynavy-900/80 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
-                >
-                  ↺ rotate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyRotate("right")}
-                  disabled={rotatePending}
-                  title="rotate 90° clockwise"
-                  aria-label="rotate right"
-                  className="rounded-pill bg-skynavy-900/55 text-cream border border-cream/30 backdrop-blur-sm hover:bg-skynavy-900/80 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
-                >
-                  ↻ rotate
-                </button>
-                <button
-                  type="button"
-                  onClick={applyFlip}
-                  disabled={rotatePending}
-                  title="flip horizontally"
-                  aria-label="flip horizontally"
-                  className={
-                    "rounded-pill border backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60 " +
-                    (item.flipped
-                      ? "bg-pink-300 text-white border-pink-300"
-                      : "bg-skynavy-900/55 text-cream border-cream/30 hover:bg-skynavy-900/80")
-                  }
-                >
-                  ⇋ flip
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCropOpen(true)}
-                  title="crop"
-                  aria-label="crop"
-                  className={
-                    "rounded-pill border backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold " +
-                    (item.crop_w < 1 || item.crop_h < 1
-                      ? "bg-pink-300 text-white border-pink-300"
-                      : "bg-skynavy-900/55 text-cream border-cream/30 hover:bg-skynavy-900/80")
-                  }
-                >
-                  ✂ crop
-                </button>
-              </div>
             </div>
             <BatchNavArrow
               direction="next"
@@ -2601,6 +2548,62 @@ function BatchItemEditor({
               disabled={decorPending || deletePending}
               onPick={(id) => applyDecoration({ filter: id })}
             />
+
+            {/* Rotate / flip / crop pills — co-located with the
+                overlay editor (its stage is the live preview) since
+                the big photo above only shows rotation + flip, not
+                the cropped / framed / filtered composition. */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => applyRotate("left")}
+                disabled={rotatePending}
+                title="rotate 90° counter-clockwise"
+                aria-label="rotate left"
+                className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+              >
+                ↺ rotate
+              </button>
+              <button
+                type="button"
+                onClick={() => applyRotate("right")}
+                disabled={rotatePending}
+                title="rotate 90° clockwise"
+                aria-label="rotate right"
+                className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60"
+              >
+                ↻ rotate
+              </button>
+              <button
+                type="button"
+                onClick={applyFlip}
+                disabled={rotatePending}
+                title="flip horizontally"
+                aria-label="flip horizontally"
+                className={
+                  "rounded-pill border px-2.5 py-1 text-[11px] font-semibold disabled:opacity-60 " +
+                  (item.flipped
+                    ? "bg-pink-300 text-white border-pink-300"
+                    : "bg-cream/10 text-cream border-cream/30 hover:bg-cream/20")
+                }
+              >
+                ⇋ flip
+              </button>
+              <button
+                type="button"
+                onClick={() => setCropOpen(true)}
+                title="crop"
+                aria-label="crop"
+                className={
+                  "rounded-pill border px-2.5 py-1 text-[11px] font-semibold " +
+                  (item.crop_w < 1 || item.crop_h < 1
+                    ? "bg-pink-300 text-white border-pink-300"
+                    : "bg-cream/10 text-cream border-cream/30 hover:bg-cream/20")
+                }
+              >
+                ✂ crop
+              </button>
+            </div>
 
             {/* Per-photo overlay editor — same as the single-card
                 version, opens expanded since its stage is the
