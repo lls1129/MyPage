@@ -1194,7 +1194,9 @@ function UploadSuccessCard({
             )}
             stageAspect={
               item.width && item.height && item.width > 0 && item.height > 0
-                ? `${item.width * item.crop_w} / ${item.height * item.crop_h}`
+                ? item.rotation === 90 || item.rotation === 270
+                  ? `${item.height * item.crop_h} / ${item.width * item.crop_w}`
+                  : `${item.width * item.crop_w} / ${item.height * item.crop_h}`
                 : "1 / 1"
             }
             background={
@@ -1613,8 +1615,31 @@ function SuccessOverlayBackground({
     item.crop_y === 0 &&
     item.crop_w === 1 &&
     item.crop_h === 1;
+  // Photo + frame rotate as one composition. The OverlayEditor's
+  // outer wrapper carries the post-rotation aspect (the caller
+  // swaps width × height for rotation 90 / 270); the container
+  // inside is sized so that AFTER the rotate transform fires it
+  // fills the wrapper, with photo and frame painted in source
+  // orientation inside.
+  const r = ((item.rotation ?? 0) + 360) % 360;
+  const isRotated = r === 90 || r === 270;
+  const cropW = (item.width ?? 1) * item.crop_w;
+  const cropH = (item.height ?? 1) * item.crop_h;
+  const cropRatio = cropW > 0 && cropH > 0 ? cropW / cropH : 1;
+  const transformStr = composeTransform(item.rotation, item.flipped)
+    ?.transform;
+  const containerStyle: React.CSSProperties = {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    width: isRotated ? `${cropRatio * 100}%` : "100%",
+    height: isRotated ? `${(1 / cropRatio) * 100}%` : "100%",
+    transform: `translate(-50%, -50%)${
+      transformStr ? " " + transformStr : ""
+    }`,
+  };
   return (
-    <>
+    <div style={containerStyle}>
       <div
         className={
           "absolute overflow-hidden " +
@@ -1628,7 +1653,6 @@ function SuccessOverlayBackground({
                 backgroundSize: "cover",
                 backgroundPosition: "center",
                 filter: filterCss || undefined,
-                ...(composeTransform(item.rotation, item.flipped) ?? {}),
               }
             : {
                 backgroundImage: `url("${item.src}")`,
@@ -1644,7 +1668,6 @@ function SuccessOverlayBackground({
                     : (item.crop_y * 100) / (1 - item.crop_h)
                 }%`,
                 filter: filterCss || undefined,
-                ...(composeTransform(item.rotation, item.flipped) ?? {}),
               }
         }
         aria-label={item.caption || "uploaded photo"}
@@ -1658,7 +1681,7 @@ function SuccessOverlayBackground({
           aria-hidden
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -2634,9 +2657,13 @@ function BatchItemEditor({
                 item.height &&
                 item.width > 0 &&
                 item.height > 0
-                  ? `${item.width * item.crop_w} / ${
-                      item.height * item.crop_h
-                    }`
+                  ? item.rotation === 90 || item.rotation === 270
+                    ? `${item.height * item.crop_h} / ${
+                        item.width * item.crop_w
+                      }`
+                    : `${item.width * item.crop_w} / ${
+                        item.height * item.crop_h
+                      }`
                   : "1 / 1"
               }
               background={
