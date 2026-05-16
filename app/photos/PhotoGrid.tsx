@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Photo } from "@/lib/supabase/photos";
 
@@ -36,6 +42,7 @@ import {
   setPhotosHidden,
   setPhotosAlbum,
   swapPhotoOrder,
+  reorderPhotos,
   convertPhotoToAstrophoto,
 } from "./admin-actions";
 
@@ -98,6 +105,12 @@ export function PhotoGrid({
   const [showHidden, setShowHidden] = useState<boolean>(wantsAllVisible);
   const [pending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
+  // Drag-and-drop reorder state — admin grabs a tile and drops it
+  // anywhere in the grid (manual sort mode only). Ref instead of
+  // state so we don't re-render the whole grid on each drag tick.
+  const dragSrcId = useRef<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropAfter, setDropAfter] = useState(false);
   // Sort mode lives in localStorage so the choice persists across
   // page loads / tab switches. Default "uploaded" matches the
   // pre-0027 server-side order.
@@ -368,6 +381,8 @@ export function PhotoGrid({
           selectedIds={selectedIds}
           onToggleSelect={toggleSelected}
           manualOrder={sortMode === "manual"}
+          dropTargetId={dropTargetId}
+          dropAfter={dropAfter}
           onMoveUp={(i) => {
             if (i <= 0) return;
             const a = filtered[i];
@@ -379,6 +394,37 @@ export function PhotoGrid({
             const a = filtered[i];
             const b = filtered[i + 1];
             runAction(() => swapPhotoOrder(a.id, b.id));
+          }}
+          onDragStart={(id) => {
+            dragSrcId.current = id;
+            setDropTargetId(null);
+          }}
+          onDragOverTile={(id, after) => {
+            if (!dragSrcId.current || dragSrcId.current === id) return;
+            setDropTargetId(id);
+            setDropAfter(after);
+          }}
+          onDragEnd={() => {
+            dragSrcId.current = null;
+            setDropTargetId(null);
+          }}
+          onDropOnTile={(id, after) => {
+            const srcId = dragSrcId.current;
+            dragSrcId.current = null;
+            setDropTargetId(null);
+            if (!srcId || srcId === id) return;
+            // Compute new ordered ids: remove src from its current
+            // position, then insert before or after the target.
+            const remaining = filtered.filter((p) => p.id !== srcId);
+            const targetIdx = remaining.findIndex((p) => p.id === id);
+            if (targetIdx < 0) return;
+            const insertAt = after ? targetIdx + 1 : targetIdx;
+            const orderedIds = [
+              ...remaining.slice(0, insertAt).map((p) => p.id),
+              srcId,
+              ...remaining.slice(insertAt).map((p) => p.id),
+            ];
+            runAction(() => reorderPhotos(orderedIds));
           }}
           onOpen={(i) => setOpenIdx(i)}
           onEdit={onEdit}
@@ -517,8 +563,14 @@ function MasonryGrid({
   selectedIds,
   onToggleSelect,
   manualOrder,
+  dropTargetId,
+  dropAfter,
   onMoveUp,
   onMoveDown,
+  onDragStart,
+  onDragOverTile,
+  onDragEnd,
+  onDropOnTile,
   onOpen,
   onEdit,
   onToggleHidden,
@@ -534,8 +586,14 @@ function MasonryGrid({
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   manualOrder: boolean;
+  dropTargetId: string | null;
+  dropAfter: boolean;
   onMoveUp: (i: number) => void;
   onMoveDown: (i: number) => void;
+  onDragStart: (id: string) => void;
+  onDragOverTile: (id: string, after: boolean) => void;
+  onDragEnd: () => void;
+  onDropOnTile: (id: string, after: boolean) => void;
   onOpen: (i: number) => void;
   onEdit: (p: Photo) => void;
   onToggleHidden: (p: Photo) => void;
@@ -582,8 +640,14 @@ function MasonryGrid({
                 manualOrder={manualOrder}
                 isFirst={globalIndex === 0}
                 isLast={globalIndex === photos.length - 1}
+                isDropTarget={dropTargetId === photo.id}
+                dropAfter={dropAfter}
                 onMoveUp={() => onMoveUp(globalIndex)}
                 onMoveDown={() => onMoveDown(globalIndex)}
+                onDragStart={() => onDragStart(photo.id)}
+                onDragOverTile={(after) => onDragOverTile(photo.id, after)}
+                onDragEnd={onDragEnd}
+                onDropOnTile={(after) => onDropOnTile(photo.id, after)}
                 eager={globalIndex < 6}
                 onOpen={() => onOpen(globalIndex)}
                 onEdit={() => onEdit(photo)}
@@ -613,8 +677,14 @@ function PhotoTile({
   manualOrder,
   isFirst,
   isLast,
+  isDropTarget,
+  dropAfter,
   onMoveUp,
   onMoveDown,
+  onDragStart,
+  onDragOverTile,
+  onDragEnd,
+  onDropOnTile,
   eager,
   onOpen,
   onEdit,
@@ -635,8 +705,14 @@ function PhotoTile({
   manualOrder: boolean;
   isFirst: boolean;
   isLast: boolean;
+  isDropTarget: boolean;
+  dropAfter: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onDragStart: () => void;
+  onDragOverTile: (after: boolean) => void;
+  onDragEnd: () => void;
+  onDropOnTile: (after: boolean) => void;
   eager: boolean;
   onOpen: () => void;
   onEdit: () => void;
@@ -692,6 +768,9 @@ function PhotoTile({
       rotationTransform ? " " + rotationTransform : ""
     }`,
   };
+  // Drag handlers — wired only in manual-sort mode for admin so the
+  // ↑↓ chips and drag interactions land on the same code path.
+  const draggable = isAdmin && manualOrder && !selectMode;
   return (
     <div
       className={
@@ -710,9 +789,47 @@ function PhotoTile({
           : isSolidFrame
           ? ""
           : "border-pink-100 hover:border-pink-200") +
-        (selected ? " outline outline-2 outline-pink-400 outline-offset-2" : "")
+        (selected ? " outline outline-2 outline-pink-400 outline-offset-2" : "") +
+        (draggable ? " cursor-grab active:cursor-grabbing" : "")
       }
       style={{ aspectRatio: effectiveAspect }}
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (e) => {
+              e.dataTransfer.effectAllowed = "move";
+              // Required for Firefox to actually start the drag.
+              e.dataTransfer.setData("text/plain", photo.id);
+              onDragStart();
+            }
+          : undefined
+      }
+      onDragOver={
+        draggable
+          ? (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              const rect = (
+                e.currentTarget as HTMLDivElement
+              ).getBoundingClientRect();
+              const after = e.clientY - rect.top > rect.height / 2;
+              onDragOverTile(after);
+            }
+          : undefined
+      }
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onDrop={
+        draggable
+          ? (e) => {
+              e.preventDefault();
+              const rect = (
+                e.currentTarget as HTMLDivElement
+              ).getBoundingClientRect();
+              const after = e.clientY - rect.top > rect.height / 2;
+              onDropOnTile(after);
+            }
+          : undefined
+      }
     >
       <div style={containerStyle}>
         <button
@@ -814,6 +931,17 @@ function PhotoTile({
         <span className="pointer-events-none absolute inset-x-0 bottom-0 px-3 py-2 bg-gradient-to-t from-skynavy-900/80 via-skynavy-900/40 to-transparent text-cream text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
           {photo.caption}
         </span>
+      ) : null}
+
+      {/* Drop-target indicator — appears as a thick pink bar at
+          the top or bottom edge to show where the dragged photo
+          will land. */}
+      {isDropTarget ? (
+        <div
+          className="pointer-events-none absolute left-0 right-0 h-1 bg-pink-400 z-10"
+          style={dropAfter ? { bottom: 0 } : { top: 0 }}
+          aria-hidden
+        />
       ) : null}
 
       {/* Manual-sort ↑↓ chips — only shown when admin picked the

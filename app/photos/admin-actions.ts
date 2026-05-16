@@ -326,6 +326,44 @@ export async function deletePhotos(ids: string[]) {
   };
 }
 
+// Re-number a batch of photos by their position in the given list.
+// Admin uses this for drag-and-drop reorder where dropping a photo
+// at a new index has to update every neighbor's sort_order too.
+// Renumbers by 10s so subsequent inserts have room to bisect.
+export async function reorderPhotos(orderedIds: string[]) {
+  await requireAdmin();
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0)
+    return { ok: false as const, error: "no photos to reorder" };
+  const admin = createAdminClient();
+  // Update each row's sort_order. We do this as separate updates
+  // rather than a batched upsert because upsert requires every
+  // non-null column, and we only want to touch sort_order. N is
+  // bounded by what fits on the current photo grid view, so the
+  // round-trip count is fine in practice.
+  let failed = 0;
+  let firstError: string | null = null;
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await admin
+      .from("photos")
+      .update({ sort_order: (i + 1) * 10 })
+      .eq("id", orderedIds[i]);
+    if (error) {
+      failed += 1;
+      if (!firstError) firstError = error.message;
+    }
+  }
+  if (failed > 0)
+    return {
+      ok: false as const,
+      error: `${failed} of ${orderedIds.length} updates failed${
+        firstError ? `: ${firstError}` : ""
+      }`,
+    };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Reorder one photo relative to a neighbor — admin clicks ↑ or ↓
 // on a tile in manual-sort mode and we swap sort_order between the
 // two ids. Client computes which neighbor to swap with (since the
