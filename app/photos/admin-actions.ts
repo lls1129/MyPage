@@ -279,6 +279,89 @@ export async function deletePhoto(id: string) {
   };
 }
 
+// Bulk delete — iterates over the ids and reuses the single-photo
+// delete path, so cover-impact notices (stillCoverFor /
+// autoShiftedFor) still get computed correctly per photo. Aggregates
+// the affected-album names across the batch and reports how many
+// failed if any.
+export async function deletePhotos(ids: string[]) {
+  await requireAdmin();
+  if (!Array.isArray(ids) || ids.length === 0)
+    return {
+      ok: false as const,
+      error: "no photos selected",
+      deleted: 0,
+      failed: 0,
+      stillCoverFor: [],
+      autoShiftedFor: [],
+    };
+  let stillCoverFor: string[] = [];
+  let autoShiftedFor: string[] = [];
+  let deleted = 0;
+  let failed = 0;
+  let firstError: string | null = null;
+  for (const id of ids) {
+    const r = await deletePhoto(id);
+    if (r.ok) {
+      stillCoverFor.push(...r.stillCoverFor);
+      autoShiftedFor.push(...r.autoShiftedFor);
+      deleted += 1;
+    } else {
+      failed += 1;
+      if (!firstError) firstError = r.error;
+    }
+  }
+  return {
+    ok: failed === 0,
+    error:
+      failed > 0
+        ? `${failed} of ${ids.length} couldn't be deleted${
+            firstError ? `: ${firstError}` : ""
+          }`
+        : undefined,
+    deleted,
+    failed,
+    stillCoverFor: Array.from(new Set(stillCoverFor)),
+    autoShiftedFor: Array.from(new Set(autoShiftedFor)),
+  };
+}
+
+// Bulk hide / unhide. Single batched update — RLS hides hidden rows
+// from non-admin views automatically once written.
+export async function setPhotosHidden(ids: string[], hidden: boolean) {
+  await requireAdmin();
+  if (!Array.isArray(ids) || ids.length === 0)
+    return { ok: false as const, error: "no photos selected" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("photos")
+    .update({ hidden })
+    .in("id", ids);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
+// Bulk move to an album (or to uncategorized when albumId === null).
+export async function setPhotosAlbum(
+  ids: string[],
+  albumId: string | null
+) {
+  await requireAdmin();
+  if (!Array.isArray(ids) || ids.length === 0)
+    return { ok: false as const, error: "no photos selected" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("photos")
+    .update({ album_id: albumId })
+    .in("id", ids);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/photos");
+  revalidatePath(`/photos/album/[slug]`, "page");
+  return { ok: true as const };
+}
+
 // Returns the album's name if the about-to-be-deleted photo is its
 // current auto-picked cover (album has no pinned cover_image_url AND
 // this photo is the latest non-hidden member). Used by the delete

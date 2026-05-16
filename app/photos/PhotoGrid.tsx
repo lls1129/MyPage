@@ -32,6 +32,9 @@ import {
   togglePhotoHidden,
   rotatePhoto,
   deletePhoto,
+  deletePhotos,
+  setPhotosHidden,
+  setPhotosAlbum,
   convertPhotoToAstrophoto,
 } from "./admin-actions";
 
@@ -72,6 +75,36 @@ export function PhotoGrid({
   const [showHidden, setShowHidden] = useState<boolean>(wantsAllVisible);
   const [pending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
+  // Multi-select / mass-action state. When selectMode is on, photo
+  // tiles render with a check overlay and clicking toggles selection
+  // instead of opening the lightbox. The action bar at the bottom of
+  // the page surfaces delete / hide / unhide / move-to-album wired
+  // to the bulk server actions.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+  // Esc cancels selection mode — matches the editor / lightbox UX.
+  useEffect(() => {
+    if (!selectMode) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") exitSelectMode();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectMode]);
 
   const visible = useMemo(
     () => (isAdmin && showHidden ? photos : photos.filter((p) => !p.hidden)),
@@ -172,6 +205,27 @@ export function PhotoGrid({
           >
             + upload{albumId ? " here" : ""}
           </Link>
+          <button
+            type="button"
+            onClick={() => {
+              if (selectMode) exitSelectMode();
+              else setSelectMode(true);
+            }}
+            aria-pressed={selectMode}
+            className={
+              "lift inline-flex items-center gap-1.5 rounded-pill px-3 py-1.5 text-sm font-semibold border " +
+              (selectMode
+                ? "bg-pink-300 text-white border-pink-300"
+                : "bg-white text-pink-800 border-pink-100 hover:border-pink-200")
+            }
+          >
+            {selectMode ? "✓ selecting" : "☐ select"}
+            {selectedIds.size > 0 ? (
+              <span className="text-[11px] bg-pink-100/80 text-pink-700 rounded-full px-1.5">
+                {selectedIds.size}
+              </span>
+            ) : null}
+          </button>
           {hiddenCount > 0 ? (
             <button
               type="button"
@@ -228,6 +282,9 @@ export function PhotoGrid({
           photos={filtered}
           albumMap={albumMap}
           isAdmin={isAdmin}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelected}
           onOpen={(i) => setOpenIdx(i)}
           onEdit={onEdit}
           onToggleHidden={onToggleHidden}
@@ -237,6 +294,50 @@ export function PhotoGrid({
           busy={pending}
         />
       )}
+
+      {selectMode && selectedIds.size > 0 ? (
+        <SelectionBar
+          selectedCount={selectedIds.size}
+          albums={albums}
+          busy={pending}
+          onSelectAll={() =>
+            setSelectedIds(new Set(filtered.map((p) => p.id)))
+          }
+          onClear={exitSelectMode}
+          onDelete={() => {
+            if (
+              !window.confirm(
+                `Delete ${selectedIds.size} photo${
+                  selectedIds.size === 1 ? "" : "s"
+                }? This can't be undone.`
+              )
+            )
+              return;
+            const ids = Array.from(selectedIds);
+            runAction(async () => {
+              const r = await deletePhotos(ids);
+              if (r.ok) exitSelectMode();
+              return { ok: r.ok, error: r.error };
+            });
+          }}
+          onHide={(hide) => {
+            const ids = Array.from(selectedIds);
+            runAction(async () => {
+              const r = await setPhotosHidden(ids, hide);
+              if (r.ok) exitSelectMode();
+              return { ok: r.ok, error: r.error };
+            });
+          }}
+          onMove={(targetAlbumId) => {
+            const ids = Array.from(selectedIds);
+            runAction(async () => {
+              const r = await setPhotosAlbum(ids, targetAlbumId);
+              if (r.ok) exitSelectMode();
+              return { ok: r.ok, error: r.error };
+            });
+          }}
+        />
+      ) : null}
 
       {openIdx !== null ? (
         <Lightbox
@@ -296,6 +397,9 @@ function MasonryGrid({
   photos,
   albumMap,
   isAdmin,
+  selectMode,
+  selectedIds,
+  onToggleSelect,
   onOpen,
   onEdit,
   onToggleHidden,
@@ -307,6 +411,9 @@ function MasonryGrid({
   photos: Photo[];
   albumMap: Map<string, Album>;
   isAdmin: boolean;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
   onOpen: (i: number) => void;
   onEdit: (p: Photo) => void;
   onToggleHidden: (p: Photo) => void;
@@ -347,6 +454,9 @@ function MasonryGrid({
                 frameWidth={decor.frameWidth}
                 filter={decor.filter}
                 isAdmin={isAdmin}
+                selectMode={selectMode}
+                selected={selectedIds.has(photo.id)}
+                onToggleSelect={() => onToggleSelect(photo.id)}
                 eager={globalIndex < 6}
                 onOpen={() => onOpen(globalIndex)}
                 onEdit={() => onEdit(photo)}
@@ -370,6 +480,9 @@ function PhotoTile({
   frameWidth,
   filter,
   isAdmin,
+  selectMode,
+  selected,
+  onToggleSelect,
   eager,
   onOpen,
   onEdit,
@@ -384,6 +497,9 @@ function PhotoTile({
   frameWidth: string;
   filter: string | null;
   isAdmin: boolean;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
   eager: boolean;
   onOpen: () => void;
   onEdit: () => void;
@@ -426,14 +542,21 @@ function PhotoTile({
             : "border-lavender-200 ring-2 ring-lavender-100"
           : isSolidFrame
           ? ""
-          : "border-pink-100 hover:border-pink-200")
+          : "border-pink-100 hover:border-pink-200") +
+        (selected ? " outline outline-2 outline-pink-400 outline-offset-2" : "")
       }
     >
       <button
         type="button"
-        onClick={onOpen}
+        onClick={selectMode ? onToggleSelect : onOpen}
         className="block w-full text-left"
-        aria-label={photo.caption || "open photo"}
+        aria-label={
+          selectMode
+            ? selected
+              ? "deselect photo"
+              : "select photo"
+            : photo.caption || "open photo"
+        }
       >
         {isTrivialPhotoCrop(photo) ? (
           <>
@@ -514,6 +637,24 @@ function PhotoTile({
       {photo.hidden ? (
         <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide font-bold rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 border border-lavender-200">
           hidden
+        </span>
+      ) : null}
+
+      {/* Selection state — checkbox-style chip in the top-right
+          corner when select mode is active. Pointer-events disabled
+          so the click goes through to the photo wrapper (which
+          handles toggle in select mode). */}
+      {selectMode ? (
+        <span
+          className={
+            "pointer-events-none absolute top-2 right-2 w-6 h-6 rounded-full border-2 flex items-center justify-center text-[12px] font-bold shadow-soft " +
+            (selected
+              ? "bg-pink-300 text-white border-pink-300"
+              : "bg-cream/90 text-pink-700 border-pink-300/70")
+          }
+          aria-hidden
+        >
+          {selected ? "✓" : ""}
         </span>
       ) : null}
 
@@ -614,6 +755,125 @@ function FilterPill({
       >
         {count}
       </span>
+    </button>
+  );
+}
+
+// Sticky mass-action bar shown when admin has selected one or more
+// photos. Hosts delete / hide / unhide / move-to-album / select-all
+// / clear, plus a count of how many photos are currently selected.
+function SelectionBar({
+  selectedCount,
+  albums,
+  busy,
+  onSelectAll,
+  onClear,
+  onDelete,
+  onHide,
+  onMove,
+}: {
+  selectedCount: number;
+  albums: Album[];
+  busy: boolean;
+  onSelectAll: () => void;
+  onClear: () => void;
+  onDelete: () => void;
+  onHide: (hide: boolean) => void;
+  onMove: (albumId: string | null) => void;
+}) {
+  const [moveOpen, setMoveOpen] = useState(false);
+  return (
+    <div className="fixed inset-x-0 bottom-3 z-[90] flex justify-center px-3 pointer-events-none">
+      <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-pill bg-skynavy-900/90 text-cream border border-cream/30 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-sm px-3 py-2 max-w-full">
+        <span className="text-[12px] font-semibold pr-1">
+          {selectedCount} selected
+        </span>
+        <BarBtn onClick={onSelectAll} disabled={busy}>
+          select all
+        </BarBtn>
+        <BarBtn onClick={() => onHide(true)} disabled={busy}>
+          ◐ hide
+        </BarBtn>
+        <BarBtn onClick={() => onHide(false)} disabled={busy}>
+          ○ unhide
+        </BarBtn>
+        <div className="relative">
+          <BarBtn
+            onClick={() => setMoveOpen((v) => !v)}
+            disabled={busy}
+            active={moveOpen}
+          >
+            ✿ move to…
+          </BarBtn>
+          {moveOpen ? (
+            <div className="absolute bottom-full mb-2 right-0 min-w-[180px] max-h-[240px] overflow-y-auto rounded-md bg-white text-pink-800 border border-pink-200 shadow-soft py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMoveOpen(false);
+                  onMove(null);
+                }}
+                disabled={busy}
+                className="block w-full text-left px-3 py-1.5 text-[12px] font-semibold hover:bg-pink-50 disabled:opacity-60"
+              >
+                — uncategorized —
+              </button>
+              {albums.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    setMoveOpen(false);
+                    onMove(a.id);
+                  }}
+                  disabled={busy}
+                  className="block w-full text-left px-3 py-1.5 text-[12px] font-semibold hover:bg-pink-50 disabled:opacity-60"
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <BarBtn onClick={onDelete} disabled={busy} danger>
+          ✕ delete
+        </BarBtn>
+        <BarBtn onClick={onClear} disabled={busy}>
+          done
+        </BarBtn>
+      </div>
+    </div>
+  );
+}
+
+function BarBtn({
+  children,
+  onClick,
+  disabled,
+  active,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "rounded-pill border px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-50 " +
+        (active
+          ? "bg-cream/30 text-cream border-cream/40"
+          : danger
+          ? "bg-pink-400/20 text-pink-100 border-pink-300/50 hover:bg-pink-400/40 hover:text-white"
+          : "bg-cream/10 text-cream border-cream/30 hover:bg-cream/20")
+      }
+    >
+      {children}
     </button>
   );
 }
