@@ -395,9 +395,30 @@ export function PhotoGrid({
           selectedCount={selectedIds.size}
           albums={albums}
           busy={pending}
-          onSelectAll={() =>
-            setSelectedIds(new Set(filtered.map((p) => p.id)))
+          allSelected={
+            filtered.length > 0 &&
+            filtered.every((p) => selectedIds.has(p.id))
           }
+          onSelectAll={() => {
+            // Toggle: if every visible photo is already selected,
+            // deselect them; otherwise extend the selection to all
+            // currently-visible photos. Keeps any already-selected
+            // ids from a wider view in the not-all case.
+            const allOn =
+              filtered.length > 0 &&
+              filtered.every((p) => selectedIds.has(p.id));
+            if (allOn) {
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                for (const p of filtered) next.delete(p.id);
+                return next;
+              });
+            } else {
+              setSelectedIds(
+                (prev) => new Set([...prev, ...filtered.map((p) => p.id)])
+              );
+            }
+          }}
           onClear={exitSelectMode}
           onDelete={() => {
             if (
@@ -905,6 +926,7 @@ function SelectionBar({
   selectedCount,
   albums,
   busy,
+  allSelected,
   onSelectAll,
   onClear,
   onDelete,
@@ -914,6 +936,7 @@ function SelectionBar({
   selectedCount: number;
   albums: Album[];
   busy: boolean;
+  allSelected: boolean;
   onSelectAll: () => void;
   onClear: () => void;
   onDelete: () => void;
@@ -927,8 +950,12 @@ function SelectionBar({
         <span className="text-[12px] font-semibold pr-1">
           {selectedCount} selected
         </span>
-        <BarBtn onClick={onSelectAll} disabled={busy}>
-          select all
+        <BarBtn
+          onClick={onSelectAll}
+          disabled={busy}
+          active={allSelected}
+        >
+          {allSelected ? "deselect all" : "select all"}
         </BarBtn>
         <BarBtn onClick={() => onHide(true)} disabled={busy}>
           ◐ hide
