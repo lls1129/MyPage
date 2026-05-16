@@ -216,24 +216,46 @@ export function Lightbox({
           <NavArrow direction="prev" onClick={goPrev} />
 
           {(() => {
-            // Size the wrapper to the photo's aspect-ratio so the
-            // frame overlay can hug the image's actual rendered
-            // edges (not the surrounding letterbox space). If the
-            // photo's dimensions aren't stored we skip the frame
-            // rather than render it misaligned.
+            // Photo + frame + overlays rotate as a single
+            // composition. Wrapper takes the post-rotation aspect;
+            // the rotated container inside is sized so its rotated
+            // visual fills the wrapper.
             const haveDims =
               photo.width &&
               photo.height &&
               photo.width > 0 &&
               photo.height > 0;
             const trivialCrop = isTrivialPhotoCrop(photo);
+            const r = ((photo.rotation ?? 0) + 360) % 360;
+            const isRotated = r === 90 || r === 270;
+            const cropW = haveDims
+              ? (photo.width as number) * photo.crop_w
+              : photo.crop_w;
+            const cropH = haveDims
+              ? (photo.height as number) * photo.crop_h
+              : photo.crop_h;
+            const cropRatio = cropH > 0 ? cropW / cropH : 1;
             const aspect = haveDims
-              ? trivialCrop
-                ? `${photo.width} / ${photo.height}`
-                : `${(photo.width ?? 1) * photo.crop_w} / ${
-                    (photo.height ?? 1) * photo.crop_h
-                  }`
+              ? isRotated
+                ? `${cropH} / ${cropW}`
+                : `${cropW} / ${cropH}`
               : undefined;
+            const rotationTransform = (() => {
+              const parts: string[] = [];
+              if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
+              if (photo.flipped) parts.push("scaleX(-1)");
+              return parts.length > 0 ? parts.join(" ") : undefined;
+            })();
+            const containerStyle: React.CSSProperties = {
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              width: isRotated ? `${cropRatio * 100}%` : "100%",
+              height: isRotated ? `${(1 / cropRatio) * 100}%` : "100%",
+              transform: `translate(-50%, -50%)${
+                rotationTransform ? " " + rotationTransform : ""
+              }`,
+            };
             return (
               <div
                 className={
@@ -255,87 +277,62 @@ export function Lightbox({
                   // screens. Larger meta panels still fit thanks to
                   // the outer overflow-y-auto.
                   maxHeight: "calc(100vh - 260px)",
+                  // The rotated container inside is absolute, so
+                  // without an explicit width the aspect-ratio'd
+                  // wrapper collapses to 0 inside the flex parent.
+                  // Force the wrapper to fill horizontally.
+                  width: haveDims ? "100%" : undefined,
                 }}
               >
-                {/* In-flow photo. For trivial crop it's the visible
-                    image (rotation + flip + filter applied); for a
-                    cropped photo we keep it but mark it invisible so
-                    the wrapper still has a sized in-flow child —
-                    without that the aspect-ratio'd wrapper collapses
-                    to 0 inside the flex parent and only the frame
-                    edge remains visible. Same src either way → no
-                    extra network request. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={photo.image_url}
-                  alt={photo.caption || ""}
-                  style={{
-                    transform: trivialCrop
-                      ? (() => {
-                          const parts: string[] = [];
-                          if (photo.rotation)
-                            parts.push(`rotate(${photo.rotation}deg)`);
-                          if (photo.flipped) parts.push("scaleX(-1)");
-                          return parts.length > 0
-                            ? parts.join(" ")
-                            : undefined;
-                        })()
-                      : undefined,
-                    filter: trivialCrop ? filterCss || undefined : undefined,
-                    visibility: trivialCrop ? undefined : "hidden",
-                    maxHeight: haveDims ? undefined : "calc(100vh - 260px)",
-                    maxWidth: "100%",
-                  }}
-                  className={
-                    haveDims
-                      ? "block w-full h-full object-contain rounded-md shadow-soft transition-transform"
-                      : "object-contain rounded-md shadow-soft transition-transform block"
-                  }
-                />
-                {!trivialCrop ? (
-                  <div className="absolute inset-0 overflow-hidden rounded-md shadow-soft">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                <div style={containerStyle}>
+                  {/* Photo — for trivial crop, an img fills the
+                      rotated container directly. For non-trivial
+                      crop the img is absolutely positioned with
+                      crop-offset math inside an overflow-hidden
+                      sub-wrapper. */}
+                  {trivialCrop ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={photo.image_url}
-                      alt=""
-                      aria-hidden
-                      style={{
-                        position: "absolute",
-                        width: `${100 / photo.crop_w}%`,
-                        height: "auto",
-                        left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
-                        top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
-                        maxWidth: "none",
-                        transform: (() => {
-                          const parts: string[] = [];
-                          if (photo.rotation)
-                            parts.push(`rotate(${photo.rotation}deg)`);
-                          if (photo.flipped) parts.push("scaleX(-1)");
-                          return parts.length > 0
-                            ? parts.join(" ")
-                            : undefined;
-                        })(),
-                        filter: filterCss || undefined,
-                      }}
-                      className="block transition-transform"
+                      alt={photo.caption || ""}
+                      style={{ filter: filterCss || undefined }}
+                      className="block w-full h-full object-contain rounded-md shadow-soft transition-transform"
                     />
-                  </div>
-                ) : null}
-                {haveDims && frameClass ? (
-                  <span
-                    aria-hidden
-                    className={
-                      "absolute inset-0 pointer-events-none " + frameClass
-                    }
+                  ) : (
+                    <div className="absolute inset-0 overflow-hidden rounded-md shadow-soft">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.image_url}
+                        alt={photo.caption || ""}
+                        style={{
+                          position: "absolute",
+                          width: `${100 / photo.crop_w}%`,
+                          height: "auto",
+                          left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
+                          top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
+                          maxWidth: "none",
+                          filter: filterCss || undefined,
+                        }}
+                        className="block transition-transform"
+                      />
+                    </div>
+                  )}
+                  {haveDims && frameClass ? (
+                    <span
+                      aria-hidden
+                      className={
+                        "absolute inset-0 pointer-events-none " + frameClass
+                      }
+                    />
+                  ) : null}
+                  {/* Per-photo overlays painted at the photo area —
+                      inherits the frame inset so stickers stay
+                      anchored to the photo when admin solid-frames. */}
+                  <OverlayLayer
+                    overlays={normalizeOverlays(photo.cover_overlays)}
+                    insetClass={frameInsetFor(decor.frame, decor.frameWidth)}
                   />
-                ) : null}
-                {/* Per-photo overlays painted at the photo area —
-                    inherits the frame inset so stickers stay
-                    anchored to the photo when admin solid-frames. */}
-                <OverlayLayer
-                  overlays={normalizeOverlays(photo.cover_overlays)}
-                  insetClass={frameInsetFor(decor.frame, decor.frameWidth)}
-                />
+                </div>
               </div>
             );
           })()}

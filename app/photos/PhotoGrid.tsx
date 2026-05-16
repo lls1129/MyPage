@@ -662,6 +662,36 @@ function PhotoTile({
     frameOuterRadiusFor(frame, frameWidth) ||
     (isSolidFrame ? "" : "rounded-md");
   const padClass = isSolidFrame ? framePadFor(frame, frameWidth) : "";
+  // Rotation handling. Photo + frame + overlays all rotate as one
+  // composition, so the wrapper takes the post-rotation aspect and
+  // the inner rotated container is sized to fill it after the
+  // rotate transform fires.
+  const r = ((photo.rotation ?? 0) + 360) % 360;
+  const isRotated = r === 90 || r === 270;
+  const haveDims =
+    !!(photo.width && photo.height && photo.width > 0 && photo.height > 0);
+  const cropW = haveDims
+    ? (photo.width as number) * photo.crop_w
+    : photo.crop_w;
+  const cropH = haveDims
+    ? (photo.height as number) * photo.crop_h
+    : photo.crop_h;
+  const cropRatio = cropH > 0 ? cropW / cropH : 1;
+  const effectiveAspect = isRotated
+    ? `${cropH} / ${cropW}`
+    : `${cropW} / ${cropH}`;
+  const rotationTransform = transformStyle(photo.rotation, photo.flipped)
+    ?.transform;
+  const containerStyle: React.CSSProperties = {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    width: isRotated ? `${cropRatio * 100}%` : "100%",
+    height: isRotated ? `${(1 / cropRatio) * 100}%` : "100%",
+    transform: `translate(-50%, -50%)${
+      rotationTransform ? " " + rotationTransform : ""
+    }`,
+  };
   return (
     <div
       className={
@@ -682,94 +712,79 @@ function PhotoTile({
           : "border-pink-100 hover:border-pink-200") +
         (selected ? " outline outline-2 outline-pink-400 outline-offset-2" : "")
       }
+      style={{ aspectRatio: effectiveAspect }}
     >
-      <button
-        type="button"
-        onClick={selectMode ? onToggleSelect : onOpen}
-        className="block w-full text-left"
-        aria-label={
-          selectMode
-            ? selected
-              ? "deselect photo"
-              : "select photo"
-            : photo.caption || "open photo"
-        }
-      >
-        {isTrivialPhotoCrop(photo) ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+      <div style={containerStyle}>
+        <button
+          type="button"
+          onClick={selectMode ? onToggleSelect : onOpen}
+          className="absolute inset-0 block w-full h-full text-left"
+          aria-label={
+            selectMode
+              ? selected
+                ? "deselect photo"
+                : "select photo"
+              : photo.caption || "open photo"
+          }
+        >
+          {isTrivialPhotoCrop(photo) ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={photo.image_url}
               alt={photo.caption || ""}
-              width={photo.width ?? undefined}
-              height={photo.height ?? undefined}
               loading={eager ? "eager" : "lazy"}
               decoding="async"
-              style={{
-                ...(transformStyle(photo.rotation, photo.flipped) ?? {}),
-                filter: filterCss || undefined,
-              }}
+              style={{ filter: filterCss || undefined }}
               className={
-                "block w-full h-auto transition-transform " +
+                "block w-full h-full object-cover transition-transform " +
                 (photo.hidden ? "opacity-60" : "")
               }
             />
-          </>
-        ) : (
+          ) : (
+            <div className="relative w-full h-full overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.image_url}
+                alt={photo.caption || ""}
+                loading={eager ? "eager" : "lazy"}
+                decoding="async"
+                style={{
+                  position: "absolute",
+                  width: `${100 / photo.crop_w}%`,
+                  height: "auto",
+                  left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
+                  top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
+                  maxWidth: "none",
+                  filter: filterCss || undefined,
+                }}
+                className={
+                  "block transition-transform " +
+                  (photo.hidden ? "opacity-60" : "")
+                }
+              />
+            </div>
+          )}
+        </button>
+
+        {/* Frame overlay — sits above the image, intercepts no clicks
+            so the open-photo button below still receives them. */}
+        {frameClass ? (
           <div
-            className="relative w-full overflow-hidden"
-            style={{
-              aspectRatio:
-                photo.width && photo.height
-                  ? `${photo.width * photo.crop_w} / ${
-                      photo.height * photo.crop_h
-                    }`
-                  : `${photo.crop_w} / ${photo.crop_h}`,
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.image_url}
-              alt={photo.caption || ""}
-              loading={eager ? "eager" : "lazy"}
-              decoding="async"
-              style={{
-                position: "absolute",
-                width: `${100 / photo.crop_w}%`,
-                height: "auto",
-                left: `${(-photo.crop_x / photo.crop_w) * 100}%`,
-                top: `${(-photo.crop_y / photo.crop_h) * 100}%`,
-                maxWidth: "none",
-                ...(transformStyle(photo.rotation, photo.flipped) ?? {}),
-                filter: filterCss || undefined,
-              }}
-              className={
-                "block transition-transform " +
-                (photo.hidden ? "opacity-60" : "")
-              }
-            />
-          </div>
-        )}
-      </button>
+            className={"absolute inset-0 pointer-events-none " + frameClass}
+            aria-hidden
+          />
+        ) : null}
 
-      {/* Frame overlay — sits above the image, intercepts no clicks
-          so the open-photo button below still receives them. */}
-      {frameClass ? (
-        <div
-          className={"absolute inset-0 pointer-events-none " + frameClass}
-          aria-hidden
+        {/* Per-photo overlays (stickers / captions / drawings).
+            Positioned to match the photo's inner area when a solid
+            frame is applied — same insetClass pattern as album
+            covers, so decorations stay anchored to the photo. */}
+        <OverlayLayer
+          overlays={normalizeOverlays(photo.cover_overlays)}
+          className={photo.hidden ? "opacity-60" : ""}
+          insetClass={frameInsetFor(frame, frameWidth)}
         />
-      ) : null}
-
-      {/* Per-photo overlays (stickers / captions / drawings).
-          Positioned to match the photo's inner area when a solid
-          frame is applied — same insetClass pattern as album
-          covers, so decorations stay anchored to the photo. */}
-      <OverlayLayer
-        overlays={normalizeOverlays(photo.cover_overlays)}
-        className={photo.hidden ? "opacity-60" : ""}
-        insetClass={frameInsetFor(frame, frameWidth)}
-      />
+      </div>
 
       {photo.hidden ? (
         <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide font-bold rounded-pill bg-lavender-100 text-lavender-800 px-2 py-0.5 border border-lavender-200">
