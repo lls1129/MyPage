@@ -15,6 +15,7 @@ const NAV = [
   { href: "/bio", label: "bio" },
   { href: "/blog", label: "blog" },
   { href: "/meals", label: "meals" },
+  { href: "/pets", label: "pets" },
 ] as const;
 
 function isActive(pathname: string, href: string) {
