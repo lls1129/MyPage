@@ -52,11 +52,14 @@ import {
 // least one photo via the ↑ / ↓ tile buttons.
 type SortMode = "uploaded" | "taken" | "caption" | "manual";
 
+// Short labels — the dropdown sits in the same admin toolbar as
+// "+ upload" / ☐ select / show hidden. Long strings push the
+// sort to a second row on narrow mobile widths.
 const SORT_OPTIONS: { id: SortMode; label: string }[] = [
-  { id: "uploaded", label: "newest uploaded" },
-  { id: "taken", label: "newest taken" },
-  { id: "caption", label: "caption a→z" },
-  { id: "manual", label: "manual order" },
+  { id: "uploaded", label: "uploaded" },
+  { id: "taken", label: "taken" },
+  { id: "caption", label: "caption" },
+  { id: "manual", label: "manual" },
 ];
 
 const SORT_STORAGE_KEY = "photo-grid-sort";

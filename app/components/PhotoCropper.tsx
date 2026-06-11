@@ -332,6 +332,9 @@ function CornerHandle({
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
 }) {
+  // Outer span: 40×40 invisible hit target centered on the corner —
+  // gives fingers a reasonable touch area. Inner span paints the
+  // 16×16 visible dot.
   const placement: Record<typeof pos, string> = {
     nw: "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
     ne: "right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
@@ -345,10 +348,15 @@ function CornerHandle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       className={
-        "absolute w-4 h-4 rounded-full bg-cream border-2 border-pink-400 shadow-soft touch-none " +
+        "absolute w-10 h-10 flex items-center justify-center touch-none " +
         placement[pos]
       }
-    />
+    >
+      <span
+        aria-hidden
+        className="w-4 h-4 rounded-full bg-cream border-2 border-pink-400 shadow-soft"
+      />
+    </span>
   );
 }
 
@@ -363,11 +371,20 @@ function EdgeHandle({
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
 }) {
+  // Outer span carries a fat hit area in the resize direction (40px
+  // across the edge, 28px out from it) while the visible bar stays
+  // the original 32×12 / 12×32 pill.
   const placement: Record<typeof pos, string> = {
-    n: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-8 h-3 cursor-ns-resize",
-    s: "left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 w-8 h-3 cursor-ns-resize",
-    e: "right-0 top-1/2 translate-x-1/2 -translate-y-1/2 h-8 w-3 cursor-ew-resize",
-    w: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-3 cursor-ew-resize",
+    n: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-12 h-9 cursor-ns-resize",
+    s: "left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 w-12 h-9 cursor-ns-resize",
+    e: "right-0 top-1/2 translate-x-1/2 -translate-y-1/2 h-12 w-9 cursor-ew-resize",
+    w: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 h-12 w-9 cursor-ew-resize",
+  };
+  const visual: Record<typeof pos, string> = {
+    n: "w-8 h-3",
+    s: "w-8 h-3",
+    e: "h-8 w-3",
+    w: "h-8 w-3",
   };
   return (
     <span
@@ -376,9 +393,16 @@ function EdgeHandle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       className={
-        "absolute rounded-full bg-cream border-2 border-pink-400 shadow-soft touch-none " +
-        placement[pos]
+        "absolute flex items-center justify-center touch-none " + placement[pos]
       }
-    />
+    >
+      <span
+        aria-hidden
+        className={
+          "rounded-full bg-cream border-2 border-pink-400 shadow-soft " +
+          visual[pos]
+        }
+      />
+    </span>
   );
 }

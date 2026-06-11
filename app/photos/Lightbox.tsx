@@ -235,11 +235,13 @@ export function Lightbox({
               ? (photo.height as number) * photo.crop_h
               : photo.crop_h;
             const cropRatio = cropH > 0 ? cropW / cropH : 1;
-            const aspect = haveDims
-              ? isRotated
-                ? `${cropH} / ${cropW}`
-                : `${cropW} / ${cropH}`
-              : undefined;
+            // Post-rotation dimensions of the visible photo, used
+            // for both the aspect-ratio'd wrapper AND for computing
+            // the max-height-aware width so the wrapper never
+            // stretches beyond what the photo's aspect allows.
+            const postW = isRotated ? cropH : cropW;
+            const postH = isRotated ? cropW : cropH;
+            const aspect = haveDims ? `${postW} / ${postH}` : undefined;
             const rotationTransform = (() => {
               const parts: string[] = [];
               if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
@@ -268,20 +270,18 @@ export function Lightbox({
                 }
                 style={{
                   aspectRatio: aspect,
-                  maxWidth: "100%",
-                  // Hard viewport cap so tall portrait photos don't
-                  // balloon the layout. ~260px reserves room for top
-                  // bar + a typical meta panel (caption + admin
-                  // actions + the two decoration chip rows) so they
-                  // stay reachable without scrolling on most
-                  // screens. Larger meta panels still fit thanks to
-                  // the outer overflow-y-auto.
-                  maxHeight: "calc(100vh - 260px)",
-                  // The rotated container inside is absolute, so
-                  // without an explicit width the aspect-ratio'd
-                  // wrapper collapses to 0 inside the flex parent.
-                  // Force the wrapper to fill horizontally.
-                  width: haveDims ? "100%" : undefined,
+                  // Width is constrained by BOTH the flex parent's
+                  // 100% AND the largest width that keeps the
+                  // aspect-ratio'd height under the viewport cap.
+                  // Otherwise width=100% + maxHeight clamp would
+                  // silently break the aspect-ratio constraint and
+                  // the wrapper would extend wider than the visible
+                  // photo, putting OverlayLayer / frame on empty
+                  // canvas to the photo's sides. (Lightbox meta
+                  // panel + top bar consume ~260px of viewport.)
+                  width: haveDims
+                    ? `min(100%, calc((100vh - 260px) * ${postW} / ${postH}))`
+                    : undefined,
                 }}
               >
                 <div style={containerStyle}>

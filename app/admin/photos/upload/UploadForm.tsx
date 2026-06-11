@@ -1226,27 +1226,31 @@ function UploadSuccessCard({
           ) : null}
 
           {confirmingDelete ? (
-            <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-100/70 border border-pink-200 px-3 py-2 text-[12px] text-pink-800">
+            <div className="flex items-center gap-2 flex-wrap justify-between rounded-md bg-pink-100/70 border border-pink-200 px-3 py-2 text-[12px] text-pink-800">
               <span className="font-semibold">
                 delete this photo? this can’t be undone.
               </span>
-              <span className="flex-1" />
-              <button
-                type="button"
-                onClick={doDelete}
-                disabled={deletePending}
-                className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
-              >
-                {deletePending ? "deleting…" : "yes, delete"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(false)}
-                disabled={deletePending}
-                className="rounded-pill bg-white text-pink-800 border border-pink-200 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
-              >
-                cancel
-              </button>
+              {/* Buttons grouped so they wrap together on narrow
+                  widths instead of "yes, delete" snapping to the
+                  message's row while "cancel" drops alone. */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={doDelete}
+                  disabled={deletePending}
+                  className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+                >
+                  {deletePending ? "deleting…" : "yes, delete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deletePending}
+                  className="rounded-pill bg-white text-pink-800 border border-pink-200 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+                >
+                  cancel
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -2689,27 +2693,29 @@ function BatchItemEditor({
             />
 
             {confirmingDelete ? (
-              <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-400/15 border border-pink-300/50 px-3 py-2 text-[12px] text-cream">
+              <div className="flex items-center gap-2 flex-wrap justify-between rounded-md bg-pink-400/15 border border-pink-300/50 px-3 py-2 text-[12px] text-cream">
                 <span className="font-semibold">
                   delete this photo? this can’t be undone.
                 </span>
-                <span className="flex-1" />
-                <button
-                  type="button"
-                  onClick={doDelete}
-                  disabled={deletePending}
-                  className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
-                >
-                  {deletePending ? "deleting…" : "yes, delete"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(false)}
-                  disabled={deletePending}
-                  className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
-                >
-                  cancel
-                </button>
+                {/* Buttons grouped so they wrap together. */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={doDelete}
+                    disabled={deletePending}
+                    className="rounded-pill bg-pink-400 text-white border border-pink-400 hover:bg-pink-500 hover:border-pink-500 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+                  >
+                    {deletePending ? "deleting…" : "yes, delete"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(false)}
+                    disabled={deletePending}
+                    className="rounded-pill bg-cream/10 text-cream border border-cream/30 hover:bg-cream/20 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+                  >
+                    cancel
+                  </button>
+                </div>
               </div>
             ) : null}
 

@@ -12,6 +12,7 @@ import {
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
   STICKER_QUICK_PICKS,
+  strokeBoundingBox,
   strokePointsToPath,
   type CoverOverlay,
   type HighlightShape,
@@ -78,6 +79,12 @@ export function OverlayEditor({
   defaultOpen?: boolean;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
+  // Cached stage rect for the duration of one gesture. Set in
+  // startDrag / startDraw / startRotate and cleared on end. Lets us
+  // ignore any layout shift that happens after the user puts their
+  // finger down — without this, even a small toolbar reflow during
+  // drawing yanks the fraction math under their finger.
+  const gestureRectRef = useRef<DOMRect | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const rotateRef = useRef<{ id: string } | null>(null);
   /** Stroke-in-progress while in draw mode. The drawing overlay is
@@ -331,6 +338,8 @@ export function OverlayEditor({
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    const stage = stageRef.current;
+    if (stage) gestureRectRef.current = stage.getBoundingClientRect();
     setSelectedId(overlay.id);
     bookmark();
     dragRef.current = {
@@ -346,7 +355,7 @@ export function OverlayEditor({
     const d = dragRef.current;
     const stage = stageRef.current;
     if (!d || !stage) return;
-    const rect = stage.getBoundingClientRect();
+    const rect = gestureRectRef.current ?? stage.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const dx = (e.clientX - d.startPointerX) / rect.width;
     const dy = (e.clientY - d.startPointerY) / rect.height;
@@ -365,6 +374,7 @@ export function OverlayEditor({
     if (!dragRef.current) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     dragRef.current = null;
+    gestureRectRef.current = null;
     // Persist whatever the latest local state is.
     commitWithBookmark(overlays);
   }
@@ -377,6 +387,8 @@ export function OverlayEditor({
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    const stage = stageRef.current;
+    if (stage) gestureRectRef.current = stage.getBoundingClientRect();
     setSelectedId(overlay.id);
     bookmark();
     rotateRef.current = { id: overlay.id };
@@ -393,6 +405,7 @@ export function OverlayEditor({
     if (!rotateRef.current) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     rotateRef.current = null;
+    gestureRectRef.current = null;
     commitWithBookmark(overlays);
   }
 
@@ -405,7 +418,10 @@ export function OverlayEditor({
   ): { x: number; y: number } | null {
     const stage = stageRef.current;
     if (!stage) return null;
-    const rect = stage.getBoundingClientRect();
+    // Prefer the rect captured at gesture start so a mid-drag
+    // layout shift (e.g. the editor toolbar growing) doesn't change
+    // the coordinate system under the user's finger.
+    const rect = gestureRectRef.current ?? stage.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return null;
     return {
       x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
@@ -414,8 +430,13 @@ export function OverlayEditor({
   }
 
   function startDraw(e: React.PointerEvent) {
+    const stage = stageRef.current;
+    if (stage) gestureRectRef.current = stage.getBoundingClientRect();
     const p = pointerToStageFraction(e);
-    if (!p) return;
+    if (!p) {
+      gestureRectRef.current = null;
+      return;
+    }
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     bookmark();
@@ -491,9 +512,13 @@ export function OverlayEditor({
 
   function endDraw(e: React.PointerEvent) {
     const d = drawRef.current;
-    if (!d) return;
+    if (!d) {
+      gestureRectRef.current = null;
+      return;
+    }
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     drawRef.current = null;
+    gestureRectRef.current = null;
     // If the just-ended segment is degenerate (no real movement),
     // strip it before persisting. If that leaves the stroke
     // overlay with zero segments, drop the overlay entirely.
@@ -538,12 +563,22 @@ export function OverlayEditor({
   function applyRotationFromPointer(e: React.PointerEvent, id: string) {
     const stage = stageRef.current;
     if (!stage) return;
-    const rect = stage.getBoundingClientRect();
+    const rect = gestureRectRef.current ?? stage.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const overlay = overlays.find((o) => o.id === id);
     if (!overlay) return;
-    const cx = rect.left + overlay.x * rect.width;
-    const cy = rect.top + overlay.y * rect.height;
+    // Strokes pivot around the bbox center (where the handle is
+    // painted), not the overlay's nominal (x, y) which is fixed at
+    // the stage center for strokes.
+    const pivot =
+      overlay.type === "stroke"
+        ? (() => {
+            const b = strokeBoundingBox(overlay.segments, overlay.scale);
+            return { x: b.cx, y: b.cy };
+          })()
+        : { x: overlay.x, y: overlay.y };
+    const cx = rect.left + pivot.x * rect.width;
+    const cy = rect.top + pivot.y * rect.height;
     // Angle from center to pointer. +90 so that "directly above"
     // maps to 0° (matching how CSS rotates 0° = identity, with
     // the handle painted above the overlay at 0°).
@@ -618,25 +653,28 @@ export function OverlayEditor({
             {overlays.length} of {OVERLAY_LIMIT} · drag to reposition
           </p>
           <SaveStatusPill status={saveStatus} />
-          {/* Clear-all pill shares the status row so the row doesn't
-              wrap to just the status pill on mobile. Only rendered
-              when there's something to clear. */}
-          {overlays.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => {
-                endDrawSession();
-                setDrawMode(false);
-                setEraserMode(false);
-                setActiveAdder(null);
-                modify([]);
-              }}
-              title="remove every overlay"
-              className="inline-flex items-center rounded-pill border border-pink-200 bg-white text-pink-700 hover:border-pink-400 px-2 py-0.5 text-[10px] font-semibold"
-            >
-              ✕ clear all
-            </button>
-          ) : null}
+          {/* Clear-all pill is always rendered (visible-but-disabled
+              when no overlays). The earlier conditional render was
+              causing the toolbar to add a new wrapped row the
+              instant the first stroke landed, which on mobile
+              shifted the stage down mid-touch. Always-on-but-
+              disabled keeps the wrap point stable across stroke
+              counts. */}
+          <button
+            type="button"
+            onClick={() => {
+              endDrawSession();
+              setDrawMode(false);
+              setEraserMode(false);
+              setActiveAdder(null);
+              modify([]);
+            }}
+            disabled={overlays.length === 0}
+            title="remove every overlay"
+            className="inline-flex items-center rounded-pill border border-pink-200 bg-white text-pink-700 hover:border-pink-400 px-2 py-0.5 text-[10px] font-semibold disabled:opacity-30 disabled:cursor-default disabled:hover:border-pink-200"
+          >
+            ✕ clear all
+          </button>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <UndoRedoPill
@@ -715,6 +753,22 @@ export function OverlayEditor({
                 // out the current drawing session so the next
                 // stroke starts a fresh overlay layer.
                 if (!next || v) endDrawSession();
+                // When entering draw mode on a tall mobile layout,
+                // the toolbar above can push the stage so that its
+                // bottom sits below the viewport — the user can
+                // see the photo by scrolling but can't reach the
+                // lower half with their finger. Pull the stage
+                // into the center of the viewport so both edges
+                // are reachable. Defer to next frame so React has
+                // committed the draw-panel expansion first.
+                if (next) {
+                  requestAnimationFrame(() => {
+                    stageRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "center",
+                    });
+                  });
+                }
                 return next;
               });
             }}
@@ -949,10 +1003,23 @@ export function OverlayEditor({
           ))}
           {/* Rotation handle for the selected overlay — a small dot
               anchored "above" the overlay in its rotated frame.
-              Dragging it spins the overlay around its center. */}
+              Dragging it spins the overlay around its center. For
+              strokes the pivot is the bbox center (the overlay's
+              own x/y is fixed at the stage center). */}
           {!drawMode && selected ? (
             <RotationHandle
               overlay={selected}
+              pivot={
+                selected.type === "stroke"
+                  ? (() => {
+                      const b = strokeBoundingBox(
+                        selected.segments,
+                        selected.scale
+                      );
+                      return { x: b.cx, y: b.cy };
+                    })()
+                  : { x: selected.x, y: selected.y }
+              }
               onPointerDown={(e) => startRotate(e, selected)}
             />
           ) : null}
@@ -1048,65 +1115,73 @@ function EditableOverlay({
     );
   }
   if (o.type === "stroke") {
-    const center = (() => {
-      let sx = 0;
-      let sy = 0;
-      let n = 0;
-      for (const seg of o.segments) {
-        for (const [x, y] of seg.points) {
-          sx += x;
-          sy += y;
-          n++;
-        }
-      }
-      if (n === 0) return { x: 0.5, y: 0.5 };
-      return { x: sx / n, y: sy / n };
-    })();
+    // Stroke SVG fills the stage with a fixed `0 0 100 100` viewBox
+    // sized by definite CSS percentages + preserveAspectRatio="none"
+    // — identical to the highlight-shape renderer below and to the
+    // viewer's StrokeRender. The browser maps the 100-unit viewBox
+    // to the stage's actual box in layout space, so this stays in
+    // the SAME coordinate space as the pointer-capture math (which
+    // is itself scale-invariant). The earlier measured-pixel
+    // `width={px}` approach drifted by a constant scale factor —
+    // error growing with distance from the origin — because
+    // getBoundingClientRect() reports visually-transformed pixels
+    // while the px attributes lay out unscaled.
+    const bbox = strokeBoundingBox(o.segments, o.scale);
     return (
-      <svg
-        onPointerDown={onPointerDown}
-        onClick={(e) => e.stopPropagation()}
-        className={
-          "absolute inset-0 touch-none " +
-          (interactive ? "cursor-move" : "") +
-          " " +
-          (selected
-            ? "outline outline-2 outline-pink-400 outline-offset-2 rounded-sm"
-            : "")
-        }
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-label="select stroke"
-        style={{ pointerEvents: interactive ? "auto" : "none" }}
-      >
-        <g
-          transform={`translate(${center.x * 100} ${
-            center.y * 100
-          }) rotate(${o.rotation}) scale(${o.scale}) translate(${
-            -center.x * 100
-          } ${-center.y * 100})`}
+      <>
+        <svg
+          onPointerDown={onPointerDown}
+          onClick={(e) => e.stopPropagation()}
+          className={"absolute touch-none " + (interactive ? "cursor-move" : "")}
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-label="select stroke"
+          style={{
+            left: 0,
+            top: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: interactive ? "auto" : "none",
+          }}
         >
-          {o.segments.map((seg, i) => {
-            const svg = OVERLAY_SHAPE_SVG[seg.color];
-            return (
-              <path
-                key={i}
-                d={strokePointsToPath(seg.points)}
-                fill="none"
-                stroke={svg.stroke}
-                strokeOpacity={0.92}
-                strokeWidth={Math.max(seg.width * 100, 0.4)}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-                // Make the entire path width grab the pointer for drag/
-                // select, even though the painted line is thinner.
-                pointerEvents={interactive ? "stroke" : "none"}
-              />
-            );
-          })}
-        </g>
-      </svg>
+          <g
+            transform={`translate(${bbox.cx * 100} ${
+              bbox.cy * 100
+            }) rotate(${o.rotation}) scale(${o.scale}) translate(${
+              -bbox.cx * 100
+            } ${-bbox.cy * 100})`}
+          >
+            {o.segments.map((seg, i) => {
+              const svg = OVERLAY_SHAPE_SVG[seg.color];
+              return (
+                <path
+                  key={i}
+                  d={strokePointsToPath(seg.points)}
+                  fill="none"
+                  stroke={svg.stroke}
+                  strokeOpacity={0.92}
+                  strokeWidth={Math.max(seg.width * 100, 0.5)}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pointerEvents={interactive ? "stroke" : "none"}
+                />
+              );
+            })}
+          </g>
+        </svg>
+        {selected ? (
+          <div
+            aria-hidden
+            className="absolute pointer-events-none outline outline-2 outline-pink-400 outline-offset-2 rounded-sm"
+            style={{
+              left: `${bbox.x * 100}%`,
+              top: `${bbox.y * 100}%`,
+              width: `${bbox.w * 100}%`,
+              height: `${bbox.h * 100}%`,
+            }}
+          />
+        ) : null}
+      </>
     );
   }
   // highlight
@@ -1252,17 +1327,22 @@ function UndoRedoPill({
 // own center.
 function RotationHandle({
   overlay: o,
+  pivot,
   onPointerDown,
 }: {
   overlay: CoverOverlay;
+  /** Stage-fraction (0..1) center to pivot around. For most
+   *  overlays this is just (o.x, o.y); strokes pass their bbox
+   *  center so the handle sits at the stroke's actual top. */
+  pivot: { x: number; y: number };
   onPointerDown: (e: React.PointerEvent) => void;
 }) {
   return (
     <div
       className="absolute pointer-events-none"
       style={{
-        left: `${o.x * 100}%`,
-        top: `${o.y * 100}%`,
+        left: `${pivot.x * 100}%`,
+        top: `${pivot.y * 100}%`,
         transform: `translate(-50%, -50%) rotate(${o.rotation}deg)`,
       }}
       aria-hidden

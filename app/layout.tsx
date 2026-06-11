@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Quicksand, Caveat, Noto_Serif_TC } from "next/font/google";
 import "./globals.css";
 
@@ -26,6 +26,18 @@ const notoSerifTC = Noto_Serif_TC({
 export const metadata: Metadata = {
   title: "my world ✿",
   description: "a personal corner of the internet",
+};
+
+// Without this, iOS Safari renders the page into a 980px layout
+// viewport and scales it down to fit, which makes
+// visualViewport.scale ≈ 0.4. Pointer-event clientX/Y and
+// getBoundingClientRect() end up in different coordinate spaces and
+// the overlay drawing offset grows linearly with distance from the
+// origin. Locking width=device-width / scale=1 puts them back in
+// sync.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

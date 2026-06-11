@@ -367,3 +367,66 @@ export function strokePointsToPath(points: [number, number][]): string {
 export function newOverlayId(): string {
   return Math.random().toString(36).slice(2, 11);
 }
+
+export type StrokeBbox = {
+  /** Top-left + size of the un-rotated stroke bbox, in stage 0..1
+   *  fractions. Pre-padded for stroke width × overlay scale. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Center of the bbox — used as the rotation pivot for the SVG
+   *  (matches what the editor's RotationHandle pivots around). */
+  cx: number;
+  cy: number;
+};
+
+/** Compute the axis-aligned bounding box of a stroke overlay,
+ *  padded so the rounded line cap of the widest segment fits
+ *  fully inside, and clamped to the 0..1 stage frame. Used both
+ *  by the editor (to size the selection outline + position the
+ *  rotation handle around the actual stroke instead of the full
+ *  stage) and by the viewer (so rotated strokes paint their full
+ *  cap area without being clipped). */
+export function strokeBoundingBox(
+  segments: { points: [number, number][]; width: number }[],
+  scale: number
+): StrokeBbox {
+  let minX = 1;
+  let minY = 1;
+  let maxX = 0;
+  let maxY = 0;
+  let n = 0;
+  let widest = 0;
+  for (const seg of segments) {
+    if (seg.width > widest) widest = seg.width;
+    for (const [x, y] of seg.points) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      n++;
+    }
+  }
+  if (n === 0) {
+    return { x: 0.45, y: 0.45, w: 0.1, h: 0.1, cx: 0.5, cy: 0.5 };
+  }
+  const pad = (widest / 2) * Math.max(scale, 0.1);
+  let x = Math.max(0, minX - pad);
+  let y = Math.max(0, minY - pad);
+  let w = Math.min(1, maxX + pad) - x;
+  let h = Math.min(1, maxY + pad) - y;
+  // Keep a minimum size so the selection ring is grabbable on
+  // strokes that collapsed to a dot.
+  if (w < 0.05) {
+    const c = x + w / 2;
+    x = Math.max(0, Math.min(1 - 0.05, c - 0.025));
+    w = 0.05;
+  }
+  if (h < 0.05) {
+    const c = y + h / 2;
+    y = Math.max(0, Math.min(1 - 0.05, c - 0.025));
+    h = 0.05;
+  }
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+}

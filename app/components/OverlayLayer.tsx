@@ -12,6 +12,7 @@ import {
   OVERLAY_SHAPE_SVG,
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
+  strokeBoundingBox,
   strokePointsToPath,
   type CoverOverlay,
   type HighlightOverlay,
@@ -150,24 +151,34 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
 }
 
 // Freehand stroke render. Points are normalized 0..1 against the
-// container; we paint them into a fixed 100×100 viewBox so the
-// stroke width stays proportional regardless of the rendered
-// size. The SVG fills the parent's full bounds (inset-0).
+// parent. We paint into a fixed `0 0 100 100` viewBox sized to the
+// parent via definite CSS percentages (width/height: 100%) and
+// preserveAspectRatio="none" — exactly how the highlight shapes
+// above render. The browser stretches the 100-unit viewBox to fill
+// the parent's actual box in layout space, so no JS pixel
+// measurement is involved. That matters: getBoundingClientRect()
+// returns *visually-transformed* pixels, so the previous
+// measured-pixel `width={px}` approach drifted by a constant scale
+// factor (error growing with distance from the origin) whenever an
+// ancestor applied any transform/zoom — while the pointer-capture
+// math, being scale-invariant, stayed correct. Letting CSS do the
+// mapping keeps capture and render in the same coordinate space.
 function StrokeRender({ o }: { o: StrokeOverlay }) {
-  const center = strokeCenter(o);
+  const bbox = strokeBoundingBox(o.segments, o.scale);
   return (
     <svg
-      className="absolute inset-0 pointer-events-none"
+      className="absolute pointer-events-none"
+      style={{ left: 0, top: 0, width: "100%", height: "100%" }}
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
       aria-hidden
     >
       <g
-        transform={`translate(${center.x * 100} ${
-          center.y * 100
+        transform={`translate(${bbox.cx * 100} ${
+          bbox.cy * 100
         }) rotate(${o.rotation}) scale(${o.scale}) translate(${
-          -center.x * 100
-        } ${-center.y * 100})`}
+          -bbox.cx * 100
+        } ${-bbox.cy * 100})`}
       >
         {o.segments.map((seg, i) => {
           const svg = OVERLAY_SHAPE_SVG[seg.color];
@@ -178,29 +189,13 @@ function StrokeRender({ o }: { o: StrokeOverlay }) {
               fill="none"
               stroke={svg.stroke}
               strokeOpacity={0.92}
-              strokeWidth={Math.max(seg.width * 100, 0.4)}
+              strokeWidth={Math.max(seg.width * 100, 0.5)}
               strokeLinecap="round"
               strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
             />
           );
         })}
       </g>
     </svg>
   );
-}
-
-function strokeCenter(o: StrokeOverlay): { x: number; y: number } {
-  let sx = 0;
-  let sy = 0;
-  let n = 0;
-  for (const seg of o.segments) {
-    for (const [x, y] of seg.points) {
-      sx += x;
-      sy += y;
-      n++;
-    }
-  }
-  if (n === 0) return { x: 0.5, y: 0.5 };
-  return { x: sx / n, y: sy / n };
 }
