@@ -32,7 +32,7 @@ import {
 } from "../components/cover-decorations";
 import { Lightbox } from "./Lightbox";
 import { PhotoEditModal } from "./PhotoEditModal";
-import { OverlayLayer } from "../components/OverlayLayer";
+import { OverlayLayerCropped } from "../components/OverlayLayer";
 import { normalizeOverlays } from "../components/cover-overlays";
 import {
   togglePhotoHidden,
@@ -899,8 +899,14 @@ function PhotoTile({
             Positioned to match the photo's inner area when a solid
             frame is applied — same insetClass pattern as album
             covers, so decorations stay anchored to the photo. */}
-        <OverlayLayer
+        <OverlayLayerCropped
           overlays={normalizeOverlays(photo.cover_overlays)}
+          crop={{
+            x: photo.crop_x ?? 0,
+            y: photo.crop_y ?? 0,
+            w: photo.crop_w ?? 1,
+            h: photo.crop_h ?? 1,
+          }}
           className={photo.hidden ? "opacity-60" : ""}
           insetClass={frameInsetFor(frame, frameWidth)}
         />

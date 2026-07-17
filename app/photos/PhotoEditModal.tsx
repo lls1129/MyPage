@@ -9,6 +9,7 @@ import {
   updatePhotoMeta,
   setPhotoDecorations,
   setPhotoOverlays,
+  setPhotoCrop,
 } from "./admin-actions";
 import {
   FILTERS,
@@ -19,6 +20,7 @@ import {
   frameOverlayFor,
 } from "../components/cover-decorations";
 import { OverlayEditor } from "../components/OverlayEditor";
+import { PhotoCropper } from "../components/PhotoCropper";
 import {
   normalizeOverlays,
   type CoverOverlay,
@@ -50,6 +52,18 @@ export function PhotoEditModal({
   const [overlays, setOverlays] = useState<CoverOverlay[]>(() =>
     normalizeOverlays(photo.cover_overlays)
   );
+  // Crop is a window onto the full image (source-relative 0..1).
+  // Overlays are stored in FULL-image fractions, so changing the
+  // crop never touches overlay data — the crop just reframes what's
+  // shown (and clips overlays that fall outside it). Local state so
+  // the editor's crop-boundary indicator updates instantly.
+  const [crop, setCrop] = useState({
+    x: photo.crop_x ?? 0,
+    y: photo.crop_y ?? 0,
+    w: photo.crop_w ?? 1,
+    h: photo.crop_h ?? 1,
+  });
+  const [cropping, setCropping] = useState(false);
   const album = albums.find((a) => a.id === photo.album_id) ?? null;
   // Width picker only makes sense when there's actually a frame on
   // this photo (either explicit or inherited from the album).
@@ -91,14 +105,20 @@ export function PhotoEditModal({
   if (!mounted) return null;
 
   return createPortal(
+    // Outer layer owns the backdrop + scroll. When the expanded
+    // overlay editor makes the card taller than the viewport, the
+    // whole layer scrolls (min-h-full + items-center keeps it
+    // centered while short) instead of clipping the card's top and
+    // bottom off-screen with no way to reach them.
     <div
-      className="fixed inset-0 z-[110] bg-skynavy-900/85 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[110] bg-skynavy-900/85 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
-      <div
-        className="w-full max-w-[480px] rounded-lg bg-white border border-pink-100 shadow-soft p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div
+          className="w-full max-w-[480px] rounded-lg bg-white border border-pink-100 shadow-soft p-6"
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className="flex items-baseline justify-between gap-3">
           <p className="label text-lavender-600">edit photo</p>
           <button
@@ -214,6 +234,63 @@ export function PhotoEditModal({
             ) : null}
           </div>
 
+          {/* Crop — trim the source to a window. Overlays are stored
+              in full-image coords, so cropping reframes them (and
+              clips whatever falls outside) without moving them
+              relative to the photo. */}
+          <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-50/60 border border-pink-100 p-2.5">
+            <span className="label text-pink-600">crop</span>
+            <span className="text-[11px] text-lavender-600">
+              {isTrivialCrop(crop)
+                ? "full image"
+                : `${Math.round(crop.w * 100)}% × ${Math.round(
+                    crop.h * 100
+                  )}% window`}
+            </span>
+            <span className="flex-1" />
+            {!isTrivialCrop(crop) ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const full = { x: 0, y: 0, w: 1, h: 1 };
+                  const r = await setPhotoCrop(photo.id, full);
+                  if (r.ok) {
+                    setCrop(full);
+                    router.refresh();
+                  } else {
+                    setError(r.error ?? "couldn’t reset crop.");
+                  }
+                }}
+                className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-1 text-[11px] font-semibold"
+              >
+                reset
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setCropping(true)}
+              className="rounded-pill bg-pink-200 text-white border border-pink-200 hover:bg-pink-300 hover:border-pink-300 px-3 py-1 text-[11px] font-semibold"
+            >
+              ✂ adjust crop
+            </button>
+          </div>
+
+          {cropping ? (
+            <PhotoCropper
+              imageUrl={photo.image_url}
+              initialCrop={crop}
+              onCommit={async (c) => {
+                const r = await setPhotoCrop(photo.id, c);
+                if (r.ok) {
+                  setCrop(c);
+                  router.refresh();
+                }
+                return r;
+              }}
+              onClose={() => setCropping(false)}
+            />
+          ) : null}
+
           {/* Per-photo overlays — stickers / captions / drawings.
               Editor is collapsed by default so the modal stays
               compact for the common case (caption + tags); admin
@@ -251,6 +328,7 @@ export function PhotoEditModal({
                     ? album?.cover_filter ?? null
                     : filter || null
                 }
+                crop={crop}
               />
             }
           />
@@ -270,28 +348,39 @@ export function PhotoEditModal({
             <SaveButton />
           </div>
         </form>
+        </div>
       </div>
     </div>,
     document.body
   );
 }
 
+// A crop is trivial (the whole image) when it starts at the origin
+// and spans the full width and height.
+function isTrivialCrop(c: { x: number; y: number; w: number; h: number }) {
+  return c.x <= 0 && c.y <= 0 && c.w >= 1 && c.h >= 1;
+}
+
 // One decoration row for the photo edit modal. "follow album" is
 // always first; when the album itself has a value, its label hints
 // at what's inherited so admin knows the default they're following.
-// Background for the per-photo OverlayEditor — the photo itself with
-// its effective frame + filter applied, so the overlay editor's
-// preview matches what visitors will see. Used inside PhotoEditModal.
+// Background for the per-photo OverlayEditor — the FULL photo (with
+// frame + filter), so admin draws on the whole image; overlays are
+// stored in full-image coords. When a crop is set, a dashed window +
+// dimmed surround shows which part visitors will actually see, so
+// admin knows what will be clipped. Used inside PhotoEditModal.
 function PhotoOverlayBackground({
   photo,
   frame,
   frameWidth,
   filter,
+  crop,
 }: {
   photo: Photo;
   frame: string | null;
   frameWidth: string;
   filter: string | null;
+  crop: { x: number; y: number; w: number; h: number };
 }) {
   const filterCss = filterCssFor(filter);
   const transform = (() => {
@@ -322,6 +411,21 @@ function PhotoOverlayBackground({
           className="block transition-transform"
         />
       </div>
+      {!isTrivialCrop(crop) ? (
+        <div
+          aria-hidden
+          className="absolute pointer-events-none border-2 border-dashed border-cream/90 rounded-[2px]"
+          style={{
+            left: `${crop.x * 100}%`,
+            top: `${crop.y * 100}%`,
+            width: `${crop.w * 100}%`,
+            height: `${crop.h * 100}%`,
+            // Huge spread dims everything outside the crop window;
+            // the stage container clips it (overflow-hidden).
+            boxShadow: "0 0 0 9999px rgba(24, 16, 43, 0.5)",
+          }}
+        />
+      ) : null}
       {frame ? (
         <div
           className={

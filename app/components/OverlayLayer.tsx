@@ -19,6 +19,76 @@ import {
   type StrokeOverlay,
 } from "./cover-overlays";
 
+export type OverlayCrop = { x: number; y: number; w: number; h: number };
+
+/** True when a crop is the whole image (or effectively so). */
+function isTrivialCrop(c: OverlayCrop): boolean {
+  return (c.x ?? 0) <= 0 && (c.y ?? 0) <= 0 && (c.w ?? 1) >= 1 && (c.h ?? 1) >= 1;
+}
+
+// Overlay layer for a CROPPED photo. Overlays are stored in
+// FULL-image fractions (0..1 of the whole source image) — the crop
+// is just a window onto the image, so overlays stay glued to image
+// content and clip when they fall outside the crop. This renders
+// the same OverlayLayer inside a box positioned + scaled exactly
+// like the cropped <img> (full image extends past the crop viewport;
+// overflow-hidden clips it), so a full-image fraction lands on the
+// same pixel the image shows. For a trivial crop it degrades to a
+// plain OverlayLayer, so uncropped photos are byte-for-byte
+// unchanged.
+export function OverlayLayerCropped({
+  overlays,
+  crop,
+  className,
+  insetClass,
+}: {
+  overlays: CoverOverlay[];
+  crop: OverlayCrop;
+  className?: string;
+  insetClass?: string;
+}) {
+  if (overlays.length === 0) return null;
+  if (isTrivialCrop(crop)) {
+    return (
+      <OverlayLayer
+        overlays={overlays}
+        className={className}
+        insetClass={insetClass}
+      />
+    );
+  }
+  const w = crop.w > 0 ? crop.w : 1;
+  const h = crop.h > 0 ? crop.h : 1;
+  return (
+    <div
+      className={
+        "absolute overflow-hidden pointer-events-none " +
+        (insetClass || "inset-0") +
+        " " +
+        (className ?? "")
+      }
+      aria-hidden
+    >
+      {/* Full-image box: same placement math as the cropped <img>
+          (width 1/crop_w of the viewport, offset by the crop origin).
+          OverlayLayer fills it, so its 0..1 fractions map to the
+          whole image; the parent's overflow-hidden trims whatever
+          spills outside the crop window. */}
+      <div
+        style={{
+          position: "absolute",
+          left: `${(-crop.x / w) * 100}%`,
+          top: `${(-crop.y / h) * 100}%`,
+          width: `${(1 / w) * 100}%`,
+          height: `${(1 / h) * 100}%`,
+        }}
+      >
+        <OverlayLayer overlays={overlays} />
+      </div>
+    </div>
+  );
+}
+
 export function OverlayLayer({
   overlays,
   className,
