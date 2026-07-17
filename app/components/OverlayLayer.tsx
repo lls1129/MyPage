@@ -5,6 +5,9 @@
 // stickers, text, and shapes all stay proportional whether the
 // cover is 80px in a list or 600px in the cropper preview.
 
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import {
   DIAMOND_PATH,
   HEART_PATH,
@@ -13,11 +16,97 @@ import {
   OVERLAY_TEXT_CLASSES,
   STAR_PATH,
   strokeBoundingBox,
-  strokePointsToPath,
   type CoverOverlay,
   type HighlightOverlay,
   type StrokeOverlay,
 } from "./cover-overlays";
+
+// Measure an element's box (via ResizeObserver). Only the RATIO of
+// the returned w:h is used by callers, and a ratio is invariant to
+// any uniform ancestor transform/zoom — so this is safe where
+// absolute getBoundingClientRect pixels would drift.
+function useMeasuredBox<T extends Element>() {
+  const ref = useRef<T | null>(null);
+  const [box, setBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setBox({ w: r.width, h: r.height });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, box] as const;
+}
+
+// Freehand-stroke glyph — just the painted SVG (no pointer events).
+// Shared by the viewer (StrokeRender) and the editor's draggable
+// wrapper. Uses an ASPECT-CORRECT viewBox: the SVG fills its parent
+// (width/height 100%), and its viewBox is set to the measured box's
+// w×h so viewBox aspect == box aspect. With preserveAspectRatio
+// "none" that makes the coordinate scale UNIFORM (x-scale == y-scale)
+// — so stroke thickness is the same in every direction and rotation
+// is a true rotation (no shear). Positions still map correctly (the
+// W/H cancel), and because only the box's *ratio* is used, an
+// ancestor transform can't make it drift.
+export function StrokeGlyph({ o }: { o: StrokeOverlay }) {
+  const [ref, box] = useMeasuredBox<SVGSVGElement>();
+  const W = box.w > 0 ? box.w : 100;
+  const H = box.h > 0 ? box.h : 100;
+  const bbox = strokeBoundingBox(o.segments, o.scale);
+  // Thickness relative to the box's smaller side (aspect-neutral).
+  const unit = Math.min(W, H);
+  const buildPath = (points: [number, number][]) => {
+    if (points.length === 0) return "";
+    if (points.length === 1) {
+      const [x, y] = points[0];
+      return `M ${x * W} ${y * H} L ${x * W + 0.01} ${y * H + 0.01}`;
+    }
+    let d = `M ${points[0][0] * W} ${points[0][1] * H}`;
+    for (let i = 1; i < points.length; i++) {
+      d += ` L ${points[i][0] * W} ${points[i][1] * H}`;
+    }
+    return d;
+  };
+  return (
+    <svg
+      ref={ref}
+      className="absolute pointer-events-none"
+      style={{ left: 0, top: 0, width: "100%", height: "100%" }}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <g
+        transform={`translate(${bbox.cx * W} ${
+          bbox.cy * H
+        }) rotate(${o.rotation}) scale(${o.scale}) translate(${
+          -bbox.cx * W
+        } ${-bbox.cy * H})`}
+      >
+        {o.segments.map((seg, i) => {
+          const svg = OVERLAY_SHAPE_SVG[seg.color];
+          return (
+            <path
+              key={i}
+              d={buildPath(seg.points)}
+              fill="none"
+              stroke={svg.stroke}
+              strokeOpacity={0.92}
+              strokeWidth={Math.max(seg.width * unit, 1)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
 
 export type OverlayCrop = { x: number; y: number; w: number; h: number };
 
@@ -220,52 +309,7 @@ function HighlightRender({ o }: { o: HighlightOverlay }) {
   );
 }
 
-// Freehand stroke render. Points are normalized 0..1 against the
-// parent. We paint into a fixed `0 0 100 100` viewBox sized to the
-// parent via definite CSS percentages (width/height: 100%) and
-// preserveAspectRatio="none" — exactly how the highlight shapes
-// above render. The browser stretches the 100-unit viewBox to fill
-// the parent's actual box in layout space, so no JS pixel
-// measurement is involved. That matters: getBoundingClientRect()
-// returns *visually-transformed* pixels, so the previous
-// measured-pixel `width={px}` approach drifted by a constant scale
-// factor (error growing with distance from the origin) whenever an
-// ancestor applied any transform/zoom — while the pointer-capture
-// math, being scale-invariant, stayed correct. Letting CSS do the
-// mapping keeps capture and render in the same coordinate space.
+// Freehand stroke render — the viewer just paints the glyph.
 function StrokeRender({ o }: { o: StrokeOverlay }) {
-  const bbox = strokeBoundingBox(o.segments, o.scale);
-  return (
-    <svg
-      className="absolute pointer-events-none"
-      style={{ left: 0, top: 0, width: "100%", height: "100%" }}
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      <g
-        transform={`translate(${bbox.cx * 100} ${
-          bbox.cy * 100
-        }) rotate(${o.rotation}) scale(${o.scale}) translate(${
-          -bbox.cx * 100
-        } ${-bbox.cy * 100})`}
-      >
-        {o.segments.map((seg, i) => {
-          const svg = OVERLAY_SHAPE_SVG[seg.color];
-          return (
-            <path
-              key={i}
-              d={strokePointsToPath(seg.points)}
-              fill="none"
-              stroke={svg.stroke}
-              strokeOpacity={0.92}
-              strokeWidth={Math.max(seg.width * 100, 0.5)}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          );
-        })}
-      </g>
-    </svg>
-  );
+  return <StrokeGlyph o={o} />;
 }

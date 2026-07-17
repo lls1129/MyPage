@@ -13,12 +13,12 @@ import {
   STAR_PATH,
   STICKER_QUICK_PICKS,
   strokeBoundingBox,
-  strokePointsToPath,
   type CoverOverlay,
   type HighlightShape,
   type OverlayColor,
   type StrokeSegment,
 } from "./cover-overlays";
+import { StrokeGlyph } from "./OverlayLayer";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -40,6 +40,10 @@ type DragState = {
   startPointerY: number;
   startX: number;
   startY: number;
+  // For strokes only: the segments at drag start. Strokes render
+  // from their points (x/y are unused), so dragging translates every
+  // point by the pointer delta instead of moving x/y.
+  startSegments?: StrokeSegment[];
 };
 
 export function OverlayEditor({
@@ -348,6 +352,8 @@ export function OverlayEditor({
       startPointerY: e.clientY,
       startX: overlay.x,
       startY: overlay.y,
+      startSegments:
+        overlay.type === "stroke" ? overlay.segments : undefined,
     };
   }
 
@@ -359,11 +365,41 @@ export function OverlayEditor({
     if (rect.width === 0 || rect.height === 0) return;
     const dx = (e.clientX - d.startPointerX) / rect.width;
     const dy = (e.clientY - d.startPointerY) / rect.height;
-    const nx = Math.max(0, Math.min(1, d.startX + dx));
-    const ny = Math.max(0, Math.min(1, d.startY + dy));
-    const next = overlays.map((o) =>
-      o.id === d.id ? ({ ...o, x: nx, y: ny } as CoverOverlay) : o
-    );
+    let next: CoverOverlay[];
+    if (d.startSegments) {
+      // Stroke: translate every point by the delta. Clamp the offset
+      // (not each point) so the whole doodle stays inside the stage
+      // without distorting its shape.
+      let minX = 1;
+      let minY = 1;
+      let maxX = 0;
+      let maxY = 0;
+      for (const s of d.startSegments) {
+        for (const [px, py] of s.points) {
+          if (px < minX) minX = px;
+          if (py < minY) minY = py;
+          if (px > maxX) maxX = px;
+          if (py > maxY) maxY = py;
+        }
+      }
+      const cdx = Math.max(-minX, Math.min(1 - maxX, dx));
+      const cdy = Math.max(-minY, Math.min(1 - maxY, dy));
+      const segs: StrokeSegment[] = d.startSegments.map((s) => ({
+        ...s,
+        points: s.points.map(
+          ([px, py]) => [px + cdx, py + cdy] as [number, number]
+        ),
+      }));
+      next = overlays.map((o) =>
+        o.id === d.id && o.type === "stroke" ? { ...o, segments: segs } : o
+      );
+    } else {
+      const nx = Math.max(0, Math.min(1, d.startX + dx));
+      const ny = Math.max(0, Math.min(1, d.startY + dy));
+      next = overlays.map((o) =>
+        o.id === d.id ? ({ ...o, x: nx, y: ny } as CoverOverlay) : o
+      );
+    }
     // Optimistic only — commit happens on pointer release so we
     // don't fire dozens of server actions during a single drag.
     onChange(next);
@@ -1115,72 +1151,35 @@ function EditableOverlay({
     );
   }
   if (o.type === "stroke") {
-    // Stroke SVG fills the stage with a fixed `0 0 100 100` viewBox
-    // sized by definite CSS percentages + preserveAspectRatio="none"
-    // — identical to the highlight-shape renderer below and to the
-    // viewer's StrokeRender. The browser maps the 100-unit viewBox
-    // to the stage's actual box in layout space, so this stays in
-    // the SAME coordinate space as the pointer-capture math (which
-    // is itself scale-invariant). The earlier measured-pixel
-    // `width={px}` approach drifted by a constant scale factor —
-    // error growing with distance from the origin — because
-    // getBoundingClientRect() reports visually-transformed pixels
-    // while the px attributes lay out unscaled.
+    // Painted glyph is inert; a transparent surface over the stroke's
+    // bounding box is the interaction target. The painted line is too
+    // thin to reliably grab, so (unlike stickers) strokes need a
+    // full-bbox hit area to select + DRAG — that's what makes them
+    // movable, not just rotatable. Inert while drawing so the stage
+    // captures the pen.
     const bbox = strokeBoundingBox(o.segments, o.scale);
     return (
       <>
-        <svg
-          onPointerDown={onPointerDown}
+        <StrokeGlyph o={o} />
+        <div
+          onPointerDown={interactive ? onPointerDown : undefined}
           onClick={(e) => e.stopPropagation()}
-          className={"absolute touch-none " + (interactive ? "cursor-move" : "")}
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-label="select stroke"
+          aria-label="move stroke"
+          className={
+            "absolute touch-none " +
+            (interactive ? "cursor-move " : "") +
+            (selected
+              ? "outline outline-2 outline-pink-400 outline-offset-2 rounded-sm"
+              : "")
+          }
           style={{
-            left: 0,
-            top: 0,
-            width: "100%",
-            height: "100%",
+            left: `${bbox.x * 100}%`,
+            top: `${bbox.y * 100}%`,
+            width: `${bbox.w * 100}%`,
+            height: `${bbox.h * 100}%`,
             pointerEvents: interactive ? "auto" : "none",
           }}
-        >
-          <g
-            transform={`translate(${bbox.cx * 100} ${
-              bbox.cy * 100
-            }) rotate(${o.rotation}) scale(${o.scale}) translate(${
-              -bbox.cx * 100
-            } ${-bbox.cy * 100})`}
-          >
-            {o.segments.map((seg, i) => {
-              const svg = OVERLAY_SHAPE_SVG[seg.color];
-              return (
-                <path
-                  key={i}
-                  d={strokePointsToPath(seg.points)}
-                  fill="none"
-                  stroke={svg.stroke}
-                  strokeOpacity={0.92}
-                  strokeWidth={Math.max(seg.width * 100, 0.5)}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  pointerEvents={interactive ? "stroke" : "none"}
-                />
-              );
-            })}
-          </g>
-        </svg>
-        {selected ? (
-          <div
-            aria-hidden
-            className="absolute pointer-events-none outline outline-2 outline-pink-400 outline-offset-2 rounded-sm"
-            style={{
-              left: `${bbox.x * 100}%`,
-              top: `${bbox.y * 100}%`,
-              width: `${bbox.w * 100}%`,
-              height: `${bbox.h * 100}%`,
-            }}
-          />
-        ) : null}
+        />
       </>
     );
   }
