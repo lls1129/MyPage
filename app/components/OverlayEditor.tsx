@@ -18,7 +18,7 @@ import {
   type OverlayColor,
   type StrokeSegment,
 } from "./cover-overlays";
-import { StrokeGlyph } from "./OverlayLayer";
+import { OverlayLayer, StrokeGlyph } from "./OverlayLayer";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -69,6 +69,11 @@ export function OverlayEditor({
    *  where the editor's stage doubles as the only place admin
    *  sees crop / filter / frame composed together). */
   defaultOpen = false,
+  /** When the photo is horizontally flipped, mirror the overlay
+   *  stage too so the editor matches what visitors see (the viewer
+   *  flips the whole composition). Pointer x is inverted on capture
+   *  so dragging/drawing still feels natural in the mirrored view. */
+  flipped = false,
 }: {
   overlays: CoverOverlay[];
   /** Local-state update (optimistic). Called for every drag tick. */
@@ -81,6 +86,7 @@ export function OverlayEditor({
   stageInsetClass?: string;
   stageAspect?: string;
   defaultOpen?: boolean;
+  flipped?: boolean;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   // Cached stage rect for the duration of one gesture. Set in
@@ -363,7 +369,11 @@ export function OverlayEditor({
     if (!d || !stage) return;
     const rect = gestureRectRef.current ?? stage.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    const dx = (e.clientX - d.startPointerX) / rect.width;
+    // When the stage is mirrored, a rightward screen drag should move
+    // the stored x leftward — negate the x delta so the overlay
+    // follows the finger in the flipped view.
+    const dx =
+      ((e.clientX - d.startPointerX) / rect.width) * (flipped ? -1 : 1);
     const dy = (e.clientY - d.startPointerY) / rect.height;
     let next: CoverOverlay[];
     if (d.startSegments) {
@@ -459,8 +469,12 @@ export function OverlayEditor({
     // the coordinate system under the user's finger.
     const rect = gestureRectRef.current ?? stage.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return null;
+    const rawX = (e.clientX - rect.left) / rect.width;
+    // Stage is visually mirrored when flipped, so the stored x is the
+    // mirror of where the pointer landed on screen.
+    const fx = flipped ? 1 - rawX : rawX;
     return {
-      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      x: Math.max(0, Math.min(1, fx)),
       y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
     };
   }
@@ -634,32 +648,47 @@ export function OverlayEditor({
   const selected = overlays.find((o) => o.id === selectedId) ?? null;
 
   if (!open) {
-    // Collapsed header — admin opens the editor only when they need
-    // to add / reposition overlays, so the album page stays compact
-    // by default. Count + a small preview of the layer types lives
-    // here so admin can see at a glance what's applied.
+    // Collapsed — show the actual photo preview (with overlays) so
+    // admin sees what's there before expanding, then a compact footer
+    // row to open the full editor. Tapping anywhere expands.
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center justify-between gap-2 rounded-md bg-white border border-pink-100 px-3 py-2 text-left hover:border-pink-300 transition-colors"
+        className="block w-full text-left rounded-md bg-white border border-pink-100 overflow-hidden hover:border-pink-300 transition-colors"
         aria-expanded={false}
       >
-        <span className="flex items-center gap-2 min-w-0">
-          <span className="text-[11px] text-pink-800 font-semibold shrink-0">
+        <div
+          className={
+            "relative w-full overflow-hidden mx-auto " +
+            (stageInsetClass ? "" : "bg-pink-50")
+          }
+          style={{
+            aspectRatio: stageAspect,
+            maxWidth: 360,
+            containerType: "inline-size",
+          }}
+        >
+          {background}
+          {/* Mirror the overlays to match a flipped photo, same as
+              the expanded stage does. */}
+          <div
+            className={"absolute " + (stageInsetClass || "inset-0")}
+            style={flipped ? { transform: "scaleX(-1)" } : undefined}
+          >
+            <OverlayLayer overlays={overlays} />
+          </div>
+        </div>
+        <span className="flex items-center justify-between gap-2 px-3 py-2">
+          <span className="text-[11px] text-pink-800 font-semibold">
             ✿ overlays
           </span>
-          <span className="text-[10px] text-ink/65 truncate">
+          <span className="text-[10px] text-ink/65">
             {overlays.length === 0
               ? "none yet · tap to add"
-              : `${overlays.length} of ${OVERLAY_LIMIT} · tap to edit`}
+              : `${overlays.length} of ${OVERLAY_LIMIT} · tap to edit`}{" "}
+            ▸
           </span>
-        </span>
-        <span
-          aria-hidden
-          className="text-[10px] text-pink-700 font-semibold w-3 text-center shrink-0"
-        >
-          ▸
         </span>
       </button>
     );
@@ -998,6 +1027,11 @@ export function OverlayEditor({
             " " +
             (drawMode ? "cursor-crosshair touch-none" : "")
           }
+          // Mirror the overlay stage to match a flipped photo. This
+          // doesn't change getBoundingClientRect (scaleX about the
+          // element's own center), so capture rects are unaffected —
+          // only the pointer x-fraction is inverted (see below).
+          style={flipped ? { transform: "scaleX(-1)" } : undefined}
           onPointerDown={(e) => {
             // In draw mode the stage itself captures the pointer to
             // start a stroke. Existing overlays render with
@@ -1440,21 +1474,19 @@ function SelectedControls({
         </button>
       </div>
 
-      {/* Size slider applies to sticker / caption / highlight via
-          CSS scale. For strokes, scale visually thickens the
-          path too, which conflates with the brush-width slider —
-          we omit it for strokes to keep semantics clean. */}
-      {o.type !== "stroke" ? (
-        <SliderRow
-          label="size"
-          value={o.scale}
-          min={0.4}
-          max={2.5}
-          step={0.1}
-          onChange={(scale) => onChange({ scale })}
-          format={(v) => `${v.toFixed(1)}×`}
-        />
-      ) : null}
+      {/* Size scales the whole overlay. For strokes it scales the
+          doodle proportionally (geometry + line thickness together)
+          around its center — that's "resize", distinct from the
+          brush-width slider which sets thickness for NEW strokes. */}
+      <SliderRow
+        label="size"
+        value={o.scale}
+        min={0.4}
+        max={2.5}
+        step={0.1}
+        onChange={(scale) => onChange({ scale })}
+        format={(v) => `${v.toFixed(1)}×`}
+      />
       <SliderRow
         label="rotate"
         value={o.rotation}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 
 // Free-form per-photo crop modal. Unlike CoverCropper (which locks
 // to a square because album cards are aspect-square), this one
@@ -70,13 +71,9 @@ export function PhotoCropper({
       if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  useEffect(() => lockBodyScroll(), []);
 
   function onImgLoad() {
     const el = imgRef.current;

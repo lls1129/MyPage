@@ -21,6 +21,7 @@ import {
 } from "../components/cover-decorations";
 import { OverlayEditor } from "../components/OverlayEditor";
 import { PhotoCropper } from "../components/PhotoCropper";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 import {
   normalizeOverlays,
   type CoverOverlay,
@@ -94,13 +95,9 @@ export function PhotoEditModal({
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+  useEffect(() => lockBodyScroll(), []);
 
   if (!mounted) return null;
 
@@ -318,6 +315,7 @@ export function PhotoEditModal({
                 ? `${photo.width} / ${photo.height}`
                 : "1 / 1"
             }
+            flipped={!!photo.flipped}
             background={
               <PhotoOverlayBackground
                 photo={photo}

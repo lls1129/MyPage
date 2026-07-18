@@ -30,6 +30,7 @@ import {
 } from "@/app/components/cover-decorations";
 import { OverlayEditor } from "@/app/components/OverlayEditor";
 import { PhotoCropper } from "@/app/components/PhotoCropper";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 import {
   normalizeOverlays,
   type CoverOverlay,
@@ -1175,6 +1176,7 @@ function UploadSuccessCard({
             overlays={overlays}
             onChange={setOverlays}
             defaultOpen
+            flipped={item.flipped}
             onCommit={async (next) => {
               const r = await setPhotoOverlays(item.id, next);
               return r.ok
@@ -1393,13 +1395,11 @@ function PreviewOverlay({
       if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // Body-scroll lock kept in its own mount/unmount effect (ref-counted)
+  // so it isn't re-run by unrelated deps.
+  useEffect(() => lockBodyScroll(), []);
 
   if (!mounted) return null;
   return createPortal(
@@ -2193,14 +2193,14 @@ function BatchItemEditor({
       }
     }
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose, index, total]);
+  // Ref-counted body-scroll lock, mount/unmount only — must NOT depend
+  // on index/total, or navigating photos re-runs it and its restore
+  // captures the already-"hidden" value, leaving the page stuck
+  // unscrollable after close (wheel dead, Tab still focus-scrolls).
+  useEffect(() => lockBodyScroll(), []);
 
   const [caption, setCaption] = useState(item.caption);
   const [tagList, setTagList] = useState<string[]>(item.tags);
@@ -2639,6 +2639,7 @@ function BatchItemEditor({
               overlays={overlays}
               onChange={setOverlays}
               defaultOpen
+              flipped={item.flipped}
               onCommit={async (next) => {
                 const r = await setPhotoOverlays(item.id, next);
                 return r.ok
