@@ -658,28 +658,30 @@ export function OverlayEditor({
         className="block w-full text-left rounded-md bg-white border border-pink-100 overflow-hidden hover:border-pink-300 transition-colors"
         aria-expanded={false}
       >
-        <div
-          className={
-            "relative w-full overflow-hidden mx-auto " +
-            (stageInsetClass ? "" : "bg-pink-50")
-          }
-          style={{
-            aspectRatio: stageAspect,
-            maxWidth: 360,
-            containerType: "inline-size",
-          }}
-        >
-          {background}
-          {/* Mirror the overlays to match a flipped photo, same as
-              the expanded stage does. */}
+        <div className="p-2">
           <div
-            className={"absolute " + (stageInsetClass || "inset-0")}
-            style={flipped ? { transform: "scaleX(-1)" } : undefined}
+            className={
+              "relative w-full overflow-hidden mx-auto rounded-md border border-pink-100 " +
+              (stageInsetClass ? "" : "bg-pink-50")
+            }
+            style={{
+              aspectRatio: stageAspect,
+              maxWidth: 360,
+              containerType: "inline-size",
+            }}
           >
-            <OverlayLayer overlays={overlays} />
+            {background}
+            {/* Mirror the overlays to match a flipped photo, same as
+                the expanded stage does. */}
+            <div
+              className={"absolute " + (stageInsetClass || "inset-0")}
+              style={flipped ? { transform: "scaleX(-1)" } : undefined}
+            >
+              <OverlayLayer overlays={overlays} />
+            </div>
           </div>
         </div>
-        <span className="flex items-center justify-between gap-2 px-3 py-2">
+        <span className="flex items-center justify-between gap-2 px-3 py-2 border-t border-pink-100">
           <span className="text-[11px] text-pink-800 font-semibold">
             ✿ overlays
           </span>

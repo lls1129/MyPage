@@ -10,6 +10,8 @@ import {
   setPhotoDecorations,
   setPhotoOverlays,
   setPhotoCrop,
+  rotatePhoto,
+  flipPhoto,
 } from "./admin-actions";
 import {
   FILTERS,
@@ -65,7 +67,32 @@ export function PhotoEditModal({
     h: photo.crop_h ?? 1,
   });
   const [cropping, setCropping] = useState(false);
+  // Local rotation / flip so the preview updates instantly; the
+  // server actions persist and router.refresh() reconciles.
+  const [rotation, setRotation] = useState(photo.rotation ?? 0);
+  const [flipped, setFlipped] = useState(!!photo.flipped);
+  const [orientPending, startOrient] = useTransition();
   const album = albums.find((a) => a.id === photo.album_id) ?? null;
+
+  function doRotate(direction: "left" | "right") {
+    setRotation((r) =>
+      ((direction === "right" ? r + 90 : r + 270) + 360) % 360
+    );
+    startOrient(async () => {
+      const res = await rotatePhoto(photo.id, direction);
+      if (!res.ok) setError(res.error ?? "couldn’t rotate.");
+      else router.refresh();
+    });
+  }
+
+  function doFlip() {
+    setFlipped((f) => !f);
+    startOrient(async () => {
+      const res = await flipPhoto(photo.id);
+      if (!res.ok) setError(res.error ?? "couldn’t flip.");
+      else router.refresh();
+    });
+  }
   // Width picker only makes sense when there's actually a frame on
   // this photo (either explicit or inherited from the album).
   const effectiveFrame =
@@ -231,6 +258,49 @@ export function PhotoEditModal({
             ) : null}
           </div>
 
+          {/* Orientation — rotate / flip, same actions as the album
+              grid but available without leaving the editor. Flip is
+              mirrored live in the overlay editor; rotation persists +
+              is correct in the viewer. */}
+          <div className="flex items-center gap-2 flex-wrap rounded-md bg-pink-50/60 border border-pink-100 p-2.5">
+            <span className="label text-pink-600">orient</span>
+            {rotation % 360 !== 0 || flipped ? (
+              <span className="text-[11px] text-lavender-600">
+                {rotation % 360 !== 0 ? `${rotation % 360}°` : ""}
+                {rotation % 360 !== 0 && flipped ? " · " : ""}
+                {flipped ? "flipped" : ""}
+              </span>
+            ) : null}
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => doRotate("left")}
+              disabled={orientPending}
+              title="rotate left"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ↺ left
+            </button>
+            <button
+              type="button"
+              onClick={() => doRotate("right")}
+              disabled={orientPending}
+              title="rotate right"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ↻ right
+            </button>
+            <button
+              type="button"
+              onClick={doFlip}
+              disabled={orientPending}
+              title="flip horizontally"
+              className="rounded-pill bg-white text-pink-800 border border-pink-200 hover:border-pink-400 px-3 py-1 text-[11px] font-semibold disabled:opacity-60"
+            >
+              ⇄ flip
+            </button>
+          </div>
+
           {/* Crop — trim the source to a window. Overlays are stored
               in full-image coords, so cropping reframes them (and
               clips whatever falls outside) without moving them
@@ -315,10 +385,12 @@ export function PhotoEditModal({
                 ? `${photo.width} / ${photo.height}`
                 : "1 / 1"
             }
-            flipped={!!photo.flipped}
+            flipped={flipped}
             background={
               <PhotoOverlayBackground
                 photo={photo}
+                rotation={rotation}
+                flipped={flipped}
                 frame={effectiveFrame ?? null}
                 frameWidth={frameWidth ?? album?.cover_frame_width ?? "medium"}
                 filter={
@@ -369,24 +441,30 @@ function isTrivialCrop(c: { x: number; y: number; w: number; h: number }) {
 // admin knows what will be clipped. Used inside PhotoEditModal.
 function PhotoOverlayBackground({
   photo,
+  rotation,
+  flipped,
   frame,
   frameWidth,
   filter,
   crop,
 }: {
   photo: Photo;
+  rotation: number;
+  flipped: boolean;
   frame: string | null;
   frameWidth: string;
   filter: string | null;
   crop: { x: number; y: number; w: number; h: number };
 }) {
   const filterCss = filterCssFor(filter);
-  const transform = (() => {
-    const parts: string[] = [];
-    if (photo.rotation) parts.push(`rotate(${photo.rotation}deg)`);
-    if (photo.flipped) parts.push("scaleX(-1)");
-    return parts.length > 0 ? parts.join(" ") : undefined;
-  })();
+  // Flip is mirrored live (the OverlayEditor mirrors overlays to
+  // match). Rotation is intentionally NOT applied to the editor
+  // preview: overlays are authored in the photo's canonical
+  // orientation and the viewer rotates the whole composition
+  // (photo + overlays) together, so editing stays in one stable
+  // coordinate space. `rotation` is accepted for API symmetry.
+  void rotation;
+  const transform = flipped ? "scaleX(-1)" : undefined;
   return (
     <>
       <div

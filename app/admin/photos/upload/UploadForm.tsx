@@ -1194,11 +1194,15 @@ function UploadSuccessCard({
                 currentAlbum?.cover_frame_width ??
                 "medium"
             )}
+            // Full-image aspect (NOT crop): the editor shows the whole
+            // photo with a crop-window indicator, so overlays (stored
+            // in full-image coords) sit at their true spots instead of
+            // being squeezed onto the crop box.
             stageAspect={
               item.width && item.height && item.width > 0 && item.height > 0
                 ? item.rotation === 90 || item.rotation === 270
-                  ? `${item.height * item.crop_h} / ${item.width * item.crop_w}`
-                  : `${item.width * item.crop_w} / ${item.height * item.crop_h}`
+                  ? `${item.height} / ${item.width}`
+                  : `${item.width} / ${item.height}`
                 : "1 / 1"
             }
             background={
@@ -1599,9 +1603,14 @@ function DeleteNoticeBanner({
 }
 
 // Background for the per-photo OverlayEditor inside the upload
-// flow — renders the just-uploaded image with its effective crop +
-// rotation / flip / filter / frame applied, so the editor's
-// preview matches what visitors will see in the lightbox.
+// flow. Shows the FULL image (rotation / flip / filter / frame
+// applied) plus a dashed crop-window indicator — same model as
+// PhotoEditModal's PhotoOverlayBackground. Overlays are stored in
+// full-image coords, so drawing them over the full image (not the
+// cropped region) keeps them at their true positions; the crop
+// indicator shows what visitors will actually see. (Previously the
+// editor showed the cropped region, which squeezed full-image
+// overlay coords onto the crop box.)
 function SuccessOverlayBackground({
   item,
   frame,
@@ -1614,68 +1623,43 @@ function SuccessOverlayBackground({
   filter: string | null;
 }) {
   const filterCss = filterCssFor(filter);
+  const transformStr = composeTransform(item.rotation, item.flipped)
+    ?.transform;
   const trivialCrop =
     item.crop_x === 0 &&
     item.crop_y === 0 &&
     item.crop_w === 1 &&
     item.crop_h === 1;
-  // Photo + frame rotate as one composition. The OverlayEditor's
-  // outer wrapper carries the post-rotation aspect (the caller
-  // swaps width × height for rotation 90 / 270); the container
-  // inside is sized so that AFTER the rotate transform fires it
-  // fills the wrapper, with photo and frame painted in source
-  // orientation inside.
-  const r = ((item.rotation ?? 0) + 360) % 360;
-  const isRotated = r === 90 || r === 270;
-  const cropW = (item.width ?? 1) * item.crop_w;
-  const cropH = (item.height ?? 1) * item.crop_h;
-  const cropRatio = cropW > 0 && cropH > 0 ? cropW / cropH : 1;
-  const transformStr = composeTransform(item.rotation, item.flipped)
-    ?.transform;
-  const containerStyle: React.CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    width: isRotated ? `${cropRatio * 100}%` : "100%",
-    height: isRotated ? `${(1 / cropRatio) * 100}%` : "100%",
-    transform: `translate(-50%, -50%)${
-      transformStr ? " " + transformStr : ""
-    }`,
-  };
   return (
-    <div style={containerStyle}>
+    <>
       <div
         className={
           "absolute overflow-hidden " +
           (frameInsetFor(frame, frameWidth) || "inset-0")
         }
-        style={
-          trivialCrop
-            ? {
-                backgroundImage: `url("${item.src}")`,
-                backgroundRepeat: "no-repeat",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                filter: filterCss || undefined,
-              }
-            : {
-                backgroundImage: `url("${item.src}")`,
-                backgroundRepeat: "no-repeat",
-                backgroundSize: `${100 / item.crop_w}% ${100 / item.crop_h}%`,
-                backgroundPosition: `${
-                  item.crop_w >= 1
-                    ? 0
-                    : (item.crop_x * 100) / (1 - item.crop_w)
-                }% ${
-                  item.crop_h >= 1
-                    ? 0
-                    : (item.crop_y * 100) / (1 - item.crop_h)
-                }%`,
-                filter: filterCss || undefined,
-              }
-        }
+        style={{
+          backgroundImage: `url("${item.src}")`,
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          transform: transformStr,
+          filter: filterCss || undefined,
+        }}
         aria-label={item.caption || "uploaded photo"}
       />
+      {!trivialCrop ? (
+        <div
+          aria-hidden
+          className="absolute pointer-events-none border-2 border-dashed border-cream/90 rounded-[2px]"
+          style={{
+            left: `${item.crop_x * 100}%`,
+            top: `${item.crop_y * 100}%`,
+            width: `${item.crop_w * 100}%`,
+            height: `${item.crop_h * 100}%`,
+            boxShadow: "0 0 0 9999px rgba(24, 16, 43, 0.5)",
+          }}
+        />
+      ) : null}
       {frame ? (
         <div
           className={
@@ -1685,7 +1669,7 @@ function SuccessOverlayBackground({
           aria-hidden
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -2657,18 +2641,16 @@ function BatchItemEditor({
                   currentAlbum?.cover_frame_width ??
                   "medium"
               )}
+              // Full-image aspect (see single-editor note): full photo
+              // + crop indicator, so overlays aren't squeezed.
               stageAspect={
                 item.width &&
                 item.height &&
                 item.width > 0 &&
                 item.height > 0
                   ? item.rotation === 90 || item.rotation === 270
-                    ? `${item.height * item.crop_h} / ${
-                        item.width * item.crop_w
-                      }`
-                    : `${item.width * item.crop_w} / ${
-                        item.height * item.crop_h
-                      }`
+                    ? `${item.height} / ${item.width}`
+                    : `${item.width} / ${item.height}`
                   : "1 / 1"
               }
               background={
